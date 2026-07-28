@@ -373,8 +373,8 @@ fn full_action_reaction_effect_expiry_and_attribution_are_explicit() {
     let preview = session
         .preview_action(ATTACKER, TARGET, &id("strike"), operation("strike-one"))
         .unwrap();
-    assert_eq!(preview.defense.value.get(), 4);
-    assert!(preview.defense.decisions.iter().any(|decision| {
+    assert_eq!(preview.defense().value.get(), 4);
+    assert!(preview.defense().decisions.iter().any(|decision| {
         matches!(
             decision.source,
             SourceInstanceIdentity::EquippedItem {
@@ -384,7 +384,7 @@ fn full_action_reaction_effect_expiry_and_attribution_are_explicit() {
             }
         )
     }));
-    assert_eq!(preview.reactions.len(), 1);
+    assert_eq!(preview.reactions().len(), 1);
 
     let reaction = session
         .apply_reaction(&preview, &id("parry"), effect_instance("parry-strike-one"))
@@ -405,7 +405,7 @@ fn full_action_reaction_effect_expiry_and_attribution_are_explicit() {
     let fresh = session
         .preview_action(ATTACKER, TARGET, &id("strike"), operation("strike-one"))
         .unwrap();
-    assert_eq!(fresh.defense.value.get(), 9);
+    assert_eq!(fresh.defense().value.get(), 9);
     let receipt = session
         .apply_action(ApplyActionRequest {
             preview: fresh,

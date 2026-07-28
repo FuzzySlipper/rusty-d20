@@ -61,30 +61,123 @@ pub struct ArmorItemSeed {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReactionOption {
-    pub reaction: D20Id,
-    pub resource: D20Id,
-    pub cost: u16,
-    pub available: u16,
-    pub bonus: i16,
-    pub effect: D20Id,
+    reaction: D20Id,
+    resource: D20Id,
+    cost: u16,
+    available: u16,
+    bonus: i16,
+    effect: D20Id,
 }
 
+impl ReactionOption {
+    pub const fn reaction(&self) -> &D20Id {
+        &self.reaction
+    }
+
+    pub const fn resource(&self) -> &D20Id {
+        &self.resource
+    }
+
+    pub const fn cost(&self) -> u16 {
+        self.cost
+    }
+
+    pub const fn available(&self) -> u16 {
+        self.available
+    }
+
+    pub const fn bonus(&self) -> i16 {
+        self.bonus
+    }
+
+    pub const fn effect(&self) -> &D20Id {
+        &self.effect
+    }
+}
+
+/// An immutable authority token plus read-only preview projection.
+///
+/// Callers can inspect a preview but cannot rewrite the action selected by
+/// Rust:
+///
+/// ```compile_fail,E0616
+/// fn rewrite_action(mut preview: rusty_d20::ActionPreview) {
+///     preview.action = rusty_d20::D20Id::parse("other-action").unwrap();
+/// }
+/// ```
+///
+/// Outcome inputs are likewise not caller-controlled:
+///
+/// ```compile_fail,E0616
+/// fn rewrite_modifier(mut preview: rusty_d20::ActionPreview) {
+///     preview.ability_modifier = 100;
+/// }
+/// ```
+///
+/// ```compile_fail,E0616
+/// fn rewrite_defense(mut preview: rusty_d20::ActionPreview) {
+///     preview.defense.value = gameplay_mechanics::MechanicsScalar::zero();
+/// }
+/// ```
+///
+/// The reaction projection is an immutable slice, so a consumer cannot inject
+/// a reaction for a different defense:
+///
+/// ```compile_fail,E0616
+/// fn inject_reaction(mut preview: rusty_d20::ActionPreview) {
+///     preview.reactions.clear();
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct ActionPreview {
-    pub actor: EntityId,
-    pub target: EntityId,
-    pub action: D20Id,
-    pub operation: OperationId,
-    pub ability_score: i16,
-    pub ability_modifier: i16,
-    pub defense: StatEvaluation,
-    pub reactions: Vec<ReactionOption>,
+    actor: EntityId,
+    target: EntityId,
+    action: D20Id,
+    operation: OperationId,
+    ability_score: i16,
+    ability_modifier: i16,
+    defense: StatEvaluation,
+    reactions: Vec<ReactionOption>,
     actor_abilities_revision: ComponentRevision,
     target_resources_revision: ComponentRevision,
     target_tracks_revision: ComponentRevision,
     target_scheduled_effects_revision: ComponentRevision,
     turn: u64,
     roll_index: u64,
+}
+
+impl ActionPreview {
+    pub const fn actor(&self) -> EntityId {
+        self.actor
+    }
+
+    pub const fn target(&self) -> EntityId {
+        self.target
+    }
+
+    pub const fn action(&self) -> &D20Id {
+        &self.action
+    }
+
+    pub const fn operation(&self) -> &OperationId {
+        &self.operation
+    }
+
+    pub const fn ability_score(&self) -> i16 {
+        self.ability_score
+    }
+
+    pub const fn ability_modifier(&self) -> i16 {
+        self.ability_modifier
+    }
+
+    pub const fn defense(&self) -> &StatEvaluation {
+        &self.defense
+    }
+
+    pub fn reactions(&self) -> &[ReactionOption] {
+        &self.reactions
+    }
 }
 
 #[derive(Debug, Clone)]

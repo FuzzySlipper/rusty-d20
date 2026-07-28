@@ -63,7 +63,9 @@ the result.
 An action preview reads the actor ability modifier, evaluates the target
 defense through `StatService`, reports currently affordable reactions, and
 captures exact relevant component revisions plus the explicit turn and roll
-position.
+position. Its authoritative fields are private; consumers receive read-only
+getters and cannot rewrite the action, roll modifier, defense evaluation, or
+reaction list before apply.
 
 A reaction spends its resource and applies/schedules its effect in one staged
 transaction. The original preview becomes stale; the caller must preview
