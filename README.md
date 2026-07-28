@@ -33,6 +33,12 @@ Adventure** resumes the exact camp or encounter phase and canonical loadout.
 Resolve any pending action before saving; the Rust host rejects pending saves
 before changing the existing save file.
 
+For a managed LAN-visible instance, use:
+
+```bash
+den-serve up rusty-d20 -repo /absolute/path/to/rusty-d20
+```
+
 ## Verify
 
 ```bash

@@ -1,0 +1,11 @@
+{
+  "project": "rusty-d20",
+  "serve": {
+    "command": "bash scripts/serve-den.sh -- --host {host} --port {port}",
+    "preferredPort": 4317,
+    "healthUrl": "/healthz",
+    "readyText": "\"status\":\"ok\"",
+    "reusePolicy": "broker_owned",
+    "startupTimeout": "180s"
+  }
+}
