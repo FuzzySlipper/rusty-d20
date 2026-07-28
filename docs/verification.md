@@ -75,8 +75,10 @@ turn advancement, save, classified failure, and desktop/mobile presentation.
 The ordinary browser gate also launches an isolated Rust host, saves through
 normal controls, stops that process, starts a fresh process against the same
 save, verifies the exact projected continuation, and resolves the next
-deterministic roll. A two-page scenario proves a stale optimistic revision is
-rejected through a normal action control.
+deterministic roll. It also proves preview-only and reacted-pending saves reject
+without changing either authoritative in-memory state or the last durable save.
+A two-page scenario proves a stale optimistic revision is rejected through a
+normal action control.
 
 ## Standalone clone
 

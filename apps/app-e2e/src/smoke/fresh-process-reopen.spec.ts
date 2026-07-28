@@ -1,12 +1,15 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
 import { workspaceRoot } from '@nx/devkit';
 
-test('saved authoritative state survives a fresh Rust host process', async ({ page }) => {
+test('pending saves reject atomically and completed state survives a fresh Rust host', async ({
+  page,
+  request,
+}) => {
   test.setTimeout(180_000);
   const directory = await mkdtemp(join(tmpdir(), 'rusty-d20-reopen-'));
   const savePath = join(directory, 'save.json');
@@ -19,6 +22,53 @@ test('saved authoritative state survives a fresh Rust host process', async ({ pa
     await waitForHealth(baseUrl, host);
     await page.goto(baseUrl);
     await page.getByRole('button', { name: 'Start encounter' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+    const baseline = await sessionSnapshot(request, baseUrl);
+    const baselineFile = await readFile(savePath);
+
+    await page.getByRole('button', { name: 'Precise Shot' }).click();
+    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+    await expect(page.getByText('Resolve the pending action before saving.')).toBeVisible();
+    const previewOnly = await sessionSnapshot(request, baseUrl);
+    expect(previewOnly.encounter.pendingAction).not.toBeNull();
+    await expectPendingSaveRejection(request, baseUrl, previewOnly.revision);
+    expect(await sessionSnapshot(request, baseUrl)).toEqual(previewOnly);
+    expect(await readFile(savePath)).toEqual(baselineFile);
+    await stopHost(host);
+    host = undefined;
+
+    host = startHost(port, savePath);
+    await waitForHealth(baseUrl, host);
+    expect(await sessionSnapshot(request, baseUrl)).toEqual(baseline);
+    await page.goto(baseUrl);
+    await page.getByRole('button', { name: 'Longsword Strike' }).click();
+    await page.getByRole('button', { name: /Parry · 1 Guard/ }).click();
+    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+    const reacted = await sessionSnapshot(request, baseUrl);
+    expect(reacted.encounter.pendingAction).not.toBeNull();
+    const reactedOpponent = reacted.encounter.characters.find(
+      (character: GameCharacter) => character.id !== reacted.encounter.playerId,
+    );
+    expect(reactedOpponent?.resources).toContainEqual({
+      current: 1,
+      id: 'guard',
+      label: 'Guard',
+      maximum: 2,
+    });
+    expect(reactedOpponent?.effects.some((effect) => effect.startsWith('Parry Stance'))).toBe(
+      true,
+    );
+    await expectPendingSaveRejection(request, baseUrl, reacted.revision);
+    expect(await sessionSnapshot(request, baseUrl)).toEqual(reacted);
+    expect(await readFile(savePath)).toEqual(baselineFile);
+    await stopHost(host);
+    host = undefined;
+
+    host = startHost(port, savePath);
+    await waitForHealth(baseUrl, host);
+    expect(await sessionSnapshot(request, baseUrl)).toEqual(baseline);
+    await page.goto(baseUrl);
     await page.getByRole('button', { name: 'Precise Shot' }).click();
     await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
     await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -53,6 +103,46 @@ test('saved authoritative state survives a fresh Rust host process', async ({ pa
     await rm(directory, { force: true, recursive: true });
   }
 });
+
+interface GameCharacter {
+  id: number;
+  resources: Array<{ current: number; id: string; label: string; maximum: number }>;
+  effects: string[];
+}
+
+interface GameSnapshot {
+  revision: number;
+  encounter: {
+    playerId: number;
+    characters: GameCharacter[];
+    pendingAction: unknown | null;
+  };
+}
+
+async function sessionSnapshot(
+  request: APIRequestContext,
+  baseUrl: string,
+): Promise<GameSnapshot> {
+  const response = await request.get(`${baseUrl}/api/v1/session`);
+  expect(response.ok()).toBe(true);
+  return response.json() as Promise<GameSnapshot>;
+}
+
+async function expectPendingSaveRejection(
+  request: APIRequestContext,
+  baseUrl: string,
+  revision: number,
+): Promise<void> {
+  const response = await request.post(`${baseUrl}/api/v1/session/save`, {
+    data: { expectedRevision: revision },
+  });
+  expect(response.status()).toBe(422);
+  await expect(response.json()).resolves.toEqual({
+    kind: 'invalid',
+    message: 'resolve the pending action before saving',
+    retryable: false,
+  });
+}
 
 function startHost(port: number, savePath: string): ChildProcess {
   return spawn(

@@ -332,4 +332,120 @@ mod tests {
         assert!(reopened.snapshot().unwrap().encounter.is_some());
         fs::remove_file(save_path).unwrap();
     }
+
+    #[tokio::test]
+    async fn pending_preview_and_reaction_saves_reject_before_runtime_or_file_mutation() {
+        assert_pending_save_rejection(false).await;
+        assert_pending_save_rejection(true).await;
+    }
+
+    async fn assert_pending_save_rejection(apply_reaction: bool) {
+        let (app, save_path) = test_state();
+        let (_, start_body) =
+            post_json(&app, "/api/v1/session/start", r#"{"expectedRevision":0}"#).await;
+        let start: GameSnapshotDto = serde_json::from_slice(&start_body).unwrap();
+
+        let (save_status, _) = post_json(
+            &app,
+            "/api/v1/session/save",
+            &format!(r#"{{"expectedRevision":{}}}"#, start.revision),
+        )
+        .await;
+        assert_eq!(save_status, StatusCode::OK);
+        let saved_bytes = fs::read(&save_path).unwrap();
+
+        let encounter = start.encounter.as_ref().unwrap();
+        let target = encounter
+            .characters
+            .iter()
+            .find(|character| character.id != encounter.player_id)
+            .unwrap()
+            .id;
+        let (_, preview_body) = post_json(
+            &app,
+            "/api/v1/session/preview",
+            &format!(
+                r#"{{"expectedRevision":{},"actorId":{},"targetId":{},"actionId":"longsword-strike"}}"#,
+                start.revision, encounter.player_id, target
+            ),
+        )
+        .await;
+        let mut before: GameSnapshotDto = serde_json::from_slice(&preview_body).unwrap();
+
+        if apply_reaction {
+            let pending = before
+                .encounter
+                .as_ref()
+                .unwrap()
+                .pending_action
+                .as_ref()
+                .unwrap();
+            let (_, reaction_body) = post_json(
+                &app,
+                "/api/v1/session/reaction",
+                &format!(
+                    r#"{{"expectedRevision":{},"previewToken":"{}","reactionId":"parry"}}"#,
+                    before.revision, pending.token
+                ),
+            )
+            .await;
+            before = serde_json::from_slice(&reaction_body).unwrap();
+        }
+
+        let (rejected_status, rejected_body) = post_json(
+            &app,
+            "/api/v1/session/save",
+            &format!(r#"{{"expectedRevision":{}}}"#, before.revision),
+        )
+        .await;
+        assert_eq!(rejected_status, StatusCode::UNPROCESSABLE_ENTITY);
+        let rejection: ApiErrorDto = serde_json::from_slice(&rejected_body).unwrap();
+        assert_eq!(rejection.kind, ApiErrorKindDto::Invalid);
+        assert_eq!(
+            rejection.message,
+            "resolve the pending action before saving"
+        );
+
+        let (_, after_body) = get_json(&app, "/api/v1/session").await;
+        let after: GameSnapshotDto = serde_json::from_slice(&after_body).unwrap();
+        assert_eq!(after, before);
+        assert_eq!(fs::read(&save_path).unwrap(), saved_bytes);
+
+        let reopened = load_runtime(&save_path).unwrap().snapshot().unwrap();
+        assert_eq!(reopened.revision, start.revision);
+        assert!(reopened
+            .encounter
+            .as_ref()
+            .unwrap()
+            .pending_action
+            .is_none());
+        fs::remove_file(save_path).unwrap();
+    }
+
+    async fn post_json(app: &Router, path: &str, body: &str) -> (StatusCode, Vec<u8>) {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post(path)
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_owned()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        (status, bytes.to_vec())
+    }
+
+    async fn get_json(app: &Router, path: &str) -> (StatusCode, Vec<u8>) {
+        let response = app
+            .clone()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        (status, bytes.to_vec())
+    }
 }

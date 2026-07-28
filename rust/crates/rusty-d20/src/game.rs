@@ -305,6 +305,9 @@ impl GameRuntime {
     }
 
     pub fn encode_save(&self) -> Result<String, GameRuntimeError> {
+        if self.pending.is_some() {
+            return Err(GameRuntimeError::PendingActionCannotBeSaved);
+        }
         let session = self.session.as_ref().ok_or(GameRuntimeError::NoEncounter)?;
         let session = serde_json::from_str(&session.encode_save()?)?;
         Ok(serde_json::to_string_pretty(&GameSave {
@@ -867,6 +870,7 @@ struct GameSave {
 #[derive(Debug)]
 pub enum GameRuntimeError {
     NoEncounter,
+    PendingActionCannotBeSaved,
     StaleCommand(String),
     InvalidCommand(String),
     InvalidState(String),
@@ -886,7 +890,9 @@ impl GameRuntimeError {
         let (kind, retryable) = match self {
             Self::StaleCommand(_) => (ApiErrorKindDto::Stale, true),
             Self::NoEncounter => (ApiErrorKindDto::NotFound, false),
-            Self::InvalidCommand(_) | Self::D20Identity(_) => (ApiErrorKindDto::Invalid, false),
+            Self::PendingActionCannotBeSaved | Self::InvalidCommand(_) | Self::D20Identity(_) => {
+                (ApiErrorKindDto::Invalid, false)
+            }
             Self::InvalidSave(_) | Self::UnsupportedSaveSchema { .. } | Self::Save(_) => {
                 (ApiErrorKindDto::Persistence, false)
             }
@@ -904,6 +910,9 @@ impl std::fmt::Display for GameRuntimeError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoEncounter => write!(formatter, "no encounter is active"),
+            Self::PendingActionCannotBeSaved => {
+                write!(formatter, "resolve the pending action before saving")
+            }
             Self::StaleCommand(message)
             | Self::InvalidCommand(message)
             | Self::InvalidState(message)
@@ -1186,6 +1195,70 @@ mod tests {
             .is_none());
         let advanced = reopened.advance_turn(reopened_snapshot.revision).unwrap();
         assert_eq!(advanced.encounter.unwrap().turn, 1);
+    }
+
+    #[test]
+    fn preview_only_and_reacted_pending_saves_reject_without_mutation() {
+        let mut runtime = GameRuntime::empty().unwrap();
+        let started = runtime.start_encounter(0).unwrap();
+        let previewed = runtime
+            .preview_action(PreviewActionRequestDto {
+                expected_revision: started.revision,
+                actor_id: PLAYER.raw(),
+                target_id: OPPONENT.raw(),
+                action_id: "longsword-strike".to_owned(),
+            })
+            .unwrap();
+
+        assert_pending_save_is_unchanged(&runtime, &previewed);
+
+        let pending_token = previewed
+            .encounter
+            .as_ref()
+            .unwrap()
+            .pending_action
+            .as_ref()
+            .unwrap()
+            .token
+            .clone();
+        let reacted = runtime
+            .apply_reaction(ApplyReactionRequestDto {
+                expected_revision: previewed.revision,
+                preview_token: pending_token,
+                reaction_id: "parry".to_owned(),
+            })
+            .unwrap();
+        let opponent = reacted
+            .encounter
+            .as_ref()
+            .unwrap()
+            .characters
+            .iter()
+            .find(|character| character.id == OPPONENT.raw())
+            .unwrap();
+        assert!(opponent
+            .resources
+            .iter()
+            .any(|resource| resource.id == "guard" && resource.current == 1));
+        assert!(opponent
+            .effects
+            .iter()
+            .any(|effect| effect.starts_with("Parry Stance")));
+
+        assert_pending_save_is_unchanged(&runtime, &reacted);
+    }
+
+    fn assert_pending_save_is_unchanged(runtime: &GameRuntime, before: &GameSnapshotDto) {
+        let session_before = runtime.session.as_ref().unwrap().encode_save().unwrap();
+        assert!(matches!(
+            runtime.encode_save_at(before.revision),
+            Err(GameRuntimeError::PendingActionCannotBeSaved)
+        ));
+        assert_eq!(runtime.snapshot().unwrap(), *before);
+        assert_eq!(
+            runtime.session.as_ref().unwrap().encode_save().unwrap(),
+            session_before
+        );
     }
 
     #[test]

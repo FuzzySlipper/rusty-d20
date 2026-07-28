@@ -108,8 +108,14 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
       }
 
       button:disabled {
-        cursor: wait;
+        cursor: not-allowed;
         opacity: 0.5;
+      }
+
+      .save-hint {
+        color: var(--rusty-engine-muted);
+        font-size: 0.72rem;
+        max-width: 19rem;
       }
 
       .primary {
@@ -347,7 +353,23 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
               >
                 {{ snapshot.saved ? 'Saved' : 'Unsaved changes' }}
               </span>
-              <button type="button" [disabled]="store.busy()" (click)="save()">Save</button>
+              <button
+                type="button"
+                [disabled]="store.busy() || snapshot.encounter.pendingAction !== null"
+                [attr.title]="
+                  snapshot.encounter.pendingAction !== null
+                    ? 'Resolve the pending action before saving'
+                    : null
+                "
+                (click)="save()"
+              >
+                Save
+              </button>
+              @if (snapshot.encounter.pendingAction !== null) {
+                <span class="save-hint" role="status">
+                  Resolve the pending action before saving.
+                </span>
+              }
               <button type="button" [disabled]="store.busy()" (click)="advanceTurn()">
                 Advance turn
               </button>

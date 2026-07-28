@@ -90,10 +90,13 @@ graph in `boundaries.json`; production code cannot import testing fixtures.
 seed/roll position, caller-owned turn, and canonical entity snapshot. The
 product save wraps it with strict schema, product revision, next operation/log
 identities, and the bounded explanatory log. Opaque previews are intentionally
-not durable. Compiled definitions are not copied into live saves. Reopen
-requires the matching immutable ruleset, reconstructs registered components,
-validates mechanics and d20 references, reacquires non-durable component
-revisions, and continues deterministic rolls without replay.
+not durable, so save rejects before file mutation while an action is pending;
+the user must resolve it first. This includes a pending action whose reaction
+has already committed resource and effect changes. Compiled definitions are not
+copied into live saves. Reopen requires the matching immutable ruleset,
+reconstructs registered components, validates mechanics and d20 references,
+reacquires non-durable component revisions, and continues deterministic rolls
+without replay.
 
 `advance_turn` is an explicit downstream command that expires recorded effect
 instances atomically. There is no clock callback, tick subscription, event bus,

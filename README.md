@@ -25,7 +25,8 @@ pnpm run serve:local
 
 Open the printed `BASE_URL`. With no prior save, start **The Warden's Gate**.
 The host writes an explicit save to `target/rusty-d20/save.json`; stopping and
-starting the command again reopens it.
+starting the command again reopens it. Resolve any pending action before saving;
+the Rust host rejects pending saves before changing the existing save file.
 
 ## Verify
 

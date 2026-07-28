@@ -17,9 +17,10 @@ yet a broad d20 game.
   `target/rusty-d20/save.json`. There is no save-slot UI, cloud/storage policy,
   authentication, TLS, multi-user coordination, or migration between Engine or
   ruleset revisions.
-- Opaque action previews are process-local and intentionally not saved. A
-  reopened user selects the action again; committed entity state, turn, RNG
-  position, operation/log identities, and bounded receipt explanations persist.
+- Opaque action previews are process-local and intentionally not saved. Save is
+  unavailable until the pending action is resolved, including after a reaction
+  commits its cost and effect. Completed entity state, turn, RNG position,
+  operation/log identities, and bounded receipt explanations persist.
 - The retained inventory/equipment and world-navigation widgets remain
   product-neutral building blocks. They are not Rusty D20 product proof until a
   later downstream feature connects them to Rust-owned projections.
