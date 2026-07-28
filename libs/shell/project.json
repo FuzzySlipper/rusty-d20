@@ -1,0 +1,1 @@
+{"name":"shell","$schema":"../../node_modules/nx/schemas/project-schema.json","sourceRoot":"libs/shell/src","projectType":"library","tags":["type:lib","scope:shell"],"targets":{"lint":{"executor":"@nx/eslint:lint"},"typecheck":{"executor":"nx:run-commands","options":{"command":"tsc -p libs/shell/tsconfig.lib.json --noEmit"}}}}

@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = ["rust/crates/rusty-d20"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

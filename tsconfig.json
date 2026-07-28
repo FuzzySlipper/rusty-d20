@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "files": [],
+  "references": [
+    { "path": "apps/app/tsconfig.app.json" },
+    { "path": "apps/app-e2e/tsconfig.json" },
+    { "path": "libs/components/tsconfig.lib.json" },
+    { "path": "libs/domain/tsconfig.lib.json" },
+    { "path": "libs/platform/tsconfig.lib.json" },
+    { "path": "libs/protocol/tsconfig.lib.json" },
+    { "path": "libs/renderer/tsconfig.lib.json" },
+    { "path": "libs/shell/tsconfig.lib.json" },
+    { "path": "libs/store/tsconfig.lib.json" },
+    { "path": "libs/testing-fixtures/tsconfig.lib.json" },
+    { "path": "libs/theme/tsconfig.lib.json" },
+    { "path": "libs/transport/tsconfig.lib.json" }
+  ]
+}

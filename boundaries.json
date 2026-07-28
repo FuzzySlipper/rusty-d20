@@ -1,0 +1,34 @@
+{
+  "scopes": [
+    "protocol",
+    "platform",
+    "transport",
+    "domain",
+    "store",
+    "renderer",
+    "components",
+    "feature",
+    "shell",
+    "theme",
+    "testing-fixtures"
+  ],
+  "typeConstraints": [
+    { "sourceTag": "type:app", "onlyDependOnLibsWithTags": ["type:lib", "type:feature"] },
+    { "sourceTag": "type:lib", "onlyDependOnLibsWithTags": ["type:lib"] },
+    { "sourceTag": "type:feature", "onlyDependOnLibsWithTags": ["type:lib"] },
+    { "sourceTag": "type:testing", "onlyDependOnLibsWithTags": ["type:app", "type:lib", "type:feature", "type:testing"] }
+  ],
+  "scopeConstraints": [
+    { "sourceTag": "scope:protocol", "onlyDependOnLibsWithTags": [] },
+    { "sourceTag": "scope:platform", "onlyDependOnLibsWithTags": [] },
+    { "sourceTag": "scope:transport", "onlyDependOnLibsWithTags": ["scope:protocol", "scope:platform"] },
+    { "sourceTag": "scope:domain", "onlyDependOnLibsWithTags": ["scope:protocol"] },
+    { "sourceTag": "scope:store", "onlyDependOnLibsWithTags": ["scope:protocol", "scope:platform", "scope:transport", "scope:domain"] },
+    { "sourceTag": "scope:renderer", "onlyDependOnLibsWithTags": ["scope:domain", "scope:components", "scope:theme"] },
+    { "sourceTag": "scope:components", "onlyDependOnLibsWithTags": ["scope:theme"] },
+    { "sourceTag": "scope:feature", "onlyDependOnLibsWithTags": ["scope:protocol", "scope:platform", "scope:domain", "scope:store", "scope:renderer", "scope:components", "scope:theme"] },
+    { "sourceTag": "scope:shell", "onlyDependOnLibsWithTags": ["scope:shell", "scope:feature", "scope:platform", "scope:store", "scope:theme"] },
+    { "sourceTag": "scope:theme", "onlyDependOnLibsWithTags": [] },
+    { "sourceTag": "scope:testing-fixtures", "onlyDependOnLibsWithTags": ["scope:protocol", "scope:platform", "scope:transport", "scope:domain", "scope:store", "scope:renderer", "scope:components", "scope:feature", "scope:shell", "scope:theme"] }
+  ]
+}

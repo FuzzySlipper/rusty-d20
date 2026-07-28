@@ -1,0 +1,1 @@
+{"name":"testing-fixtures","$schema":"../../node_modules/nx/schemas/project-schema.json","sourceRoot":"libs/testing-fixtures/src","projectType":"library","tags":["type:testing","scope:testing-fixtures"],"targets":{"lint":{"executor":"@nx/eslint:lint"},"typecheck":{"executor":"nx:run-commands","options":{"command":"tsc -p libs/testing-fixtures/tsconfig.lib.json --noEmit"}}}}

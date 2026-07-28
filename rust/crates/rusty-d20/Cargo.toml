@@ -1,0 +1,33 @@
+[package]
+name = "rusty-d20"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = "0.8"
+core-ids = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
+entity-state = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
+gameplay-mechanics = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
+gameplay-rules = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
+tower-http = { version = "0.6", features = ["fs", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ts-rs = { version = "11", features = ["serde-compat"] }
+
+[dev-dependencies]
+http-body-util = "0.1"
+serde_json = "1"
+tower = { version = "0.5", features = ["util"] }
+
+[[bin]]
+name = "rusty-d20-host"
+path = "src/bin/host.rs"
+
+[[bin]]
+name = "rusty-d20-protocol"
+path = "src/bin/protocol.rs"

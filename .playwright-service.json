@@ -1,0 +1,11 @@
+{
+  "projectId": "rusty-d20",
+  "serveCommand": "cargo run -p rusty-d20 --bin rusty-d20-host -- --address 127.0.0.1:{port}",
+  "healthUrl": "http://127.0.0.1:{port}/healthz",
+  "readyText": "Rusty D20",
+  "playwrightConfig": "apps/app-e2e/playwright.config.mts",
+  "artifactPolicy": {
+    "root": "test-results",
+    "liveSubdir": "live-artifacts"
+  }
+}

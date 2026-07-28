@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "../../dist/out-tsc/app-e2e",
+    "types": ["node", "@playwright/test"]
+  },
+  "include": ["src/**/*.ts", "playwright.config.mts"]
+}
