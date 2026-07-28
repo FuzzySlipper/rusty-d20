@@ -44,6 +44,15 @@ effects, stats, tracks, and attributed sources remain Engine mechanisms.
 Ability modifiers, candidate meaning, attack checks, reactions, effect
 deadlines, turn advancement, and save policy remain Rusty D20 meaning.
 
+The camp loadout uses the same canonical `EntityState`: characters and the camp
+stash carry `InventoryComponent`, unique armor entities use containment plus
+`ItemComponent`, and `EquipmentComponent` is the only assignment authority.
+Rusty D20 owns the fixed starter items, slot meaning, camp-only command policy,
+inventory presentation order, and product revision. Engine services own
+capacity, containment, equipment, prospective track validation, and attributed
+stat-source mutation. The browser receives immutable loadout and defense
+readouts and never maintains a shadow inventory.
+
 Preview records exact relevant component revisions. Applying a reaction changes
 resource and effect components, so callers must acquire a fresh action preview.
 Unrelated entity changes do not invalidate a preview.
@@ -72,8 +81,8 @@ dependencies. See [rules authoring](rules-authoring.md).
 ## Transport and protocol
 
 `rusty-d20-host` serves the Angular build plus read-only session projection and
-typed new-adventure, enter-encounter, preview, reaction, action, turn, and save
-commands from one origin. Rust DTOs generate
+typed new-adventure, loadout equip/unequip/transfer, enter-encounter, preview,
+reaction, action, turn, and save commands from one origin. Rust DTOs generate
 `libs/protocol/src/generated/api-types.ts`. The protocol layer strictly decodes
 unknown JSON with collection bounds; transport preserves typed HTTP rejection;
 domain projects a view; store owns async UI state and rejects late responses by
@@ -94,18 +103,22 @@ graph in `boundaries.json`; production code cannot import testing fixtures.
 
 `D20Session` saves the exact Engine revision, ruleset fingerprint, explicit RNG
 seed/roll position, caller-owned turn, and canonical entity snapshot. Product
-save schema 2 wraps it with strict campaign identity and phase, product
+session save schema 2 includes the catalog-v2 inventory/equipment state.
+Product save schema 3 wraps it with strict campaign identity and phase, product
 revision, next operation/log identities, and the bounded explanatory log.
-Schema 1 D20G0 saves migrate deterministically to the active Iron Warden
-encounter; unknown schemas and inconsistent phase/encounter pairs reject rather
-than defaulting or discarding state. Opaque previews are intentionally not
-durable, so save rejects before file mutation while an action is pending; the
-user must resolve it first. This includes a pending action whose reaction has
-already committed resource and effect changes. Compiled definitions are not
-copied into live saves. Reopen requires the matching immutable ruleset,
-reconstructs registered components, validates mechanics and d20 references,
-reacquires non-durable component revisions, and continues the exact camp or
-encounter phase and deterministic rolls without replay.
+Product schema 1 D20G0 saves and schema 2 D20G1A saves migrate deterministically:
+the old mechanics catalog is upgraded and the fixed starter loadout is
+installed without replay. Schema 1 also establishes the active Iron Warden
+encounter. Unknown schemas, partial loadouts, and inconsistent
+phase/encounter pairs reject rather than defaulting or discarding state.
+Opaque previews are intentionally not durable, so save rejects before file
+mutation while an action is pending; the user must resolve it first. This
+includes a pending action whose reaction has already committed resource and
+effect changes. Compiled definitions are not copied into live saves. Reopen
+requires the matching immutable ruleset, reconstructs registered components,
+validates mechanics, d20 references, and product loadout identities, reacquires
+non-durable component revisions, and continues the exact camp or encounter
+phase, loadout, and deterministic rolls without replay.
 
 `advance_turn` is an explicit downstream command that expires recorded effect
 instances atomically. There is no clock callback, tick subscription, event bus,

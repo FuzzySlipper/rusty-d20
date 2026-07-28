@@ -7,19 +7,23 @@ import {
   type ApplyReactionRequestDto,
   type ClassifiedError,
   type EnterEncounterRequestDto,
+  type EquipItemRequestDto,
   type GameSnapshotDto,
   type PreviewActionRequestDto,
   type Result,
   type RuntimeReadoutDto,
+  type TransferItemRequestDto,
+  type UnequipItemRequestDto,
 } from '@rusty-d20/protocol';
 
 export interface RustyD20Transport {
   readonly loadReadout: () => Promise<Result<RuntimeReadoutDto>>;
   readonly loadSession: () => Promise<Result<GameSnapshotDto>>;
   readonly newAdventure: (expectedRevision: number) => Promise<Result<GameSnapshotDto>>;
-  readonly enterEncounter: (
-    request: EnterEncounterRequestDto,
-  ) => Promise<Result<GameSnapshotDto>>;
+  readonly enterEncounter: (request: EnterEncounterRequestDto) => Promise<Result<GameSnapshotDto>>;
+  readonly equipItem: (request: EquipItemRequestDto) => Promise<Result<GameSnapshotDto>>;
+  readonly unequipItem: (request: UnequipItemRequestDto) => Promise<Result<GameSnapshotDto>>;
+  readonly transferItem: (request: TransferItemRequestDto) => Promise<Result<GameSnapshotDto>>;
   readonly previewAction: (request: PreviewActionRequestDto) => Promise<Result<GameSnapshotDto>>;
   readonly applyReaction: (request: ApplyReactionRequestDto) => Promise<Result<GameSnapshotDto>>;
   readonly applyAction: (request: ApplyActionRequestDto) => Promise<Result<GameSnapshotDto>>;
@@ -28,10 +32,8 @@ export interface RustyD20Transport {
 }
 
 export function createHttpRustyD20Transport(http: HttpPort): RustyD20Transport {
-  const get = async <T>(
-    path: string,
-    decode: (value: unknown) => Result<T>,
-  ): Promise<Result<T>> => request(() => http.getJson(path), decode);
+  const get = async <T>(path: string, decode: (value: unknown) => Result<T>): Promise<Result<T>> =>
+    request(() => http.getJson(path), decode);
   const post = async <T>(
     path: string,
     body: unknown,
@@ -44,6 +46,9 @@ export function createHttpRustyD20Transport(http: HttpPort): RustyD20Transport {
     newAdventure: (expectedRevision) =>
       post('/api/v1/session/new', { expectedRevision }, decodeGameSnapshot),
     enterEncounter: (body) => post('/api/v1/session/encounter', body, decodeGameSnapshot),
+    equipItem: (body) => post('/api/v1/session/loadout/equip', body, decodeGameSnapshot),
+    unequipItem: (body) => post('/api/v1/session/loadout/unequip', body, decodeGameSnapshot),
+    transferItem: (body) => post('/api/v1/session/loadout/transfer', body, decodeGameSnapshot),
     previewAction: (body) => post('/api/v1/session/preview', body, decodeGameSnapshot),
     applyReaction: (body) => post('/api/v1/session/reaction', body, decodeGameSnapshot),
     applyAction: (body) => post('/api/v1/session/action', body, decodeGameSnapshot),

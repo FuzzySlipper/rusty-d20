@@ -91,8 +91,10 @@ into the start of one durable Rust-owned adventure. Character status, hotbar,
 and combat log remain real encounter surfaces. Character status is also reused
 for the real camp hero projection.
 
-The retained inventory and equipment widgets remain reserved for the later
-Engine-backed camp slice. Compass and minimap remain excluded until Rusty D20
+D20G1B connects the retained inventory and equipment widgets to strict
+Rust-owned projections and named loadout commands. The widgets remain
+presentational; Engine inventory, containment, equipment, capacity, and source
+facts stay authoritative. Compass and minimap remain excluded until Rusty D20
 owns real navigation facts, and settings remain deferred until the product has
 meaningful settings to expose. No fixture-driven donor screen or second UI
 authority was reintroduced.

@@ -1,30 +1,37 @@
+use std::collections::BTreeMap;
+
 use core_ids::EntityId;
 use entity_state::ComponentAccessError;
 use gameplay_mechanics::{
-    ActiveEffectsComponent, DecisionOutcome, EffectInstanceId, OperationId, ResponseDecisionKind,
-    SourceInstanceIdentity, StatContribution, TracksComponent,
+    ActiveEffectsComponent, DecisionOutcome, EffectInstanceId, EquipmentComponent,
+    InventoryComponent, ItemComponent, MechanicsError, OperationId, ResponseDecisionKind,
+    SourceInstanceIdentity, StatContribution, StatService, TracksComponent,
 };
 use gameplay_rules::AdmittedRulePackage;
 use serde::{Deserialize, Serialize};
 use svc_rng::RngSeed;
 use ts_rs::TS;
 
+use crate::compiler::defense_stat_id;
 use crate::{
     AbilityScore, ActionPreview, ActionResource, ActionResourcesComponent, AffinitySeed,
     ApplyActionRequest, ArmorItemSeed, CharacterSeed, D20CompileError, D20Id, D20Ruleset,
-    D20Session, D20SessionError, DamageAffinity, ReactionReceipt, ScheduledEffectsComponent,
-    SessionSaveError, ENGINE_REVISION,
+    D20Session, D20SessionError, DamageAffinity, InventorySeed, ReactionReceipt,
+    ScheduledEffectsComponent, SessionSaveError, StorageSeed, ENGINE_REVISION,
 };
 
-const GAME_SAVE_SCHEMA_VERSION: u32 = 2;
-const LEGACY_GAME_SAVE_SCHEMA_VERSION: u32 = 1;
+const GAME_SAVE_SCHEMA_VERSION: u32 = 3;
 const ADVENTURE_ID: &str = "wardens-gate";
 const ADVENTURE_TITLE: &str = "The Warden's Gate";
 const ENCOUNTER_ID: &str = "iron-warden";
 const ENCOUNTER_TITLE: &str = "The Iron Warden";
 const PLAYER: EntityId = EntityId::new(101);
 const OPPONENT: EntityId = EntityId::new(102);
+const CAMP_STASH: EntityId = EntityId::new(103);
 const OPPONENT_ARMOR: EntityId = EntityId::new(201);
+const PLAYER_CHAIN_ARMOR: EntityId = EntityId::new(202);
+const PLAYER_BUCKLER: EntityId = EntityId::new(203);
+const STASH_BUCKLER: EntityId = EntityId::new(204);
 const MAX_LOG_ENTRIES: usize = 64;
 const MAX_LOG_DETAILS: usize = 32;
 const MAX_LOG_SOURCE_BYTES: usize = 128;
@@ -163,6 +170,69 @@ pub struct EncounterChoiceDto {
     pub summary: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum LoadoutRarityDto {
+    Common,
+    Uncommon,
+    Rare,
+    Epic,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LoadoutItemDto {
+    #[ts(type = "number")]
+    pub entity_id: u64,
+    pub definition_id: String,
+    pub name: String,
+    pub icon: String,
+    pub rarity: LoadoutRarityDto,
+    #[ts(type = "number")]
+    pub quantity: u64,
+    pub equipment_slot_id: String,
+    pub equipped_slot_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct EquipmentSlotDto {
+    pub id: String,
+    pub label: String,
+    pub equipped: Option<LoadoutItemDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LoadoutCapacityDto {
+    pub metric: String,
+    #[ts(type = "number")]
+    pub used: u64,
+    #[ts(type = "number")]
+    pub maximum: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LoadoutDto {
+    #[ts(type = "number")]
+    pub owner_id: u64,
+    #[ts(type = "number")]
+    pub stash_owner_id: u64,
+    pub inventory_slots: Vec<Option<LoadoutItemDto>>,
+    pub equipment_slots: Vec<EquipmentSlotDto>,
+    pub stash_items: Vec<LoadoutItemDto>,
+    pub capacity: LoadoutCapacityDto,
+    #[ts(type = "number")]
+    pub armor_defense: i64,
+    pub armor_defense_sources: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
@@ -171,6 +241,7 @@ pub struct CampaignDto {
     pub title: String,
     pub phase: CampaignPhaseDto,
     pub hero: CharacterDto,
+    pub loadout: LoadoutDto,
     pub active_encounter_id: Option<String>,
     pub available_encounters: Vec<EncounterChoiceDto>,
 }
@@ -205,6 +276,41 @@ pub struct EnterEncounterRequestDto {
     #[ts(type = "number")]
     pub expected_revision: u64,
     pub encounter_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct EquipItemRequestDto {
+    #[ts(type = "number")]
+    pub expected_revision: u64,
+    #[ts(type = "number")]
+    pub item_id: u64,
+    pub slot_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct UnequipItemRequestDto {
+    #[ts(type = "number")]
+    pub expected_revision: u64,
+    #[ts(type = "number")]
+    pub item_id: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct TransferItemRequestDto {
+    #[ts(type = "number")]
+    pub expected_revision: u64,
+    #[ts(type = "number")]
+    pub item_id: u64,
+    #[ts(type = "number")]
+    pub from_owner_id: u64,
+    #[ts(type = "number")]
+    pub to_owner_id: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -245,6 +351,11 @@ pub struct ApplyActionRequestDto {
 pub enum ApiErrorKindDto {
     Stale,
     Invalid,
+    InvalidSlot,
+    Capacity,
+    Containment,
+    TrackBound,
+    Phase,
     NotFound,
     Persistence,
     Internal,
@@ -264,6 +375,15 @@ struct PendingAction {
     serial: u64,
     token: String,
     preview: ActionPreview,
+}
+
+#[derive(Debug)]
+struct RestoreData {
+    revision: u64,
+    next_operation: u64,
+    next_log_id: u64,
+    log: Vec<GameLogEntryDto>,
+    session: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -318,19 +438,38 @@ impl GameRuntime {
         let envelope: SaveEnvelope = serde_json::from_value(value.clone())?;
         let rules = starter_ruleset()?;
         match envelope.schema_version {
-            LEGACY_GAME_SAVE_SCHEMA_VERSION => {
+            1 => {
                 let save: LegacyGameSave = serde_json::from_value(value)?;
                 Self::restore(
                     rules,
-                    save.revision,
-                    save.next_operation,
-                    save.next_log_id,
-                    save.log,
-                    save.session,
+                    RestoreData {
+                        revision: save.revision,
+                        next_operation: save.next_operation,
+                        next_log_id: save.next_log_id,
+                        log: save.log,
+                        session: save.session,
+                    },
                     CampaignState {
                         phase: CampaignPhase::Encounter,
                         active_encounter_id: Some(ENCOUNTER_ID.to_owned()),
                     },
+                    true,
+                )
+            }
+            2 => {
+                let save: GameSave = serde_json::from_value(value)?;
+                let campaign = validate_campaign_save(save.campaign)?;
+                Self::restore(
+                    rules,
+                    RestoreData {
+                        revision: save.revision,
+                        next_operation: save.next_operation,
+                        next_log_id: save.next_log_id,
+                        log: save.log,
+                        session: save.session,
+                    },
+                    campaign,
+                    true,
                 )
             }
             GAME_SAVE_SCHEMA_VERSION => {
@@ -338,12 +477,15 @@ impl GameRuntime {
                 let campaign = validate_campaign_save(save.campaign)?;
                 Self::restore(
                     rules,
-                    save.revision,
-                    save.next_operation,
-                    save.next_log_id,
-                    save.log,
-                    save.session,
+                    RestoreData {
+                        revision: save.revision,
+                        next_operation: save.next_operation,
+                        next_log_id: save.next_log_id,
+                        log: save.log,
+                        session: save.session,
+                    },
                     campaign,
+                    false,
                 )
             }
             actual => Err(GameRuntimeError::UnsupportedSaveSchema { actual }),
@@ -352,26 +494,32 @@ impl GameRuntime {
 
     fn restore(
         rules: D20Ruleset,
-        revision: u64,
-        next_operation: u64,
-        next_log_id: u64,
-        log: Vec<GameLogEntryDto>,
-        session: serde_json::Value,
+        data: RestoreData,
         campaign: CampaignState,
+        legacy: bool,
     ) -> Result<Self, GameRuntimeError> {
-        let session_json = serde_json::to_string(&session)?;
-        let session = D20Session::decode_save(rules.clone(), &session_json)?;
-        if next_operation == 0 || next_log_id == 0 || log.len() > MAX_LOG_ENTRIES {
+        let session_json = serde_json::to_string(&data.session)?;
+        let mut session = D20Session::decode_save(rules.clone(), &session_json)?;
+        if legacy
+            && session
+                .entities()
+                .component::<InventoryComponent>(PLAYER)?
+                .is_none()
+        {
+            install_product_loadout(&mut session)?;
+        }
+        validate_product_state(&session)?;
+        if data.next_operation == 0 || data.next_log_id == 0 || data.log.len() > MAX_LOG_ENTRIES {
             return Err(GameRuntimeError::InvalidSave(
                 "operation/log counters or bounded log are invalid".to_owned(),
             ));
         }
-        if log.windows(2).any(|pair| pair[0].id >= pair[1].id) {
+        if data.log.windows(2).any(|pair| pair[0].id >= pair[1].id) {
             return Err(GameRuntimeError::InvalidSave(
                 "log identities are not in strict order".to_owned(),
             ));
         }
-        if log.iter().any(|entry| {
+        if data.log.iter().any(|entry| {
             entry.id == 0
                 || entry.source.len() > MAX_LOG_SOURCE_BYTES
                 || entry.text.len() > MAX_LOG_TEXT_BYTES
@@ -380,23 +528,28 @@ impl GameRuntime {
                     .details
                     .iter()
                     .any(|detail| detail.len() > MAX_LOG_DETAIL_BYTES)
-        }) || log.last().is_some_and(|entry| next_log_id <= entry.id)
+        }) || data
+            .log
+            .last()
+            .is_some_and(|entry| data.next_log_id <= entry.id)
         {
             return Err(GameRuntimeError::InvalidSave(
                 "log entry bounds or next identity are invalid".to_owned(),
             ));
         }
-        Ok(Self {
+        let runtime = Self {
             rules,
             campaign: Some(campaign),
             session: Some(session),
-            revision,
-            saved_revision: Some(revision),
-            next_operation,
-            next_log_id,
+            revision: data.revision,
+            saved_revision: Some(data.revision),
+            next_operation: data.next_operation,
+            next_log_id: data.next_log_id,
             pending: None,
-            log,
-        })
+            log: data.log,
+        };
+        runtime.snapshot()?;
+        Ok(runtime)
     }
 
     pub fn encode_save(&self) -> Result<String, GameRuntimeError> {
@@ -481,7 +634,7 @@ impl GameRuntime {
             ));
         }
         self.ensure_mutation_capacity(false, true)?;
-        let mut session = D20Session::new(
+        let mut session = D20Session::new_with_loadout(
             self.rules.clone(),
             RngSeed::new(0xD20_2026),
             vec![
@@ -497,12 +650,22 @@ impl GameRuntime {
                     }],
                 ),
             ],
-            vec![ArmorItemSeed {
-                entity: OPPONENT_ARMOR,
-                owner: OPPONENT,
-                name: "Warden chain armor".to_owned(),
-                armor: id("chain-armor")?,
+            vec![
+                InventorySeed {
+                    owner: PLAYER,
+                    maximum_items: 2,
+                },
+                InventorySeed {
+                    owner: OPPONENT,
+                    maximum_items: 1,
+                },
+            ],
+            vec![StorageSeed {
+                entity: CAMP_STASH,
+                name: "Camp stash".to_owned(),
+                maximum_items: 8,
             }],
+            product_armor_items()?,
         )?;
         session.equip_armor(
             OPPONENT,
@@ -510,6 +673,7 @@ impl GameRuntime {
             &id("chain-armor")?,
             operation("equip-warden-chain")?,
         )?;
+        equip_initial_player_loadout(&mut session)?;
         self.campaign = Some(CampaignState {
             phase: CampaignPhase::Camp,
             active_encounter_id: None,
@@ -569,6 +733,122 @@ impl GameRuntime {
             vec![
                 "Iron Warden's chain armor and slashing resistance are active sources.".to_owned(),
             ],
+        )?;
+        self.snapshot()
+    }
+
+    pub fn equip_item(
+        &mut self,
+        request: EquipItemRequestDto,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        self.ensure_revision(request.expected_revision)?;
+        self.ensure_camp_phase()?;
+        self.ensure_mutation_capacity(true, true)?;
+        let item = entity(request.item_id)?;
+        let armor = product_loadout_armor(item)?;
+        let definition = self
+            .rules
+            .armor(&armor)
+            .expect("fixed product armor exists in the starter ruleset")
+            .clone();
+        if request.slot_id != definition.slot.as_str() {
+            return Err(GameRuntimeError::InvalidEquipmentSlot {
+                requested: request.slot_id,
+                required: definition.slot.to_string(),
+            });
+        }
+        let serial = self.next_operation;
+        self.session_mut()?.equip_armor(
+            PLAYER,
+            item,
+            &armor,
+            operation(&format!("equip-item-{serial}"))?,
+        )?;
+        self.next_operation = serial + 1;
+        self.bump_revision()?;
+        self.saved_revision = None;
+        self.push_log(
+            GameLogKindDto::System,
+            "Loadout",
+            &format!("Equipped {}.", humanize(armor.as_str())),
+            vec![format!(
+                "{} now occupies the {} slot.",
+                humanize(armor.as_str()),
+                humanize(definition.slot.as_str())
+            )],
+        )?;
+        self.snapshot()
+    }
+
+    pub fn unequip_item(
+        &mut self,
+        request: UnequipItemRequestDto,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        self.ensure_revision(request.expected_revision)?;
+        self.ensure_camp_phase()?;
+        self.ensure_mutation_capacity(true, true)?;
+        let item = entity(request.item_id)?;
+        let armor = product_loadout_armor(item)?;
+        let serial = self.next_operation;
+        self.session_mut()?.unequip_armor(
+            PLAYER,
+            item,
+            operation(&format!("unequip-item-{serial}"))?,
+        )?;
+        self.next_operation = serial + 1;
+        self.bump_revision()?;
+        self.saved_revision = None;
+        self.push_log(
+            GameLogKindDto::System,
+            "Loadout",
+            &format!("Unequipped {}.", humanize(armor.as_str())),
+            vec!["The item remains in Mara Venn's inventory.".to_owned()],
+        )?;
+        self.snapshot()
+    }
+
+    pub fn transfer_item(
+        &mut self,
+        request: TransferItemRequestDto,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        self.ensure_revision(request.expected_revision)?;
+        self.ensure_camp_phase()?;
+        self.ensure_mutation_capacity(true, true)?;
+        let item = entity(request.item_id)?;
+        let armor = product_loadout_armor(item)?;
+        let from_owner = entity(request.from_owner_id)?;
+        let to_owner = entity(request.to_owner_id)?;
+        if !matches!(
+            (from_owner, to_owner),
+            (PLAYER, CAMP_STASH) | (CAMP_STASH, PLAYER)
+        ) {
+            return Err(GameRuntimeError::InvalidContainment(
+                "loadout transfers are limited to Mara Venn and the camp stash".to_owned(),
+            ));
+        }
+        let serial = self.next_operation;
+        self.session_mut()?.transfer_armor(
+            item,
+            from_owner,
+            to_owner,
+            operation(&format!("transfer-item-{serial}"))?,
+        )?;
+        self.next_operation = serial + 1;
+        self.bump_revision()?;
+        self.saved_revision = None;
+        let destination = if to_owner == PLAYER {
+            "Mara Venn's inventory"
+        } else {
+            "the camp stash"
+        };
+        self.push_log(
+            GameLogKindDto::System,
+            "Loadout",
+            &format!("Moved {} to {destination}.", humanize(armor.as_str())),
+            vec![format!(
+                "Canonical containment now points to entity {}.",
+                to_owner.raw()
+            )],
         )?;
         self.snapshot()
     }
@@ -765,12 +1045,192 @@ impl GameRuntime {
                 CampaignPhase::Encounter => CampaignPhaseDto::Encounter,
             },
             hero: self.project_character(session, PLAYER, "Steel Adept")?,
+            loadout: self.project_loadout(session)?,
             active_encounter_id: campaign.active_encounter_id.clone(),
             available_encounters: vec![EncounterChoiceDto {
                 id: ENCOUNTER_ID.to_owned(),
                 title: ENCOUNTER_TITLE.to_owned(),
                 summary: "Challenge the armored sentinel guarding the mountain pass.".to_owned(),
             }],
+        })
+    }
+
+    fn project_loadout(&self, session: &D20Session) -> Result<LoadoutDto, GameRuntimeError> {
+        let inventory = session.inventory_view(PLAYER)?;
+        let equipment = session
+            .entities()
+            .component::<EquipmentComponent>(PLAYER)?
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState("player equipment component is missing".to_owned())
+            })?;
+        let equipped_by_item = equipment
+            .assignments()
+            .iter()
+            .map(|assignment| (assignment.item, assignment.slot.to_string()))
+            .collect::<BTreeMap<_, _>>();
+        let mut inventory_items = inventory
+            .unique_items()
+            .iter()
+            .map(|item| {
+                self.project_loadout_item(
+                    session,
+                    item.entity,
+                    equipped_by_item.get(&item.entity).cloned(),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let capacity = inventory
+            .capacity()
+            .iter()
+            .find(|usage| usage.metric.as_str() == "carried-items")
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(
+                    "player carried-items capacity is missing".to_owned(),
+                )
+            })?;
+        let maximum = capacity.maximum.ok_or_else(|| {
+            GameRuntimeError::InvalidState("player carried-items maximum is missing".to_owned())
+        })?;
+        let slot_count = usize::try_from(maximum).map_err(|_| {
+            GameRuntimeError::InvalidState(
+                "player inventory capacity does not fit memory".to_owned(),
+            )
+        })?;
+        if inventory_items.len() > slot_count {
+            return Err(GameRuntimeError::InvalidState(
+                "player inventory exceeds its projected slot count".to_owned(),
+            ));
+        }
+        let mut inventory_slots = inventory_items
+            .drain(..)
+            .map(Some)
+            .collect::<Vec<Option<LoadoutItemDto>>>();
+        inventory_slots.resize(slot_count, None);
+
+        let mut slot_items = BTreeMap::new();
+        for assignment in equipment.assignments() {
+            slot_items.insert(
+                assignment.slot.to_string(),
+                self.project_loadout_item(
+                    session,
+                    assignment.item,
+                    Some(assignment.slot.to_string()),
+                )?,
+            );
+        }
+        let equipment_slots = self
+            .rules
+            .armors()
+            .map(|armor| armor.slot.clone())
+            .fold(BTreeMap::<String, D20Id>::new(), |mut slots, slot| {
+                slots.entry(slot.to_string()).or_insert(slot);
+                slots
+            })
+            .into_iter()
+            .map(|(slot, definition)| EquipmentSlotDto {
+                id: slot.clone(),
+                label: humanize(definition.as_str()),
+                equipped: slot_items.remove(&slot),
+            })
+            .collect::<Vec<_>>();
+
+        let stash = session.inventory_view(CAMP_STASH)?;
+        let stash_items = stash
+            .unique_items()
+            .iter()
+            .map(|item| self.project_loadout_item(session, item.entity, None))
+            .collect::<Result<Vec<_>, _>>()?;
+        let defense = StatService::evaluate(
+            session.entities(),
+            self.rules.mechanics(),
+            PLAYER,
+            &defense_stat_id(&id("armor")?),
+            &operation("project-loadout")?,
+            &[],
+        )
+        .map_err(D20SessionError::from)?;
+        Ok(LoadoutDto {
+            owner_id: PLAYER.raw(),
+            stash_owner_id: CAMP_STASH.raw(),
+            inventory_slots,
+            equipment_slots,
+            stash_items,
+            capacity: LoadoutCapacityDto {
+                metric: "carried-items".to_owned(),
+                used: capacity.used,
+                maximum,
+            },
+            armor_defense: defense.value.get(),
+            armor_defense_sources: defense
+                .decisions
+                .iter()
+                .map(|decision| {
+                    format!(
+                        "{}: {} ({})",
+                        source_label(&decision.source),
+                        stat_contribution_label(decision.contribution.as_ref()),
+                        outcome_label(decision.outcome)
+                    )
+                })
+                .collect(),
+        })
+    }
+
+    fn project_loadout_item(
+        &self,
+        session: &D20Session,
+        item: EntityId,
+        equipped_slot_id: Option<String>,
+    ) -> Result<LoadoutItemDto, GameRuntimeError> {
+        let armor = product_loadout_armor(item)?;
+        let definition = self.rules.armor(&armor).ok_or_else(|| {
+            GameRuntimeError::InvalidState(format!("loadout armor {armor} is missing"))
+        })?;
+        let component = session
+            .entities()
+            .component::<ItemComponent>(item)?
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(format!(
+                    "loadout item {} is missing ItemComponent",
+                    item.raw()
+                ))
+            })?;
+        let expected_definition = format!("armor.{armor}");
+        if component.definition().as_str() != expected_definition {
+            return Err(GameRuntimeError::InvalidState(format!(
+                "loadout item {} definition is inconsistent",
+                item.raw()
+            )));
+        }
+        let item_name = session
+            .entities()
+            .core(item)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(format!(
+                    "loadout item {} core facts are missing",
+                    item.raw()
+                ))
+            })?
+            .name
+            .clone();
+        let (icon, rarity) = match armor.as_str() {
+            "chain-armor" => ("🛡️", LoadoutRarityDto::Uncommon),
+            "buckler" => ("◈", LoadoutRarityDto::Common),
+            _ => {
+                return Err(GameRuntimeError::InvalidState(format!(
+                    "unsupported product armor {armor}"
+                )));
+            }
+        };
+        Ok(LoadoutItemDto {
+            entity_id: item.raw(),
+            definition_id: armor.to_string(),
+            name: item_name,
+            icon: icon.to_owned(),
+            rarity,
+            quantity: 1,
+            equipment_slot_id: definition.slot.to_string(),
+            equipped_slot_id,
         })
     }
 
@@ -1025,6 +1485,16 @@ impl GameRuntime {
         }
     }
 
+    fn ensure_camp_phase(&self) -> Result<(), GameRuntimeError> {
+        match self.campaign.as_ref().map(|campaign| campaign.phase) {
+            Some(CampaignPhase::Camp) => Ok(()),
+            Some(CampaignPhase::Encounter) => Err(GameRuntimeError::WrongPhase(
+                "loadout changes are only available at camp".to_owned(),
+            )),
+            None => Err(GameRuntimeError::NoEncounter),
+        }
+    }
+
     fn ensure_revision(&self, expected: u64) -> Result<(), GameRuntimeError> {
         if expected != self.revision {
             return Err(GameRuntimeError::StaleCommand(format!(
@@ -1124,6 +1594,9 @@ pub enum GameRuntimeError {
     PendingActionCannotBeSaved,
     StaleCommand(String),
     InvalidCommand(String),
+    InvalidEquipmentSlot { requested: String, required: String },
+    InvalidContainment(String),
+    WrongPhase(String),
     InvalidState(String),
     InvalidSave(String),
     UnsupportedSaveSchema { actual: u32 },
@@ -1141,6 +1614,13 @@ impl GameRuntimeError {
         let (kind, retryable) = match self {
             Self::StaleCommand(_) => (ApiErrorKindDto::Stale, true),
             Self::NoEncounter => (ApiErrorKindDto::NotFound, false),
+            Self::InvalidEquipmentSlot { .. } => (ApiErrorKindDto::InvalidSlot, false),
+            Self::InvalidContainment(_) => (ApiErrorKindDto::Containment, false),
+            Self::WrongPhase(_) => (ApiErrorKindDto::Phase, false),
+            Self::Session(D20SessionError::Mechanics(error)) => {
+                let kind = mechanics_api_error_kind(error);
+                (kind, kind == ApiErrorKindDto::Stale)
+            }
             Self::PendingActionCannotBeSaved | Self::InvalidCommand(_) | Self::D20Identity(_) => {
                 (ApiErrorKindDto::Invalid, false)
             }
@@ -1166,10 +1646,39 @@ impl std::fmt::Display for GameRuntimeError {
             }
             Self::StaleCommand(message)
             | Self::InvalidCommand(message)
+            | Self::InvalidContainment(message)
+            | Self::WrongPhase(message)
             | Self::InvalidState(message)
             | Self::InvalidSave(message) => formatter.write_str(message),
+            Self::InvalidEquipmentSlot {
+                requested,
+                required,
+            } => write!(
+                formatter,
+                "equipment slot {requested} is invalid; this item requires {required}"
+            ),
             _ => write!(formatter, "Rusty D20 product operation failed: {self:?}"),
         }
+    }
+}
+
+fn mechanics_api_error_kind(error: &MechanicsError) -> ApiErrorKindDto {
+    match error {
+        MechanicsError::StaleComponentRevision { .. } => ApiErrorKindDto::Stale,
+        MechanicsError::UnknownEquipmentSlot { .. }
+        | MechanicsError::EquipmentSlotOccupied { .. }
+        | MechanicsError::EquipmentSlotEmpty { .. }
+        | MechanicsError::EquipmentSlotCountMismatch { .. }
+        | MechanicsError::EquipmentSlotClassificationMismatch { .. }
+        | MechanicsError::EquipmentExclusivityConflict { .. } => ApiErrorKindDto::InvalidSlot,
+        MechanicsError::InventoryCapacityExceeded { .. }
+        | MechanicsError::InventoryContainmentQuotaExceeded { .. }
+        | MechanicsError::CapacityArithmeticOverflow { .. } => ApiErrorKindDto::Capacity,
+        MechanicsError::ItemNotContained { .. }
+        | MechanicsError::ItemEquipped { .. }
+        | MechanicsError::InventoryOwnerConflict { .. } => ApiErrorKindDto::Containment,
+        MechanicsError::EquipmentWouldInvalidateTrack { .. } => ApiErrorKindDto::TrackBound,
+        _ => ApiErrorKindDto::Invalid,
     }
 }
 
@@ -1247,6 +1756,191 @@ fn character_seed(
             ActionResource::new(D20Id::parse("resolve-points").expect("fixed id"), 2),
         ],
         affinities,
+    }
+}
+
+fn product_armor_items() -> Result<Vec<ArmorItemSeed>, GameRuntimeError> {
+    Ok(vec![
+        ArmorItemSeed {
+            entity: OPPONENT_ARMOR,
+            owner: OPPONENT,
+            name: "Warden chain armor".to_owned(),
+            armor: id("chain-armor")?,
+        },
+        ArmorItemSeed {
+            entity: PLAYER_CHAIN_ARMOR,
+            owner: PLAYER,
+            name: "Mara's chain armor".to_owned(),
+            armor: id("chain-armor")?,
+        },
+        ArmorItemSeed {
+            entity: PLAYER_BUCKLER,
+            owner: PLAYER,
+            name: "Mara's buckler".to_owned(),
+            armor: id("buckler")?,
+        },
+        ArmorItemSeed {
+            entity: STASH_BUCKLER,
+            owner: CAMP_STASH,
+            name: "Spare buckler".to_owned(),
+            armor: id("buckler")?,
+        },
+    ])
+}
+
+fn install_product_loadout(session: &mut D20Session) -> Result<(), GameRuntimeError> {
+    session.install_loadout(
+        vec![
+            InventorySeed {
+                owner: PLAYER,
+                maximum_items: 2,
+            },
+            InventorySeed {
+                owner: OPPONENT,
+                maximum_items: 1,
+            },
+        ],
+        vec![StorageSeed {
+            entity: CAMP_STASH,
+            name: "Camp stash".to_owned(),
+            maximum_items: 8,
+        }],
+        product_armor_items()?
+            .into_iter()
+            .filter(|item| item.entity != OPPONENT_ARMOR)
+            .collect(),
+    )?;
+    equip_initial_player_loadout(session)
+}
+
+fn validate_product_state(session: &D20Session) -> Result<(), GameRuntimeError> {
+    if session.entities().total_count() != 7 {
+        return Err(GameRuntimeError::InvalidSave(
+            "the Warden's Gate entity set is inconsistent".to_owned(),
+        ));
+    }
+    let inventory_owners = session
+        .entities()
+        .components::<InventoryComponent>()?
+        .map(|(entity, _)| entity)
+        .collect::<Vec<_>>();
+    if inventory_owners != [PLAYER, OPPONENT, CAMP_STASH] {
+        return Err(GameRuntimeError::InvalidSave(
+            "the Warden's Gate inventory owners are inconsistent".to_owned(),
+        ));
+    }
+    let item_entities = session
+        .entities()
+        .components::<ItemComponent>()?
+        .map(|(entity, _)| entity)
+        .collect::<Vec<_>>();
+    if item_entities
+        != [
+            OPPONENT_ARMOR,
+            PLAYER_CHAIN_ARMOR,
+            PLAYER_BUCKLER,
+            STASH_BUCKLER,
+        ]
+    {
+        return Err(GameRuntimeError::InvalidSave(
+            "the Warden's Gate item set is inconsistent".to_owned(),
+        ));
+    }
+
+    validate_inventory(session, PLAYER, 2)?;
+    validate_inventory(session, OPPONENT, 1)?;
+    validate_inventory(session, CAMP_STASH, 8)?;
+    if session.entities().contained_in(OPPONENT_ARMOR) != Some(OPPONENT) {
+        return Err(GameRuntimeError::InvalidSave(
+            "the Warden's armor containment is inconsistent".to_owned(),
+        ));
+    }
+    for item in [PLAYER_CHAIN_ARMOR, PLAYER_BUCKLER, STASH_BUCKLER] {
+        if !matches!(
+            session.entities().contained_in(item),
+            Some(PLAYER) | Some(CAMP_STASH)
+        ) {
+            return Err(GameRuntimeError::InvalidSave(format!(
+                "loadout item {} containment is inconsistent",
+                item.raw()
+            )));
+        }
+        let expected = product_loadout_armor(item)?;
+        let actual = session
+            .entities()
+            .component::<ItemComponent>(item)?
+            .expect("validated product item component exists");
+        if actual.definition().as_str() != format!("armor.{expected}") {
+            return Err(GameRuntimeError::InvalidSave(format!(
+                "loadout item {} definition is inconsistent",
+                item.raw()
+            )));
+        }
+    }
+    let opponent_equipment = session
+        .entities()
+        .component::<EquipmentComponent>(OPPONENT)?
+        .ok_or_else(|| GameRuntimeError::InvalidSave("opponent equipment is missing".to_owned()))?;
+    if opponent_equipment.assignments().len() != 1
+        || opponent_equipment.assignments()[0].item != OPPONENT_ARMOR
+        || opponent_equipment.assignments()[0].slot.as_str() != "body"
+    {
+        return Err(GameRuntimeError::InvalidSave(
+            "the Warden's equipment is inconsistent".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_inventory(
+    session: &D20Session,
+    owner: EntityId,
+    expected_maximum: u64,
+) -> Result<(), GameRuntimeError> {
+    let view = session.inventory_view(owner)?;
+    let capacity = view
+        .capacity()
+        .iter()
+        .find(|usage| usage.metric.as_str() == "carried-items")
+        .ok_or_else(|| {
+            GameRuntimeError::InvalidSave(format!(
+                "inventory {} carried-items capacity is missing",
+                owner.raw()
+            ))
+        })?;
+    if capacity.maximum != Some(expected_maximum) {
+        return Err(GameRuntimeError::InvalidSave(format!(
+            "inventory {} carried-items maximum is inconsistent",
+            owner.raw()
+        )));
+    }
+    Ok(())
+}
+
+fn equip_initial_player_loadout(session: &mut D20Session) -> Result<(), GameRuntimeError> {
+    session.equip_armor(
+        PLAYER,
+        PLAYER_CHAIN_ARMOR,
+        &id("chain-armor")?,
+        operation("equip-mara-chain")?,
+    )?;
+    session.equip_armor(
+        PLAYER,
+        PLAYER_BUCKLER,
+        &id("buckler")?,
+        operation("equip-mara-buckler")?,
+    )?;
+    Ok(())
+}
+
+fn product_loadout_armor(item: EntityId) -> Result<D20Id, GameRuntimeError> {
+    match item {
+        PLAYER_CHAIN_ARMOR => id("chain-armor"),
+        PLAYER_BUCKLER | STASH_BUCKLER => id("buckler"),
+        _ => Err(GameRuntimeError::InvalidCommand(format!(
+            "entity {} is not a player loadout item",
+            item.raw()
+        ))),
     }
 }
 
@@ -1377,6 +2071,201 @@ mod tests {
                 encounter_id: ENCOUNTER_ID.to_owned(),
             })
             .unwrap()
+    }
+
+    #[test]
+    fn camp_loadout_is_engine_backed_typed_atomic_and_persistent() {
+        let mut runtime = GameRuntime::empty().unwrap();
+        let camp = runtime.new_adventure(0).unwrap();
+        let loadout = &camp.campaign.as_ref().unwrap().loadout;
+        assert_eq!(loadout.capacity.used, 2);
+        assert_eq!(loadout.capacity.maximum, 2);
+        assert_eq!(loadout.armor_defense, 16);
+        assert_eq!(
+            loadout
+                .equipment_slots
+                .iter()
+                .find(|slot| slot.id == "body")
+                .unwrap()
+                .equipped
+                .as_ref()
+                .unwrap()
+                .entity_id,
+            PLAYER_CHAIN_ARMOR.raw()
+        );
+
+        let before_invalid = runtime.snapshot().unwrap();
+        let invalid_slot = runtime
+            .equip_item(EquipItemRequestDto {
+                expected_revision: camp.revision,
+                item_id: PLAYER_CHAIN_ARMOR.raw(),
+                slot_id: "off-hand".to_owned(),
+            })
+            .unwrap_err();
+        assert_eq!(invalid_slot.api_error().kind, ApiErrorKindDto::InvalidSlot);
+        assert_eq!(runtime.snapshot().unwrap(), before_invalid);
+
+        let capacity = runtime
+            .transfer_item(TransferItemRequestDto {
+                expected_revision: camp.revision,
+                item_id: STASH_BUCKLER.raw(),
+                from_owner_id: CAMP_STASH.raw(),
+                to_owner_id: PLAYER.raw(),
+            })
+            .unwrap_err();
+        assert_eq!(capacity.api_error().kind, ApiErrorKindDto::Capacity);
+        assert_eq!(runtime.snapshot().unwrap(), before_invalid);
+
+        let containment = runtime
+            .transfer_item(TransferItemRequestDto {
+                expected_revision: camp.revision,
+                item_id: PLAYER_CHAIN_ARMOR.raw(),
+                from_owner_id: PLAYER.raw(),
+                to_owner_id: CAMP_STASH.raw(),
+            })
+            .unwrap_err();
+        assert_eq!(containment.api_error().kind, ApiErrorKindDto::Containment);
+        assert_eq!(runtime.snapshot().unwrap(), before_invalid);
+
+        let chain_removed = runtime
+            .unequip_item(UnequipItemRequestDto {
+                expected_revision: camp.revision,
+                item_id: PLAYER_CHAIN_ARMOR.raw(),
+            })
+            .unwrap();
+        assert_eq!(
+            chain_removed
+                .campaign
+                .as_ref()
+                .unwrap()
+                .loadout
+                .armor_defense,
+            14
+        );
+        let chain_restored = runtime
+            .equip_item(EquipItemRequestDto {
+                expected_revision: chain_removed.revision,
+                item_id: PLAYER_CHAIN_ARMOR.raw(),
+                slot_id: "body".to_owned(),
+            })
+            .unwrap();
+        assert_eq!(
+            chain_restored
+                .campaign
+                .as_ref()
+                .unwrap()
+                .loadout
+                .armor_defense,
+            16
+        );
+
+        let buckler_removed = runtime
+            .unequip_item(UnequipItemRequestDto {
+                expected_revision: chain_restored.revision,
+                item_id: PLAYER_BUCKLER.raw(),
+            })
+            .unwrap();
+        let stored = runtime
+            .transfer_item(TransferItemRequestDto {
+                expected_revision: buckler_removed.revision,
+                item_id: PLAYER_BUCKLER.raw(),
+                from_owner_id: PLAYER.raw(),
+                to_owner_id: CAMP_STASH.raw(),
+            })
+            .unwrap();
+        let taken = runtime
+            .transfer_item(TransferItemRequestDto {
+                expected_revision: stored.revision,
+                item_id: STASH_BUCKLER.raw(),
+                from_owner_id: CAMP_STASH.raw(),
+                to_owner_id: PLAYER.raw(),
+            })
+            .unwrap();
+        let equipped = runtime
+            .equip_item(EquipItemRequestDto {
+                expected_revision: taken.revision,
+                item_id: STASH_BUCKLER.raw(),
+                slot_id: "off-hand".to_owned(),
+            })
+            .unwrap();
+        let equipped_loadout = &equipped.campaign.as_ref().unwrap().loadout;
+        assert_eq!(equipped_loadout.capacity.used, 2);
+        assert_eq!(
+            equipped_loadout
+                .equipment_slots
+                .iter()
+                .find(|slot| slot.id == "off-hand")
+                .unwrap()
+                .equipped
+                .as_ref()
+                .unwrap()
+                .entity_id,
+            STASH_BUCKLER.raw()
+        );
+
+        let stale_before = runtime.snapshot().unwrap();
+        let stale = runtime
+            .unequip_item(UnequipItemRequestDto {
+                expected_revision: taken.revision,
+                item_id: STASH_BUCKLER.raw(),
+            })
+            .unwrap_err();
+        assert_eq!(stale.api_error().kind, ApiErrorKindDto::Stale);
+        assert_eq!(runtime.snapshot().unwrap(), stale_before);
+
+        let encoded = runtime.encode_save().unwrap();
+        let mut reopened = GameRuntime::decode_save(&encoded).unwrap();
+        assert_eq!(reopened.encode_save().unwrap(), encoded);
+        let reopened_snapshot = reopened.snapshot().unwrap();
+        assert_eq!(
+            reopened_snapshot.campaign.as_ref().unwrap().loadout,
+            equipped_loadout.clone()
+        );
+        let encounter = reopened
+            .enter_encounter(EnterEncounterRequestDto {
+                expected_revision: reopened_snapshot.revision,
+                encounter_id: ENCOUNTER_ID.to_owned(),
+            })
+            .unwrap();
+        assert_eq!(
+            encounter
+                .campaign
+                .as_ref()
+                .unwrap()
+                .loadout
+                .equipment_slots
+                .iter()
+                .find(|slot| slot.id == "off-hand")
+                .unwrap()
+                .equipped
+                .as_ref()
+                .unwrap()
+                .entity_id,
+            STASH_BUCKLER.raw()
+        );
+        let phase_before = reopened.snapshot().unwrap();
+        let phase_error = reopened
+            .unequip_item(UnequipItemRequestDto {
+                expected_revision: encounter.revision,
+                item_id: STASH_BUCKLER.raw(),
+            })
+            .unwrap_err();
+        assert_eq!(phase_error.api_error().kind, ApiErrorKindDto::Phase);
+        assert_eq!(reopened.snapshot().unwrap(), phase_before);
+    }
+
+    #[test]
+    fn equipment_track_bound_failure_keeps_its_public_error_identity() {
+        let error = GameRuntimeError::Session(D20SessionError::Mechanics(
+            MechanicsError::EquipmentWouldInvalidateTrack {
+                owner: PLAYER,
+                track: gameplay_mechanics::TrackId::parse("vitality").unwrap(),
+                current: 100,
+                prospective_minimum: 0,
+                prospective_maximum: 90,
+            },
+        ));
+        assert_eq!(error.api_error().kind, ApiErrorKindDto::TrackBound);
     }
 
     #[test]
@@ -1532,9 +2421,9 @@ mod tests {
         ));
         assert_eq!(runtime.snapshot().unwrap(), before_duplicate);
 
-        let mut legacy: serde_json::Value =
-            serde_json::from_str(&runtime.encode_save().unwrap()).unwrap();
-        legacy["schemaVersion"] = json!(LEGACY_GAME_SAVE_SCHEMA_VERSION);
+        let legacy_v2 = downgrade_to_pre_loadout_v2(&runtime.encode_save().unwrap());
+        let mut legacy: serde_json::Value = serde_json::from_str(&legacy_v2).unwrap();
+        legacy["schemaVersion"] = json!(1);
         legacy.as_object_mut().unwrap().remove("campaign");
         let migrated = GameRuntime::decode_save(&serde_json::to_string(&legacy).unwrap()).unwrap();
         assert_eq!(
@@ -1548,6 +2437,27 @@ mod tests {
             json!(GAME_SAVE_SCHEMA_VERSION)
         );
 
+        let migrated_v2 = GameRuntime::decode_save(&legacy_v2).unwrap();
+        let migrated_loadout = migrated_v2.snapshot().unwrap().campaign.unwrap().loadout;
+        assert_eq!(migrated_loadout.capacity.used, 2);
+        assert_eq!(migrated_loadout.armor_defense, 16);
+        assert_eq!(migrated_loadout.stash_items.len(), 1);
+
+        let mut wrong_legacy_catalog: serde_json::Value = serde_json::from_str(&legacy_v2).unwrap();
+        let registered = wrong_legacy_catalog["session"]["entityState"]["registeredComponents"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|registered| registered["typeId"] == "rusty.mechanics.stats")
+            .unwrap();
+        registered["values"][0]["value"]["catalogVersion"] = json!("rusty-d20.v2");
+        assert!(matches!(
+            GameRuntime::decode_save(&serde_json::to_string(&wrong_legacy_catalog).unwrap()),
+            Err(GameRuntimeError::Save(SessionSaveError::InvalidState(
+                D20SessionError::LegacyCatalogVersionMismatch { .. }
+            )))
+        ));
+
         let mut invalid: serde_json::Value =
             serde_json::from_str(&runtime.encode_save().unwrap()).unwrap();
         invalid["campaign"]["activeEncounterId"] = serde_json::Value::Null;
@@ -1555,6 +2465,75 @@ mod tests {
             GameRuntime::decode_save(&serde_json::to_string(&invalid).unwrap()),
             Err(GameRuntimeError::InvalidSave(_))
         ));
+
+        let mut partial_loadout: serde_json::Value =
+            serde_json::from_str(&runtime.encode_save().unwrap()).unwrap();
+        let inventory = partial_loadout["session"]["entityState"]["registeredComponents"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|registered| registered["typeId"] == "rusty.mechanics.inventory")
+            .unwrap();
+        inventory["values"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|entry| entry["entity"] != json!(CAMP_STASH.raw()));
+        assert!(matches!(
+            GameRuntime::decode_save(&serde_json::to_string(&partial_loadout).unwrap()),
+            Err(GameRuntimeError::InvalidSave(_))
+        ));
+    }
+
+    fn downgrade_to_pre_loadout_v2(input: &str) -> String {
+        let mut save: serde_json::Value = serde_json::from_str(input).unwrap();
+        save["schemaVersion"] = json!(2);
+        save["session"]["schemaVersion"] = json!(1);
+        let state = save["session"]["entityState"].as_object_mut().unwrap();
+        state
+            .get_mut("entities")
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .retain(|entity| !matches!(entity["id"].as_u64().unwrap(), 103 | 202 | 203 | 204));
+        for registered in state
+            .get_mut("registeredComponents")
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+        {
+            let type_id = registered["typeId"].as_str().unwrap().to_owned();
+            registered
+                .get_mut("values")
+                .unwrap()
+                .as_array_mut()
+                .unwrap()
+                .retain(|entry| {
+                    !matches!(entry["entity"].as_u64().unwrap(), 103 | 202 | 203 | 204)
+                });
+            if type_id.starts_with("rusty.mechanics.") {
+                for entry in registered["values"].as_array_mut().unwrap() {
+                    if let Some(value) = entry["value"].as_object_mut() {
+                        if value.contains_key("catalogVersion") {
+                            value.insert("catalogVersion".to_owned(), json!("rusty-d20.v1"));
+                        }
+                    }
+                }
+            }
+            if type_id == "rusty.mechanics.equipment" {
+                for entry in registered["values"].as_array_mut().unwrap() {
+                    if entry["entity"] == json!(PLAYER.raw()) {
+                        entry["value"]["assignments"] = json!([]);
+                    }
+                }
+            }
+        }
+        state
+            .get_mut("registeredComponents")
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .retain(|registered| registered["typeId"] != "rusty.mechanics.inventory");
+        serde_json::to_string(&save).unwrap()
     }
 
     #[test]

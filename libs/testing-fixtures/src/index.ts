@@ -1,13 +1,7 @@
-import type {
-  GameSnapshotDto,
-  Result,
-  RuntimeReadoutDto,
-} from '@rusty-d20/protocol';
+import type { GameSnapshotDto, Result, RuntimeReadoutDto } from '@rusty-d20/protocol';
 import type { RustyD20Transport } from '@rusty-d20/transport';
 
-export function makeRuntimeReadout(
-  overrides: Partial<RuntimeReadoutDto> = {},
-): RuntimeReadoutDto {
+export function makeRuntimeReadout(overrides: Partial<RuntimeReadoutDto> = {}): RuntimeReadoutDto {
   return {
     engineRevision: 'fb608e323a8b44a55195f5720101224ff37fd5db',
     entityCount: 0,
@@ -18,9 +12,7 @@ export function makeRuntimeReadout(
   };
 }
 
-export function makeGameSnapshot(
-  overrides: Partial<GameSnapshotDto> = {},
-): GameSnapshotDto {
+export function makeGameSnapshot(overrides: Partial<GameSnapshotDto> = {}): GameSnapshotDto {
   return {
     product: 'Rusty D20',
     version: '0.1.0',
@@ -49,6 +41,9 @@ export function createFakeRustyD20Transport(
     loadSession: async () => sessionResult,
     newAdventure: async () => sessionResult,
     enterEncounter: async () => sessionResult,
+    equipItem: async () => sessionResult,
+    unequipItem: async () => sessionResult,
+    transferItem: async () => sessionResult,
     previewAction: async () => sessionResult,
     applyReaction: async () => sessionResult,
     applyAction: async () => sessionResult,

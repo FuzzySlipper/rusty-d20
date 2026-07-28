@@ -41,15 +41,17 @@ pub use component::{
 pub use game::{
     ActionDto, ApiErrorDto, ApiErrorKindDto, ApplyActionRequestDto, ApplyReactionRequestDto,
     CampaignDto, CampaignPhaseDto, CharacterDto, EncounterChoiceDto, EncounterDto,
-    EnterEncounterRequestDto, ExpectedRevisionDto, GameLogEntryDto, GameLogKindDto, GameRuntime,
-    GameRuntimeError, GameSnapshotDto, PendingActionDto, PreviewActionRequestDto, ReactionDto,
-    ResourceDto,
+    EnterEncounterRequestDto, EquipItemRequestDto, EquipmentSlotDto, ExpectedRevisionDto,
+    GameLogEntryDto, GameLogKindDto, GameRuntime, GameRuntimeError, GameSnapshotDto,
+    LoadoutCapacityDto, LoadoutDto, LoadoutItemDto, LoadoutRarityDto, PendingActionDto,
+    PreviewActionRequestDto, ReactionDto, ResourceDto, TransferItemRequestDto,
+    UnequipItemRequestDto,
 };
 pub use identity::{D20Id, D20IdentityError, D20_ID_PATTERN, MAX_D20_ID_BYTES};
 pub use session::{
     ability_modifier, ActionPreview, ActionReceipt, AdvanceTurnReceipt, AffinitySeed,
     ApplyActionRequest, ArmorItemSeed, CharacterSeed, D20Session, D20SessionError, DamageAffinity,
-    ReactionOption, ReactionReceipt, SessionSaveError,
+    InventorySeed, ReactionOption, ReactionReceipt, SessionSaveError, StorageSeed,
 };
 
 /// Exact reviewed Rusty Engine revision used by this repository.
@@ -109,10 +111,18 @@ pub fn generated_typescript() -> String {
         EncounterDto::decl(),
         CampaignPhaseDto::decl(),
         EncounterChoiceDto::decl(),
+        LoadoutRarityDto::decl(),
+        LoadoutItemDto::decl(),
+        EquipmentSlotDto::decl(),
+        LoadoutCapacityDto::decl(),
+        LoadoutDto::decl(),
         CampaignDto::decl(),
         GameSnapshotDto::decl(),
         ExpectedRevisionDto::decl(),
         EnterEncounterRequestDto::decl(),
+        EquipItemRequestDto::decl(),
+        UnequipItemRequestDto::decl(),
+        TransferItemRequestDto::decl(),
         PreviewActionRequestDto::decl(),
         ApplyReactionRequestDto::decl(),
         ApplyActionRequestDto::decl(),

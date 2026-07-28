@@ -1,13 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use gameplay_mechanics::{
-    CatalogError, CatalogVersion, DamageKindDefinition, DamageKindId, DamageKindSelector,
-    DamageResponseDefinition, EffectDefinition as MechanicsEffectDefinition, EffectDefinitionId,
-    EffectStackingPolicy, EquipmentSlotDefinition, EquipmentSlotId, ExactRatio,
-    ItemClassificationId, ItemDefinition, ItemEquipmentPolicy, ItemKind, MechanicsCatalog,
-    MechanicsCatalogDefinition, MechanicsScalar, SourceDefinition, SourceDefinitionId,
-    StackingGroupId, StackingPolicy, StatContribution, StatContributionDefinition, StatDefinition,
-    StatId, TrackDefinition, TrackId, TrackMaximum,
+    CapacityMetricDefinition, CapacityMetricId, CatalogError, CatalogVersion, DamageKindDefinition,
+    DamageKindId, DamageKindSelector, DamageResponseDefinition,
+    EffectDefinition as MechanicsEffectDefinition, EffectDefinitionId, EffectStackingPolicy,
+    EquipmentSlotDefinition, EquipmentSlotId, ExactRatio, ItemCapacityCost, ItemClassificationId,
+    ItemDefinition, ItemEquipmentPolicy, ItemKind, MechanicsCatalog, MechanicsCatalogDefinition,
+    MechanicsScalar, SourceDefinition, SourceDefinitionId, StackingGroupId, StackingPolicy,
+    StatContribution, StatContributionDefinition, StatDefinition, StatId, TrackDefinition, TrackId,
+    TrackMaximum,
 };
 use gameplay_rules::{
     resolve_rule_packages, AdmittedRulePackage, RuleDiagnostic, RuleDiagnosticCorrelation,
@@ -185,6 +186,10 @@ impl D20Ruleset {
 
     pub fn defenses(&self) -> impl Iterator<Item = &DefenseDefinition> {
         self.defenses.values()
+    }
+
+    pub fn armors(&self) -> impl Iterator<Item = &ArmorDefinition> {
+        self.armors.values()
     }
 
     pub fn resources(&self) -> impl Iterator<Item = &ResourceDefinition> {
@@ -923,7 +928,7 @@ fn build_mechanics_catalog(
         .map(|armor| armor.slot.clone())
         .collect::<BTreeSet<_>>();
     MechanicsCatalog::admit(MechanicsCatalogDefinition {
-        version: CatalogVersion::parse("rusty-d20.v1").expect("fixed version is valid"),
+        version: CatalogVersion::parse("rusty-d20.v2").expect("fixed version is valid"),
         stats: defenses
             .values()
             .map(|defense| StatDefinition {
@@ -956,7 +961,9 @@ fn build_mechanics_catalog(
                 sources: vec![effect_source_id(&effect.id)],
             })
             .collect(),
-        capacity_metrics: vec![],
+        capacity_metrics: vec![CapacityMetricDefinition {
+            id: loadout_capacity_id(),
+        }],
         items: armors
             .values()
             .map(|armor| ItemDefinition {
@@ -964,7 +971,10 @@ fn build_mechanics_catalog(
                 kind: ItemKind::Unique,
                 maximum_quantity: 1,
                 classifications: vec![armor_classification_id(&armor.slot)],
-                capacity_costs: vec![],
+                capacity_costs: vec![ItemCapacityCost {
+                    metric: loadout_capacity_id(),
+                    units: 1,
+                }],
                 equipment: Some(ItemEquipmentPolicy {
                     required_slots: 1,
                     exclusive_group: None,
@@ -1006,6 +1016,10 @@ pub(crate) fn armor_item_id(id: &D20Id) -> gameplay_mechanics::ItemDefinitionId 
 
 pub(crate) fn equipment_slot_id(id: &D20Id) -> EquipmentSlotId {
     EquipmentSlotId::parse(id.to_string()).expect("validated d20 identity fits mechanics identity")
+}
+
+pub(crate) fn loadout_capacity_id() -> CapacityMetricId {
+    CapacityMetricId::parse("carried-items").expect("fixed capacity identity is valid")
 }
 
 pub(crate) fn resistance_source_id(id: &D20Id) -> SourceDefinitionId {

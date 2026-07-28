@@ -74,9 +74,11 @@ optional reaction, deterministic action receipt, turn advancement, save, and
 desktop/mobile presentation.
 
 The ordinary browser gate also launches an isolated Rust host, saves through
-normal controls, stops that process, starts a fresh process against the same
-save, verifies exact camp and encounter continuation, and resolves the next
-deterministic roll. It also proves preview-only and reacted-pending saves reject
+normal loadout controls, stops that process, starts a fresh process against the
+same save, verifies exact camp loadout and encounter continuation, and resolves
+the next deterministic roll. The desktop/mobile smoke covers keyboard and
+click activation plus visible capacity rejection without mutation. The
+fresh-process case also proves preview-only and reacted-pending saves reject
 without changing either authoritative in-memory state or the last durable save.
 A two-page scenario proves a stale optimistic revision is rejected through a
 normal action control.

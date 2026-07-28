@@ -10,12 +10,14 @@ The current product is a deliberately bounded but real adventure shell. An
 Angular/Nx application is served by a Rust process and reaches Rust-owned state
 through a strict generated same-origin contract. The browser can begin or
 continue **The Warden's Gate**, save in camp, enter the Steel Guard encounter,
-choose an authored action and target, apply an optional reaction, resolve
-deterministic source-attributed damage/effects, advance the caller-owned turn,
-and save. A fresh Rust process continues the exact campaign phase and
-authoritative state without replay. The checked starter catalog also includes
-the separate ember/resolve composition for headless and authoring proof. Fake
-transport remains available only from `libs/testing-fixtures`.
+manage Mara's Engine-backed inventory/equipment and camp stash, inspect
+attributed armor defense, choose an authored action and target, apply an
+optional reaction, resolve deterministic source-attributed damage/effects,
+advance the caller-owned turn, and save. A fresh Rust process continues the
+exact campaign phase, loadout, and authoritative state without replay. The
+checked starter catalog also includes the separate ember/resolve composition
+for headless and authoring proof. Fake transport remains available only from
+`libs/testing-fixtures`.
 
 ## Start the product
 
@@ -27,9 +29,9 @@ pnpm run serve:local
 Open the printed `BASE_URL`. With no prior save, choose **New Adventure**, save
 or leave Warden's Gate Camp, then enter **The Iron Warden**. The host writes an
 explicit save to `target/rusty-d20/save.json`; after restart, **Continue
-Adventure** resumes the exact camp or encounter phase. Resolve any pending
-action before saving; the Rust host rejects pending saves before changing the
-existing save file.
+Adventure** resumes the exact camp or encounter phase and canonical loadout.
+Resolve any pending action before saving; the Rust host rejects pending saves
+before changing the existing save file.
 
 ## Verify
 
@@ -46,7 +48,7 @@ start at [docs/design.md](docs/design.md) and
 
 The GM7 reference slice is connected end to end and the D20G1 campaign shell is
 underway. It is not yet a broad d20 product: initiative/opposition, movement,
-spellcasting, advancement, content publication, inventory/equipment adoption,
+spellcasting, advancement, content publication, broader item/content catalogs,
 and additional encounters remain later milestones. See
 [docs/known-limitations.md](docs/known-limitations.md).
 

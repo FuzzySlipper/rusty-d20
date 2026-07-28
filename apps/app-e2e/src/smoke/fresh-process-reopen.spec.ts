@@ -22,9 +22,34 @@ test('pending saves reject atomically and completed state survives a fresh Rust 
     await waitForHealth(baseUrl, host);
     await page.goto(baseUrl);
     await page.getByRole('button', { name: 'New Adventure' }).click();
+    await page
+      .getByLabel('Equipment')
+      .getByRole('button', { name: "Off Hand: Mara's buckler" })
+      .click();
+    await page
+      .getByLabel('Inventory item actions')
+      .getByRole('listitem')
+      .filter({ hasText: "Mara's buckler" })
+      .getByRole('button', { name: 'Store' })
+      .click();
+    await page
+      .getByLabel('Camp stash')
+      .getByRole('listitem')
+      .filter({ hasText: 'Spare buckler' })
+      .getByRole('button', { name: 'Take' })
+      .click();
+    await page.getByRole('button', { name: 'Spare buckler' }).click();
+    await expect(
+      page.getByLabel('Equipment').getByRole('button', { name: 'Off Hand: Spare buckler' }),
+    ).toBeVisible();
+    await expect(page.getByLabel('Armor defense readout')).toContainText('16');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     const baseline = await sessionSnapshot(request, baseUrl);
+    expect(
+      baseline.campaign.loadout.equipmentSlots.find((slot) => slot.id === 'off-hand')?.equipped
+        ?.entityId,
+    ).toBe(204);
     const baselineFile = await readFile(savePath);
 
     await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
@@ -44,7 +69,11 @@ test('pending saves reject atomically and completed state survives a fresh Rust 
     expect(await sessionSnapshot(request, baseUrl)).toEqual(baseline);
     await page.goto(baseUrl);
     await page.getByRole('button', { name: 'Continue Adventure' }).click();
+    await expect(
+      page.getByLabel('Equipment').getByRole('button', { name: 'Off Hand: Spare buckler' }),
+    ).toBeVisible();
     await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
+    await expect(page.getByLabel('Encounter identity')).toContainText('Armor defense 16');
     await page.getByRole('button', { name: 'Longsword Strike' }).click();
     await page.getByRole('button', { name: /Parry · 1 Guard/ }).click();
     await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
@@ -59,9 +88,7 @@ test('pending saves reject atomically and completed state survives a fresh Rust 
       label: 'Guard',
       maximum: 2,
     });
-    expect(reactedOpponent?.effects.some((effect) => effect.startsWith('Parry Stance'))).toBe(
-      true,
-    );
+    expect(reactedOpponent?.effects.some((effect) => effect.startsWith('Parry Stance'))).toBe(true);
     await expectPendingSaveRejection(request, baseUrl, reacted.revision);
     expect(await sessionSnapshot(request, baseUrl)).toEqual(reacted);
     expect(await readFile(savePath)).toEqual(baselineFile);
@@ -112,12 +139,25 @@ test('pending saves reject atomically and completed state survives a fresh Rust 
 
 interface GameCharacter {
   id: number;
-  resources: Array<{ current: number; id: string; label: string; maximum: number }>;
+  resources: Array<{
+    current: number;
+    id: string;
+    label: string;
+    maximum: number;
+  }>;
   effects: string[];
 }
 
 interface GameSnapshot {
   revision: number;
+  campaign: {
+    loadout: {
+      equipmentSlots: Array<{
+        id: string;
+        equipped: { entityId: number } | null;
+      }>;
+    };
+  };
   encounter: {
     playerId: number;
     characters: GameCharacter[];
@@ -125,10 +165,7 @@ interface GameSnapshot {
   };
 }
 
-async function sessionSnapshot(
-  request: APIRequestContext,
-  baseUrl: string,
-): Promise<GameSnapshot> {
+async function sessionSnapshot(request: APIRequestContext, baseUrl: string): Promise<GameSnapshot> {
   const response = await request.get(`${baseUrl}/api/v1/session`);
   expect(response.ok()).toBe(true);
   return response.json() as Promise<GameSnapshot>;

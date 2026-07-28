@@ -28,15 +28,46 @@ function http(response: () => Promise<HttpResponse>): HttpPort {
 describe('createHttpRustyD20Transport', () => {
   it('decodes successful Rust readout and session responses', async () => {
     const port: HttpPort = {
-      getJson: async (path) => ({ status: 200, body: path.endsWith('readout') ? readout : snapshot }),
+      getJson: async (path) => ({
+        status: 200,
+        body: path.endsWith('readout') ? readout : snapshot,
+      }),
       postJson: async () => ({ status: 200, body: snapshot }),
     };
     const transport = createHttpRustyD20Transport(port);
-    await expect(transport.loadReadout()).resolves.toEqual({ ok: true, value: readout });
-    await expect(transport.loadSession()).resolves.toEqual({ ok: true, value: snapshot });
-    await expect(transport.newAdventure(0)).resolves.toEqual({ ok: true, value: snapshot });
-    await expect(transport.enterEncounter({ expectedRevision: 0, encounterId: 'iron-warden' }))
-      .resolves.toEqual({ ok: true, value: snapshot });
+    await expect(transport.loadReadout()).resolves.toEqual({
+      ok: true,
+      value: readout,
+    });
+    await expect(transport.loadSession()).resolves.toEqual({
+      ok: true,
+      value: snapshot,
+    });
+    await expect(transport.newAdventure(0)).resolves.toEqual({
+      ok: true,
+      value: snapshot,
+    });
+    await expect(
+      transport.enterEncounter({
+        expectedRevision: 0,
+        encounterId: 'iron-warden',
+      }),
+    ).resolves.toEqual({ ok: true, value: snapshot });
+    await expect(
+      transport.equipItem({ expectedRevision: 0, itemId: 202, slotId: 'body' }),
+    ).resolves.toEqual({ ok: true, value: snapshot });
+    await expect(transport.unequipItem({ expectedRevision: 0, itemId: 202 })).resolves.toEqual({
+      ok: true,
+      value: snapshot,
+    });
+    await expect(
+      transport.transferItem({
+        expectedRevision: 0,
+        itemId: 202,
+        fromOwnerId: 101,
+        toOwnerId: 103,
+      }),
+    ).resolves.toEqual({ ok: true, value: snapshot });
   });
 
   it('preserves typed stale errors and classifies network and invalid-body failures', async () => {
@@ -52,6 +83,16 @@ describe('createHttpRustyD20Transport', () => {
     const invalid = createHttpRustyD20Transport(
       http(async () => ({ status: 200, body: { product: 'Rusty D20' } })),
     );
+    const capacity = createHttpRustyD20Transport(
+      http(async () => ({
+        status: 422,
+        body: {
+          kind: 'capacity',
+          message: 'inventory is full',
+          retryable: false,
+        },
+      })),
+    );
 
     await expect(stale.advanceTurn(1)).resolves.toEqual({
       ok: false,
@@ -64,6 +105,21 @@ describe('createHttpRustyD20Transport', () => {
     await expect(invalid.loadSession()).resolves.toMatchObject({
       ok: false,
       error: { kind: 'unknown', retryable: false },
+    });
+    await expect(
+      capacity.transferItem({
+        expectedRevision: 1,
+        itemId: 204,
+        fromOwnerId: 103,
+        toOwnerId: 101,
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: {
+        kind: 'capacity',
+        message: 'inventory is full',
+        retryable: false,
+      },
     });
   });
 });

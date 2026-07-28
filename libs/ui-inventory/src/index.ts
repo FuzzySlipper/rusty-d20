@@ -80,6 +80,11 @@ export const DEFAULT_ITEM_DRAG_TYPE = 'application/x-rusty-engine-inventory-item
         box-shadow: 0 0 0 1px var(--rusty-engine-accent);
       }
 
+      .slot--selected {
+        background: var(--rusty-engine-hover-bg);
+        box-shadow: 0 0 0 2px var(--rusty-engine-accent);
+      }
+
       .slot--common {
         border-color: var(--rusty-engine-border);
       }
@@ -126,6 +131,7 @@ export const DEFAULT_ITEM_DRAG_TYPE = 'application/x-rusty-engine-inventory-item
               [class]="slotClass(slot, $index)"
               role="button"
               [attr.tabindex]="slot !== null ? 0 : null"
+              [attr.aria-pressed]="slot !== null ? selectedItemId() === slot.id : null"
               [attr.aria-label]="slot !== null ? slot.name : 'Empty slot ' + $index"
               [title]="slot !== null ? slot.name : ''"
               [attr.draggable]="slot !== null ? true : null"
@@ -134,7 +140,9 @@ export const DEFAULT_ITEM_DRAG_TYPE = 'application/x-rusty-engine-inventory-item
               (dragover)="onDragOver($event, $index)"
               (dragleave)="onDragLeave($index)"
               (drop)="onDrop($event, $index)"
-              (dblclick)="slot !== null && itemActivated.emit(slot)"
+              (click)="slot !== null && itemActivated.emit(slot)"
+              (keydown.enter)="slot !== null && itemActivated.emit(slot)"
+              (keydown.space)="slot !== null && activateFromSpace($event, slot)"
             >
               @if (slot !== null) {
                 @if (slot.equippable) {
@@ -156,13 +164,14 @@ export class InventoryGridComponent {
   readonly columns = input.required<number>();
   readonly slots = input.required<readonly (InventoryItemView | null)[]>();
   readonly dragType = input<string>(DEFAULT_ITEM_DRAG_TYPE);
+  readonly selectedItemId = input<string | null>(null);
 
   /** Reports a completed drag between grid slots; the host decides what it means. */
   readonly itemMoved = output<InventoryMoveEvent>();
   /** Reports the start of any item drag (e.g. so the host can track cross-panel drags). */
   readonly itemDragStarted = output<InventoryItemView>();
   readonly itemDragEnded = output<void>();
-  /** Reports a double-click "use" on an item. */
+  /** Reports click, Enter, or Space activation of an occupied slot. */
   readonly itemActivated = output<InventoryItemView>();
 
   protected readonly dragOverIndex = signal<number | null>(null);
@@ -174,6 +183,9 @@ export class InventoryGridComponent {
     const classes = ['slot'];
     if (slot !== null) {
       classes.push('slot--occupied', `slot--${slot.rarity}`);
+      if (this.selectedItemId() === slot.id) {
+        classes.push('slot--selected');
+      }
     }
     if (this.dragOverIndex() === index) {
       classes.push('slot--drop-target');
@@ -219,6 +231,11 @@ export class InventoryGridComponent {
   protected onDragEnd(): void {
     this.resetDrag();
     this.itemDragEnded.emit();
+  }
+
+  protected activateFromSpace(event: Event, item: InventoryItemView): void {
+    event.preventDefault();
+    this.itemActivated.emit(item);
   }
 
   private resetDrag(): void {

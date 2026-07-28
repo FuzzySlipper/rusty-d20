@@ -1,26 +1,26 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  inject,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import type { OnInit } from '@angular/core';
-import type { CharacterDto } from '@rusty-d20/protocol';
+import type { CharacterDto, LoadoutItemDto } from '@rusty-d20/protocol';
 import { SessionStore } from '@rusty-d20/store';
-import {
-  CharacterStatusComponent,
-  type CharacterStatusView,
-} from '@rusty-d20/ui-character-status';
-import {
-  CombatLogComponent,
-  type CombatLogEntryView,
-} from '@rusty-d20/ui-combat-log';
+import { CharacterStatusComponent, type CharacterStatusView } from '@rusty-d20/ui-character-status';
+import { CombatLogComponent, type CombatLogEntryView } from '@rusty-d20/ui-combat-log';
 import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
+import {
+  EquipmentPanelComponent,
+  type EquipmentDropEvent,
+  type EquipmentSlotView,
+} from '@rusty-d20/ui-equipment';
+import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-inventory';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CharacterStatusComponent, CombatLogComponent, HotbarComponent],
+  imports: [
+    CharacterStatusComponent,
+    CombatLogComponent,
+    EquipmentPanelComponent,
+    HotbarComponent,
+    InventoryGridComponent,
+  ],
   selector: 'aui-main-menu-screen',
   standalone: true,
   styles: [
@@ -191,6 +191,88 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
         grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.75fr);
       }
 
+      .camp {
+        align-content: start;
+        display: grid;
+        gap: 16px;
+      }
+
+      .camp__header,
+      .defense-readout,
+      .stash__item {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .camp__layout {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+      }
+
+      .loadout,
+      .stash {
+        align-content: start;
+        display: grid;
+        gap: 12px;
+      }
+
+      .loadout__widgets {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr);
+      }
+
+      .defense-readout {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--rusty-engine-border);
+        border-radius: var(--rusty-engine-radius-sm);
+        padding: 10px 12px;
+      }
+
+      .defense-readout strong {
+        color: var(--rusty-engine-accent);
+        font-size: 1.3rem;
+      }
+
+      .capacity {
+        color: var(--rusty-engine-muted);
+        font-size: 0.75rem;
+      }
+
+      .stash__items {
+        display: grid;
+        gap: 8px;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .stash__item {
+        background: var(--rusty-engine-surface-solid);
+        border: 1px solid var(--rusty-engine-border);
+        border-radius: var(--rusty-engine-radius-sm);
+        padding: 8px 10px;
+      }
+
+      .stash__identity {
+        align-items: center;
+        display: flex;
+        gap: 8px;
+      }
+
+      .stash__icon {
+        font-size: 1.35rem;
+      }
+
+      .encounter-choice {
+        display: grid;
+        gap: 8px;
+      }
+
       .action-workbench,
       .outcome {
         align-content: start;
@@ -298,6 +380,8 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
 
       @media (max-width: 760px) {
         .characters,
+        .camp__layout,
+        .loadout__widgets,
         .workspace,
         .action-catalog {
           grid-template-columns: minmax(0, 1fr);
@@ -444,7 +528,8 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
               <p class="eyebrow">Durable campaign found</p>
               <h2>Continue {{ game()?.campaign?.title }}</h2>
               <p class="lede">
-                Resume in {{ game()?.campaign?.phase === 'camp' ? 'camp' : 'the active encounter' }}
+                Resume in
+                {{ game()?.campaign?.phase === 'camp' ? 'camp' : 'the active encounter' }}
                 at state revision {{ game()?.revision }}.
               </p>
               <button class="primary" type="button" (click)="continueCampaign()">
@@ -452,39 +537,149 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
               </button>
             </section>
           } @else if (game()?.campaign?.phase === 'camp') {
-            <section class="rusty-engine-panel empty" aria-label="Adventure camp">
-              <p class="eyebrow">Rust-owned camp</p>
-              <h2>Warden's Gate Camp</h2>
-              <p class="lede">
-                Prepare Mara Venn, save this stable campaign state, or enter the authored
-                encounter. Inventory and equipment arrive in the next reviewed product slice.
-              </p>
-              @if (game()?.campaign?.hero; as hero) {
-                <article class="character-card">
-                  <aui-character-status [status]="characterStatus(hero)" />
-                </article>
-              }
-              @for (choice of game()?.campaign?.availableEncounters ?? []; track choice.id) {
-                <article class="action-note">
-                  <strong>{{ choice.title }}</strong>
-                  <span>{{ choice.summary }}</span>
-                  <button
-                    class="primary"
-                    type="button"
-                    [disabled]="store.busy()"
-                    (click)="enterEncounter(choice.id)"
-                  >
-                    Enter {{ choice.title }}
-                  </button>
-                </article>
-              }
-            </section>
+            @if (game()?.campaign; as campaign) {
+              <section class="camp" aria-label="Adventure camp">
+                <header class="rusty-engine-panel camp__header">
+                  <div>
+                    <p class="eyebrow">Rust-owned camp · Engine-backed loadout</p>
+                    <h2>Warden's Gate Camp</h2>
+                    <p class="lede">
+                      Equip Mara from canonical inventory state, move spare gear through the camp
+                      stash, and inspect the attributed defense before entering the encounter.
+                    </p>
+                  </div>
+                  <span class="capacity">
+                    Carried {{ campaign.loadout.capacity.used }}/{{
+                      campaign.loadout.capacity.maximum
+                    }}
+                  </span>
+                </header>
+
+                <section class="camp__layout">
+                  <div class="loadout">
+                    <article class="character-card">
+                      <aui-character-status [status]="characterStatus(campaign.hero)" />
+                    </article>
+
+                    <section class="defense-readout" aria-label="Armor defense readout">
+                      <div>
+                        <p class="meta-label">Derived armor defense</p>
+                        <strong>{{ campaign.loadout.armorDefense }}</strong>
+                      </div>
+                      <details>
+                        <summary>Attributed sources</summary>
+                        <ul class="source-list">
+                          @for (source of campaign.loadout.armorDefenseSources; track source) {
+                            <li>{{ source }}</li>
+                          }
+                        </ul>
+                      </details>
+                    </section>
+
+                    <div class="loadout__widgets">
+                      <aui-inventory-grid
+                        [columns]="2"
+                        [selectedItemId]="selectedInventoryItemId()"
+                        [slots]="inventorySlots()"
+                        (itemActivated)="activateInventoryItem($event)"
+                      />
+                      <aui-equipment-panel
+                        [slots]="equipmentSlots()"
+                        (itemDropped)="equipDroppedItem($event)"
+                        (slotSelected)="unequipSlot($event)"
+                      />
+                    </div>
+
+                    <section class="rusty-engine-panel" aria-label="Inventory item actions">
+                      <p class="meta-label">Carried gear</p>
+                      <ul class="stash__items">
+                        @for (item of carriedItems(); track item.entityId) {
+                          <li class="stash__item">
+                            <span class="stash__identity">
+                              <span class="stash__icon" aria-hidden="true">{{ item.icon }}</span>
+                              <span>
+                                {{ item.name }}
+                                @if (item.equippedSlotId !== null) {
+                                  · equipped {{ item.equippedSlotId }}
+                                }
+                              </span>
+                            </span>
+                            <button
+                              type="button"
+                              [disabled]="store.busy() || item.equippedSlotId !== null"
+                              [attr.title]="
+                                item.equippedSlotId !== null
+                                  ? 'Unequip this item before moving it to the stash'
+                                  : null
+                              "
+                              (click)="storeItem(item)"
+                            >
+                              Store
+                            </button>
+                          </li>
+                        }
+                      </ul>
+                    </section>
+                  </div>
+
+                  <aside class="stash rusty-engine-panel" aria-label="Camp stash">
+                    <div>
+                      <p class="meta-label">Canonical storage</p>
+                      <h2>Camp stash</h2>
+                    </div>
+                    @if (campaign.loadout.stashItems.length === 0) {
+                      <p class="muted">The stash is empty.</p>
+                    } @else {
+                      <ul class="stash__items">
+                        @for (item of campaign.loadout.stashItems; track item.entityId) {
+                          <li class="stash__item">
+                            <span class="stash__identity">
+                              <span class="stash__icon" aria-hidden="true">{{ item.icon }}</span>
+                              <span>{{ item.name }}</span>
+                            </span>
+                            <button
+                              type="button"
+                              [disabled]="store.busy()"
+                              (click)="takeItem(item)"
+                            >
+                              Take
+                            </button>
+                          </li>
+                        }
+                      </ul>
+                    }
+                    <p class="muted">
+                      Capacity, containment, equipped-item, and stale-state rejections come from the
+                      Rust owner without changing the live loadout.
+                    </p>
+
+                    @for (choice of campaign.availableEncounters; track choice.id) {
+                      <article class="action-note encounter-choice">
+                        <strong>{{ choice.title }}</strong>
+                        <span>{{ choice.summary }}</span>
+                        <button
+                          class="primary"
+                          type="button"
+                          [disabled]="store.busy()"
+                          (click)="enterEncounter(choice.id)"
+                        >
+                          Enter {{ choice.title }}
+                        </button>
+                      </article>
+                    }
+                  </aside>
+                </section>
+              </section>
+            }
           } @else {
             <section class="encounter-meta" aria-label="Encounter identity">
               <span>Turn {{ encounter().turn }}</span>
               <span>Next deterministic roll {{ encounter().nextRoll }}</span>
               <span>State revision {{ game()?.revision }}</span>
-              <span>Engine <code>{{ game()?.engineRevisionShort }}</code></span>
+              <span>Armor defense {{ game()?.campaign?.loadout?.armorDefense }}</span>
+              <span
+                >Engine <code>{{ game()?.engineRevisionShort }}</code></span
+              >
               <span>
                 Rules
                 <code [title]="game()?.rulesetFingerprint">Starter + Steel</code>
@@ -524,17 +719,15 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
                     </div>
                   </header>
 
-                  <aui-hotbar
-                    [slots]="hotbarSlots()"
-                    (slotSelected)="chooseAction($event)"
-                  />
+                  <aui-hotbar [slots]="hotbarSlots()" (slotSelected)="chooseAction($event)" />
 
                   <div class="action-catalog">
                     @for (action of encounter().actions; track action.id) {
                       <div class="action-note">
                         <strong>{{ action.label }}</strong>
                         <span>
-                          {{ action.ability }} vs {{ action.defense }} · {{ action.damage }}
+                          {{ action.ability }} vs {{ action.defense }} ·
+                          {{ action.damage }}
                           @if (action.effect !== null) {
                             · {{ action.effect }}
                           }
@@ -545,7 +738,10 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
                 </section>
 
                 @if (encounter().pendingAction; as pending) {
-                  <section class="rusty-engine-panel preview" aria-label="Authoritative action preview">
+                  <section
+                    class="rusty-engine-panel preview"
+                    aria-label="Authoritative action preview"
+                  >
                     <p class="meta-label">Rust preview · {{ pending.actionLabel }}</p>
                     <p class="preview__math">
                       Ability {{ pending.abilityScore }} ({{ signed(pending.abilityModifier) }})
@@ -613,12 +809,46 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
 export class MainMenuScreenComponent implements OnInit {
   protected readonly store = inject(SessionStore);
   private readonly selectedTarget = signal<number | null>(null);
+  private readonly selectedLoadoutItem = signal<number | null>(null);
   protected readonly campaignEntered = signal(false);
 
   protected readonly game = computed(() => {
     const state = this.store.session();
     return state.kind === 'data' ? state.value : null;
   });
+
+  protected readonly inventorySlots = computed<readonly (InventoryItemView | null)[]>(() =>
+    (this.game()?.campaign?.loadout.inventorySlots ?? []).map((item) =>
+      item === null ? null : this.inventoryItem(item),
+    ),
+  );
+
+  protected readonly selectedInventoryItemId = computed(() => {
+    const selected = this.selectedLoadoutItem();
+    return selected === null ? null : String(selected);
+  });
+
+  protected readonly equipmentSlots = computed<readonly EquipmentSlotView[]>(() =>
+    (this.game()?.campaign?.loadout.equipmentSlots ?? []).map((slot) => ({
+      id: slot.id,
+      label: slot.label,
+      equipped:
+        slot.equipped === null
+          ? null
+          : {
+              id: String(slot.equipped.entityId),
+              name: slot.equipped.name,
+              icon: slot.equipped.icon,
+              rarity: slot.equipped.rarity,
+            },
+    })),
+  );
+
+  protected readonly carriedItems = computed<readonly LoadoutItemDto[]>(() =>
+    (this.game()?.campaign?.loadout.inventorySlots ?? []).filter(
+      (item): item is LoadoutItemDto => item !== null,
+    ),
+  );
 
   protected readonly hotbarSlots = computed<readonly HotbarSlotView[]>(() =>
     (this.game()?.encounter?.actions ?? []).map((action, index) => ({
@@ -678,7 +908,10 @@ export class MainMenuScreenComponent implements OnInit {
       name: character.name,
       level: character.level,
       title: character.title,
-      health: { current: character.healthCurrent, max: character.healthMaximum },
+      health: {
+        current: character.healthCurrent,
+        max: character.healthMaximum,
+      },
       resource: {
         label: resource.label,
         current: resource.current,
@@ -721,6 +954,46 @@ export class MainMenuScreenComponent implements OnInit {
     void this.store.enterEncounter(encounterId);
   }
 
+  protected activateInventoryItem(item: InventoryItemView): void {
+    const authoritative = this.findCarriedItem(item.id);
+    if (authoritative === undefined) {
+      return;
+    }
+    this.selectedLoadoutItem.set(authoritative.entityId);
+    if (authoritative.equippedSlotId === null) {
+      void this.store.equipItem(authoritative.entityId, authoritative.equipmentSlotId);
+    } else {
+      void this.store.unequipItem(authoritative.entityId);
+    }
+  }
+
+  protected equipDroppedItem(event: EquipmentDropEvent): void {
+    const authoritative = this.findCarriedItem(event.itemId);
+    if (authoritative !== undefined) {
+      void this.store.equipItem(authoritative.entityId, event.slotId);
+    }
+  }
+
+  protected unequipSlot(slot: EquipmentSlotView): void {
+    if (slot.equipped !== null) {
+      void this.store.unequipItem(Number(slot.equipped.id));
+    }
+  }
+
+  protected storeItem(item: LoadoutItemDto): void {
+    const loadout = this.game()?.campaign?.loadout;
+    if (loadout !== undefined && item.equippedSlotId === null) {
+      void this.store.transferItem(item.entityId, loadout.ownerId, loadout.stashOwnerId);
+    }
+  }
+
+  protected takeItem(item: LoadoutItemDto): void {
+    const loadout = this.game()?.campaign?.loadout;
+    if (loadout !== undefined) {
+      void this.store.transferItem(item.entityId, loadout.stashOwnerId, loadout.ownerId);
+    }
+  }
+
   protected applyReaction(token: string, reactionId: string): void {
     void this.store.applyReaction(token, reactionId);
   }
@@ -747,5 +1020,22 @@ export class MainMenuScreenComponent implements OnInit {
 
   protected signed(value: number): string {
     return value >= 0 ? `+${value}` : String(value);
+  }
+
+  private inventoryItem(item: LoadoutItemDto): InventoryItemView {
+    return {
+      id: String(item.entityId),
+      name:
+        item.equippedSlotId === null ? item.name : `${item.name} · equipped ${item.equippedSlotId}`,
+      icon: item.icon,
+      rarity: item.rarity,
+      quantity: item.quantity,
+      equippable: item.equippedSlotId === null,
+    };
+  }
+
+  private findCarriedItem(itemId: string): LoadoutItemDto | undefined {
+    const entityId = Number(itemId);
+    return this.carriedItems().find((item) => item.entityId === entityId);
   }
 }

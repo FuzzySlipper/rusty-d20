@@ -26,7 +26,17 @@ export type CampaignPhaseDto = "camp" | "encounter";
 
 export type EncounterChoiceDto = { id: string, title: string, summary: string, };
 
-export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, hero: CharacterDto, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, };
+export type LoadoutRarityDto = "common" | "uncommon" | "rare" | "epic";
+
+export type LoadoutItemDto = { entityId: number, definitionId: string, name: string, icon: string, rarity: LoadoutRarityDto, quantity: number, equipmentSlotId: string, equippedSlotId: string | null, };
+
+export type EquipmentSlotDto = { id: string, label: string, equipped: LoadoutItemDto | null, };
+
+export type LoadoutCapacityDto = { metric: string, used: number, maximum: number, };
+
+export type LoadoutDto = { ownerId: number, stashOwnerId: number, inventorySlots: Array<LoadoutItemDto | null>, equipmentSlots: Array<EquipmentSlotDto>, stashItems: Array<LoadoutItemDto>, capacity: LoadoutCapacityDto, armorDefense: number, armorDefenseSources: Array<string>, };
+
+export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, hero: CharacterDto, loadout: LoadoutDto, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, };
 
 export type GameSnapshotDto = { product: string, version: string, engineRevision: string, rulesetFingerprint: string, revision: number, saved: boolean, campaign: CampaignDto | null, encounter: EncounterDto | null, };
 
@@ -34,12 +44,18 @@ export type ExpectedRevisionDto = { expectedRevision: number, };
 
 export type EnterEncounterRequestDto = { expectedRevision: number, encounterId: string, };
 
+export type EquipItemRequestDto = { expectedRevision: number, itemId: number, slotId: string, };
+
+export type UnequipItemRequestDto = { expectedRevision: number, itemId: number, };
+
+export type TransferItemRequestDto = { expectedRevision: number, itemId: number, fromOwnerId: number, toOwnerId: number, };
+
 export type PreviewActionRequestDto = { expectedRevision: number, actorId: number, targetId: number, actionId: string, };
 
 export type ApplyReactionRequestDto = { expectedRevision: number, previewToken: string, reactionId: string, };
 
 export type ApplyActionRequestDto = { expectedRevision: number, previewToken: string, };
 
-export type ApiErrorKindDto = "stale" | "invalid" | "not-found" | "persistence" | "internal";
+export type ApiErrorKindDto = "stale" | "invalid" | "invalid-slot" | "capacity" | "containment" | "track-bound" | "phase" | "not-found" | "persistence" | "internal";
 
 export type ApiErrorDto = { kind: ApiErrorKindDto, message: string, retryable: boolean, };

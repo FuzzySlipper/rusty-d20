@@ -7,7 +7,10 @@ test.describe.serial('real Rust encounter shell', () => {
   }) => {
     const health = await request.get('/healthz');
     expect(health.ok()).toBe(true);
-    await expect(health.json()).resolves.toEqual({ status: 'ok', version: '0.1.0' });
+    await expect(health.json()).resolves.toEqual({
+      status: 'ok',
+      version: '0.1.0',
+    });
 
     await page.goto('/');
     await expect(
@@ -16,6 +19,31 @@ test.describe.serial('real Rust encounter shell', () => {
     await expect(page.getByRole('heading', { name: "The Warden's Gate" })).toBeVisible();
     await page.getByRole('button', { name: 'New Adventure' }).click();
     await expect(page.getByRole('heading', { name: "Warden's Gate Camp" })).toBeVisible();
+    await expect(page.getByLabel('Armor defense readout')).toContainText('16');
+    await expect(page.getByRole('region', { name: 'Inventory', exact: true })).toBeVisible();
+    await expect(page.getByLabel('Equipment')).toBeVisible();
+    await expect(page.getByLabel('Camp stash')).toContainText('Spare buckler');
+
+    await page.getByRole('button', { name: 'Take' }).click();
+    await expect(page.getByRole('alert')).toContainText('capacity rejection');
+    await expect(page.getByRole('alert')).toContainText('maximum: 2');
+    await page.getByRole('button', { name: 'Dismiss' }).click();
+    await expect(page.getByLabel('Armor defense readout')).toContainText('16');
+    await expect(page.getByText('Carried 2/2')).toBeVisible();
+
+    const chainInventory = page.getByRole('button', {
+      name: /Mara's chain armor · equipped body/,
+    });
+    await chainInventory.focus();
+    await chainInventory.press('Enter');
+    await expect(page.getByLabel('Armor defense readout')).toContainText('14');
+    const unequippedChain = page.getByRole('button', {
+      name: "Mara's chain armor",
+    });
+    await unequippedChain.focus();
+    await unequippedChain.press('Space');
+    await expect(page.getByLabel('Armor defense readout')).toContainText('16');
+
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.locator('aui-character-status')).toHaveCount(1);
     expect(
@@ -105,9 +133,7 @@ test.describe.serial('real Rust encounter shell', () => {
     await page.goto('/');
 
     await expect(page.getByRole('alert')).toContainText('unknown failure');
-    await expect(
-      page.getByText('Game snapshot has an unexpected or invalid shape.'),
-    ).toBeVisible();
+    await expect(page.getByText('Game snapshot has an unexpected or invalid shape.')).toBeVisible();
   });
 });
 

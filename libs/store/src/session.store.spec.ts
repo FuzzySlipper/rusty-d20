@@ -29,6 +29,9 @@ function transport(overrides: Partial<RustyD20Transport> = {}): RustyD20Transpor
     loadSession: async () => sessionResult,
     newAdventure: async () => sessionResult,
     enterEncounter: async () => sessionResult,
+    equipItem: async () => sessionResult,
+    unequipItem: async () => sessionResult,
+    transferItem: async () => sessionResult,
     previewAction: async () => sessionResult,
     applyReaction: async () => sessionResult,
     applyAction: async () => sessionResult,
@@ -55,9 +58,23 @@ describe('SessionStore', () => {
       title: "The Warden's Gate",
       phase: 'camp',
       hero,
+      loadout: {
+        ownerId: 101,
+        stashOwnerId: 103,
+        inventorySlots: [],
+        equipmentSlots: [],
+        stashItems: [],
+        capacity: { metric: 'carried-items', used: 0, maximum: 0 },
+        armorDefense: 12,
+        armorDefenseSources: [],
+      },
       activeEncounterId: null,
       availableEncounters: [
-        { id: 'iron-warden', title: 'The Iron Warden', summary: 'Challenge the sentinel.' },
+        {
+          id: 'iron-warden',
+          title: 'The Iron Warden',
+          summary: 'Challenge the sentinel.',
+        },
       ],
     } satisfies NonNullable<GameSnapshotDto['campaign']>;
     const camp: GameSnapshotDto = {
@@ -77,10 +94,7 @@ describe('SessionStore', () => {
         turn: 0,
         nextRoll: 0,
         playerId: 101,
-        characters: [
-          hero,
-          { ...hero, id: 102, name: 'Iron Warden', title: 'Armored Sentinel' },
-        ],
+        characters: [hero, { ...hero, id: 102, name: 'Iron Warden', title: 'Armored Sentinel' }],
         actions: [],
         pendingAction: null,
         log: [],
@@ -102,8 +116,54 @@ describe('SessionStore', () => {
     await store.enterEncounter('iron-warden');
     expect(store.session()).toMatchObject({
       kind: 'data',
-      value: { revision: 3, campaign: { phase: 'encounter' }, encounter: { turn: 0 } },
+      value: {
+        revision: 3,
+        campaign: { phase: 'encounter' },
+        encounter: { turn: 0 },
+      },
     });
+  });
+
+  it('routes loadout commands and preserves typed atomic rejection', async () => {
+    const calls: string[] = [];
+    const store = new SessionStore(
+      transport({
+        equipItem: async (request) => {
+          calls.push(`equip:${request.itemId}:${request.slotId}:${request.expectedRevision}`);
+          return { ok: true, value: { ...snapshot, revision: 2 } };
+        },
+        transferItem: async (request) => {
+          calls.push(
+            `transfer:${request.itemId}:${request.fromOwnerId}:${request.toOwnerId}:${request.expectedRevision}`,
+          );
+          return {
+            ok: false,
+            error: {
+              kind: 'capacity',
+              message: 'inventory is full',
+              retryable: false,
+            },
+          };
+        },
+      }),
+    );
+    await store.load();
+    await store.equipItem(202, 'body');
+    expect(store.session()).toMatchObject({
+      kind: 'data',
+      value: { revision: 2 },
+    });
+    await store.transferItem(204, 103, 101);
+    expect(store.session()).toMatchObject({
+      kind: 'data',
+      value: { revision: 2 },
+    });
+    expect(store.commandError()).toEqual({
+      kind: 'capacity',
+      message: 'inventory is full',
+      retryable: false,
+    });
+    expect(calls).toEqual(['equip:202:body:1', 'transfer:204:103:101:2']);
   });
 
   it('projects the authoritative session and preserves typed command rejection', async () => {
@@ -111,7 +171,11 @@ describe('SessionStore', () => {
       transport({
         advanceTurn: async () => ({
           ok: false,
-          error: { kind: 'stale', message: 'revision changed', retryable: true },
+          error: {
+            kind: 'stale',
+            message: 'revision changed',
+            retryable: true,
+          },
         }),
       }),
     );
@@ -121,7 +185,10 @@ describe('SessionStore', () => {
       value: { revision: 1, engineRevisionShort: 'fb608e323a8b' },
     });
     await store.advanceTurn();
-    expect(store.session()).toMatchObject({ kind: 'data', value: { revision: 1 } });
+    expect(store.session()).toMatchObject({
+      kind: 'data',
+      value: { revision: 1 },
+    });
     expect(store.commandError()).toEqual({
       kind: 'stale',
       message: 'revision changed',

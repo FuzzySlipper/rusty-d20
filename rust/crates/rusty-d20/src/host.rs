@@ -14,8 +14,9 @@ use tower_http::trace::TraceLayer;
 
 use crate::{
     ApiErrorDto, ApiErrorKindDto, ApplyActionRequestDto, ApplyReactionRequestDto,
-    EnterEncounterRequestDto, ExpectedRevisionDto, GameRuntime, GameRuntimeError, GameSnapshotDto,
-    HealthDto, PreviewActionRequestDto, RuntimeReadoutDto,
+    EnterEncounterRequestDto, EquipItemRequestDto, ExpectedRevisionDto, GameRuntime,
+    GameRuntimeError, GameSnapshotDto, HealthDto, PreviewActionRequestDto, RuntimeReadoutDto,
+    TransferItemRequestDto, UnequipItemRequestDto,
 };
 
 #[derive(Clone)]
@@ -37,6 +38,9 @@ pub fn router(
         .route("/api/v1/session", get(session))
         .route("/api/v1/session/new", post(new_adventure))
         .route("/api/v1/session/encounter", post(enter_encounter))
+        .route("/api/v1/session/loadout/equip", post(equip_item))
+        .route("/api/v1/session/loadout/unequip", post(unequip_item))
+        .route("/api/v1/session/loadout/transfer", post(transfer_item))
         .route("/api/v1/session/preview", post(preview))
         .route("/api/v1/session/reaction", post(reaction))
         .route("/api/v1/session/action", post(action))
@@ -130,6 +134,27 @@ async fn enter_encounter(
     mutate(&state, |runtime| runtime.enter_encounter(request))
 }
 
+async fn equip_item(
+    State(state): State<HostState>,
+    Json(request): Json<EquipItemRequestDto>,
+) -> ApiResult {
+    mutate(&state, |runtime| runtime.equip_item(request))
+}
+
+async fn unequip_item(
+    State(state): State<HostState>,
+    Json(request): Json<UnequipItemRequestDto>,
+) -> ApiResult {
+    mutate(&state, |runtime| runtime.unequip_item(request))
+}
+
+async fn transfer_item(
+    State(state): State<HostState>,
+    Json(request): Json<TransferItemRequestDto>,
+) -> ApiResult {
+    mutate(&state, |runtime| runtime.transfer_item(request))
+}
+
 async fn preview(
     State(state): State<HostState>,
     Json(request): Json<PreviewActionRequestDto>,
@@ -205,7 +230,12 @@ fn api_error(error: GameRuntimeError) -> (StatusCode, Json<ApiErrorDto>) {
     let body = error.api_error();
     let status = match body.kind {
         ApiErrorKindDto::Stale => StatusCode::CONFLICT,
-        ApiErrorKindDto::Invalid => StatusCode::UNPROCESSABLE_ENTITY,
+        ApiErrorKindDto::Invalid
+        | ApiErrorKindDto::InvalidSlot
+        | ApiErrorKindDto::Capacity
+        | ApiErrorKindDto::Containment
+        | ApiErrorKindDto::TrackBound
+        | ApiErrorKindDto::Phase => StatusCode::UNPROCESSABLE_ENTITY,
         ApiErrorKindDto::NotFound => StatusCode::NOT_FOUND,
         ApiErrorKindDto::Persistence | ApiErrorKindDto::Internal => {
             StatusCode::INTERNAL_SERVER_ERROR

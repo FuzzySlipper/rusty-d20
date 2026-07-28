@@ -1,15 +1,17 @@
 use core_ids::EntityId;
 use entity_state::{
-    encode_snapshot, ComponentAccessError, ComponentRegistrationError, ComponentRevision,
-    EntityAuthoringError, EntityAuthoringService, EntityComponent, EntityDefinition,
-    EntityDefinitionError, EntityState,
+    decode_snapshot_with_registry, encode_snapshot, ComponentAccessError,
+    ComponentRegistrationError, ComponentRevision, EntityAuthoringError, EntityAuthoringService,
+    EntityComponent, EntityDefinition, EntityDefinitionError, EntityState,
 };
 use gameplay_mechanics::{
-    decode_snapshot_with_catalog_and_registry, ActiveEffectsComponent, DamagePart, DamageReceipt,
-    DamageRequest, DamageService, EffectApplyRequest, EffectInstanceId, EffectMutationReceipt,
-    EffectRefreshRequest, EffectRemovalRequest, EffectService, EquipmentComponent,
-    EquipmentEquipRequest, EquipmentMutationReceipt, EquipmentService, IntrinsicSourceBinding,
-    IntrinsicSourcesComponent, ItemComponent, MechanicsComponentKind, MechanicsError,
+    decode_snapshot_with_catalog_and_registry, ActiveEffectsComponent, CatalogVersion, DamagePart,
+    DamageReceipt, DamageRequest, DamageService, EffectApplyRequest, EffectInstanceId,
+    EffectMutationReceipt, EffectRefreshRequest, EffectRemovalRequest, EffectService,
+    EquipmentComponent, EquipmentEquipRequest, EquipmentMutationReceipt, EquipmentService,
+    EquipmentUnequipRequest, IntrinsicSourceBinding, IntrinsicSourcesComponent,
+    InventoryCapacityLimit, InventoryComponent, InventoryService, InventoryView, ItemComponent,
+    ItemTransferReceipt, ItemTransferRequest, MechanicsComponentKind, MechanicsError,
     MechanicsScalar, MechanicsSnapshotError, ObservedComponentRevision, OperationId,
     SourceInstanceId, SourceInstanceIdentity, StatEvaluation, StatService, StatValue,
     StatsComponent, TrackValue, TracksComponent,
@@ -18,8 +20,8 @@ use serde::{Deserialize, Serialize};
 use svc_rng::{RngSeed, ScopedRng};
 
 use crate::compiler::{
-    armor_item_id, damage_kind_id, defense_stat_id, equipment_slot_id, mechanics_effect_id,
-    resistance_source_id, vitality_track_id, vulnerability_source_id,
+    armor_item_id, damage_kind_id, defense_stat_id, equipment_slot_id, loadout_capacity_id,
+    mechanics_effect_id, resistance_source_id, vitality_track_id, vulnerability_source_id,
 };
 use crate::{
     d20_component_registry, AbilityScore, AbilityScoresComponent, ActionResource,
@@ -27,7 +29,8 @@ use crate::{
     ScheduledEffectsComponent, ENGINE_REVISION,
 };
 
-const D20_SAVE_SCHEMA_VERSION: u32 = 1;
+const D20_SAVE_SCHEMA_VERSION: u32 = 2;
+const LEGACY_D20_SAVE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,6 +61,19 @@ pub struct ArmorItemSeed {
     pub owner: EntityId,
     pub name: String,
     pub armor: D20Id,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InventorySeed {
+    pub owner: EntityId,
+    pub maximum_items: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageSeed {
+    pub entity: EntityId,
+    pub name: String,
+    pub maximum_items: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,10 +255,26 @@ impl D20Session {
         characters: Vec<CharacterSeed>,
         armor_items: Vec<ArmorItemSeed>,
     ) -> Result<Self, D20SessionError> {
+        Self::new_with_loadout(rules, seed, characters, vec![], vec![], armor_items)
+    }
+
+    pub fn new_with_loadout(
+        rules: D20Ruleset,
+        seed: RngSeed,
+        characters: Vec<CharacterSeed>,
+        inventories: Vec<InventorySeed>,
+        storage: Vec<StorageSeed>,
+        armor_items: Vec<ArmorItemSeed>,
+    ) -> Result<Self, D20SessionError> {
         let mut definitions = characters
             .iter()
             .map(|character| EntityDefinition::new(character.entity, character.name.clone()))
             .collect::<Vec<_>>();
+        definitions.extend(
+            storage
+                .iter()
+                .map(|storage| EntityDefinition::new(storage.entity, storage.name.clone())),
+        );
         definitions.extend(armor_items.iter().map(|item| {
             EntityDefinition::new(item.entity, item.name.clone()).with_containment(item.owner)
         }));
@@ -316,6 +348,17 @@ impl D20Session {
                 character.entity,
                 EquipmentComponent::new(rules.mechanics().version().clone(), vec![])?,
             )?;
+        }
+        for inventory in &inventories {
+            attach_inventory(
+                &mut entities,
+                &rules,
+                inventory.owner,
+                inventory.maximum_items,
+            )?;
+        }
+        for storage in &storage {
+            attach_inventory(&mut entities, &rules, storage.entity, storage.maximum_items)?;
         }
         for item in &armor_items {
             let armor = rules
@@ -395,6 +438,112 @@ impl D20Session {
                 expected_state_revision,
             },
         )?)
+    }
+
+    pub fn unequip_armor(
+        &mut self,
+        owner: EntityId,
+        item: EntityId,
+        operation: OperationId,
+    ) -> Result<EquipmentMutationReceipt, D20SessionError> {
+        let source = request_source(&operation, "unequip-armor");
+        let expected_state_revision = self.entities.revision();
+        Ok(EquipmentService::unequip(
+            &mut self.entities,
+            self.rules.mechanics(),
+            EquipmentUnequipRequest {
+                operation,
+                source,
+                owner,
+                item,
+                expected_equipment_revision: None,
+                expected_state_revision,
+            },
+        )?)
+    }
+
+    pub fn transfer_armor(
+        &mut self,
+        item: EntityId,
+        from_owner: EntityId,
+        to_owner: EntityId,
+        operation: OperationId,
+    ) -> Result<ItemTransferReceipt, D20SessionError> {
+        let source = request_source(&operation, "transfer-armor");
+        let expected_relationship_revision = self.entities.revision();
+        Ok(EquipmentService::transfer_unique_item(
+            &mut self.entities,
+            self.rules.mechanics(),
+            ItemTransferRequest {
+                operation,
+                source,
+                item,
+                from_owner,
+                to_owner,
+                expected_relationship_revision,
+                expected_from_inventory_revision: None,
+                expected_to_inventory_revision: None,
+            },
+        )?)
+    }
+
+    pub fn inventory_view(&self, owner: EntityId) -> Result<InventoryView, D20SessionError> {
+        Ok(InventoryService::view(
+            &self.entities,
+            self.rules.mechanics(),
+            owner,
+        )?)
+    }
+
+    pub fn install_loadout(
+        &mut self,
+        inventories: Vec<InventorySeed>,
+        storage: Vec<StorageSeed>,
+        armor_items: Vec<ArmorItemSeed>,
+    ) -> Result<(), D20SessionError> {
+        let mut staged = self.entities.clone();
+        let mut definitions = storage
+            .iter()
+            .map(|storage| EntityDefinition::new(storage.entity, storage.name.clone()))
+            .collect::<Vec<_>>();
+        definitions.extend(armor_items.iter().map(|item| {
+            EntityDefinition::new(item.entity, item.name.clone()).with_containment(item.owner)
+        }));
+        let revision = staged.revision();
+        EntityAuthoringService.admit(&mut staged, revision, definitions)?;
+        for inventory in &inventories {
+            attach_inventory(
+                &mut staged,
+                &self.rules,
+                inventory.owner,
+                inventory.maximum_items,
+            )?;
+        }
+        for storage in &storage {
+            attach_inventory(
+                &mut staged,
+                &self.rules,
+                storage.entity,
+                storage.maximum_items,
+            )?;
+        }
+        for item in &armor_items {
+            let armor = self
+                .rules
+                .armor(&item.armor)
+                .ok_or_else(|| D20SessionError::UnknownArmor(item.armor.clone()))?;
+            attach(
+                &mut staged,
+                item.entity,
+                ItemComponent::new(
+                    self.rules.mechanics().version().clone(),
+                    armor_item_id(&armor.id),
+                ),
+            )?;
+        }
+        gameplay_mechanics::validate_state_against_catalog(&staged, self.rules.mechanics())?;
+        self.entities = staged;
+        Ok(())
     }
 
     pub fn preview_action(
@@ -726,7 +875,9 @@ impl D20Session {
 
     pub fn decode_save(rules: D20Ruleset, input: &str) -> Result<Self, SessionSaveError> {
         let save: D20SessionSave = serde_json::from_str(input)?;
-        if save.schema_version != D20_SAVE_SCHEMA_VERSION {
+        if save.schema_version != D20_SAVE_SCHEMA_VERSION
+            && save.schema_version != LEGACY_D20_SAVE_SCHEMA_VERSION
+        {
             return Err(SessionSaveError::UnsupportedSchema {
                 actual: save.schema_version,
             });
@@ -745,8 +896,17 @@ impl D20Session {
         }
         let entity_state = serde_json::to_string(&save.entity_state)?;
         let registry = d20_component_registry()?;
-        let entities =
-            decode_snapshot_with_catalog_and_registry(&entity_state, registry, rules.mechanics())?;
+        let entities = if save.schema_version == LEGACY_D20_SAVE_SCHEMA_VERSION {
+            let mut entities = decode_snapshot_with_registry(&entity_state, registry)?;
+            upgrade_legacy_mechanics_catalog(&mut entities, &rules)
+                .map_err(SessionSaveError::InvalidState)?;
+            gameplay_mechanics::validate_state_against_catalog(&entities, rules.mechanics())
+                .map_err(D20SessionError::from)
+                .map_err(SessionSaveError::InvalidState)?;
+            entities
+        } else {
+            decode_snapshot_with_catalog_and_registry(&entity_state, registry, rules.mechanics())?
+        };
         validate_restored_d20_state(&entities, &rules)?;
         Ok(Self {
             rules,
@@ -840,6 +1000,11 @@ pub enum D20SessionError {
     ArmorItemMismatch {
         item: EntityId,
         expected: D20Id,
+    },
+    LegacyCatalogVersionMismatch {
+        entity: EntityId,
+        component: &'static str,
+        actual: String,
     },
     ReactionUnavailable(D20Id),
     MissingEffectInstance(D20Id),
@@ -1086,6 +1251,169 @@ fn attach<T: EntityComponent>(
 ) -> Result<(), D20SessionError> {
     let revision = state.component_revision::<T>(entity)?;
     EntityAuthoringService.attach_component(state, revision, entity, component)?;
+    Ok(())
+}
+
+fn attach_inventory(
+    state: &mut EntityState,
+    rules: &D20Ruleset,
+    owner: EntityId,
+    maximum_items: u64,
+) -> Result<(), D20SessionError> {
+    attach(
+        state,
+        owner,
+        InventoryComponent::with_capacity_limits(
+            rules.mechanics().version().clone(),
+            vec![],
+            vec![InventoryCapacityLimit::new(
+                loadout_capacity_id(),
+                maximum_items,
+            )],
+        )?,
+    )
+}
+
+fn upgrade_legacy_mechanics_catalog(
+    state: &mut EntityState,
+    rules: &D20Ruleset,
+) -> Result<(), D20SessionError> {
+    let version = rules.mechanics().version().clone();
+
+    let stats = state
+        .components::<StatsComponent>()?
+        .map(|(entity, component)| {
+            ensure_legacy_catalog_version(
+                entity,
+                StatsComponent::LABEL,
+                component.catalog_version(),
+            )?;
+            Ok((entity, component.values().to_vec()))
+        })
+        .collect::<Result<Vec<_>, D20SessionError>>()?;
+    for (entity, values) in stats {
+        replace(state, entity, StatsComponent::new(version.clone(), values)?)?;
+    }
+
+    let tracks = state
+        .components::<TracksComponent>()?
+        .map(|(entity, component)| {
+            ensure_legacy_catalog_version(
+                entity,
+                TracksComponent::LABEL,
+                component.catalog_version(),
+            )?;
+            Ok((entity, component.values().to_vec()))
+        })
+        .collect::<Result<Vec<_>, D20SessionError>>()?;
+    for (entity, values) in tracks {
+        replace(
+            state,
+            entity,
+            TracksComponent::new(version.clone(), values)?,
+        )?;
+    }
+
+    let intrinsic = state
+        .components::<IntrinsicSourcesComponent>()?
+        .map(|(entity, component)| {
+            ensure_legacy_catalog_version(
+                entity,
+                IntrinsicSourcesComponent::LABEL,
+                component.catalog_version(),
+            )?;
+            Ok((entity, component.bindings().to_vec()))
+        })
+        .collect::<Result<Vec<_>, D20SessionError>>()?;
+    for (entity, bindings) in intrinsic {
+        replace(
+            state,
+            entity,
+            IntrinsicSourcesComponent::new(version.clone(), bindings)?,
+        )?;
+    }
+
+    let active = state
+        .components::<ActiveEffectsComponent>()?
+        .map(|(entity, component)| {
+            ensure_legacy_catalog_version(
+                entity,
+                ActiveEffectsComponent::LABEL,
+                component.catalog_version(),
+            )?;
+            Ok((entity, component.effects().to_vec()))
+        })
+        .collect::<Result<Vec<_>, D20SessionError>>()?;
+    for (entity, effects) in active {
+        replace(
+            state,
+            entity,
+            ActiveEffectsComponent::new(version.clone(), effects)?,
+        )?;
+    }
+
+    let equipment = state
+        .components::<EquipmentComponent>()?
+        .map(|(entity, component)| {
+            ensure_legacy_catalog_version(
+                entity,
+                EquipmentComponent::LABEL,
+                component.catalog_version(),
+            )?;
+            Ok((entity, component.assignments().to_vec()))
+        })
+        .collect::<Result<Vec<_>, D20SessionError>>()?;
+    for (entity, assignments) in equipment {
+        replace(
+            state,
+            entity,
+            EquipmentComponent::new(version.clone(), assignments)?,
+        )?;
+    }
+
+    let items = state
+        .components::<ItemComponent>()?
+        .map(|(entity, component)| {
+            ensure_legacy_catalog_version(
+                entity,
+                ItemComponent::LABEL,
+                component.catalog_version(),
+            )?;
+            Ok((entity, component.definition().clone()))
+        })
+        .collect::<Result<Vec<_>, D20SessionError>>()?;
+    for (entity, definition) in items {
+        replace(
+            state,
+            entity,
+            ItemComponent::new(version.clone(), definition),
+        )?;
+    }
+    Ok(())
+}
+
+fn ensure_legacy_catalog_version(
+    entity: EntityId,
+    component: &'static str,
+    actual: &CatalogVersion,
+) -> Result<(), D20SessionError> {
+    if actual.as_str() != "rusty-d20.v1" {
+        return Err(D20SessionError::LegacyCatalogVersionMismatch {
+            entity,
+            component,
+            actual: actual.to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn replace<T: EntityComponent + PartialEq>(
+    state: &mut EntityState,
+    entity: EntityId,
+    component: T,
+) -> Result<(), D20SessionError> {
+    let revision = state.component_revision::<T>(entity)?;
+    EntityAuthoringService.replace_component(state, revision, entity, component)?;
     Ok(())
 }
 

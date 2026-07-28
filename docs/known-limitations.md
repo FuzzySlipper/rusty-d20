@@ -17,16 +17,19 @@ authored d20 encounter. It is not yet a broad d20 game.
 - The host uses one explicit local save path, defaulting to
   `target/rusty-d20/save.json`. There is no save-slot UI, cloud/storage policy,
   authentication, TLS, multi-user coordination, or migration between Engine or
-  ruleset revisions. Product schema 1 saves have one explicit migration into
-  the schema 2 active Iron Warden encounter; this is not a general migration
-  framework.
+  ruleset revisions. Product schema 1 and 2 saves have explicit migrations into
+  schema 3, including deterministic installation of the starter loadout; this
+  is not a general migration framework.
 - Opaque action previews are process-local and intentionally not saved. Save is
   unavailable until the pending action is resolved, including after a reaction
   commits its cost and effect. Completed entity state, turn, RNG position,
   operation/log identities, and bounded receipt explanations persist.
-- The retained inventory/equipment and world-navigation widgets remain
-  product-neutral building blocks. They are not Rusty D20 product proof until a
-  later downstream feature connects them to Rust-owned projections.
+- Camp inventory/equipment proves two carried armor items, one stash spare,
+  capacity rejection, equipment attribution, and persistence. It does not yet
+  define consumables, stacking, shops, loot generation, item comparison,
+  crafting, or a substantial authored item catalog.
+- The retained compass and minimap remain product-neutral building blocks.
+  Rusty D20 does not connect them until it owns real navigation facts.
 
 Broader Rusty D20 product and UI expansion is downstream follow-up, not an
 acceptance requirement for the Rusty Engine GM7 mechanism campaign.

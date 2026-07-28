@@ -6,6 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, input, output, signal } f
  * Local to the widget — no game types.
  */
 export interface EquippedItemView {
+  readonly id: string;
   readonly name: string;
   readonly icon: string;
   readonly rarity: 'common' | 'uncommon' | 'rare' | 'epic';
@@ -35,7 +36,7 @@ export const DEFAULT_EQUIP_DRAG_TYPE = 'application/x-rusty-engine-inventory-ite
  * Equipment widget: a vague paper-doll panel with gear slots flanking a
  * silhouette. Accepts HTML5 item drags and reports drops/selections — it
  * never equips or unequips anything itself; the host screen interprets the
- * events (and in this demo that means logging a placeholder message).
+ * events.
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -168,6 +169,8 @@ export const DEFAULT_EQUIP_DRAG_TYPE = 'application/x-rusty-engine-inventory-ite
           (dragleave)="onDragLeave(slot.id)"
           (drop)="onDrop($event, slot.id)"
           (click)="slot.equipped !== null && slotSelected.emit(slot)"
+          (keydown.enter)="slot.equipped !== null && slotSelected.emit(slot)"
+          (keydown.space)="slot.equipped !== null && selectFromSpace($event, slot)"
         >
           @if (slot.equipped !== null) {
             <span class="slot__icon" aria-hidden="true">{{ slot.equipped.icon }}</span>
@@ -193,8 +196,12 @@ export class EquipmentPanelComponent {
   protected readonly dragOverSlotId = signal<string | null>(null);
 
   /** Slots are split around the silhouette: first half left, second half right. */
-  protected readonly leftSlots = computed(() => this.slots().slice(0, Math.ceil(this.slots().length / 2)));
-  protected readonly rightSlots = computed(() => this.slots().slice(Math.ceil(this.slots().length / 2)));
+  protected readonly leftSlots = computed(() =>
+    this.slots().slice(0, Math.ceil(this.slots().length / 2)),
+  );
+  protected readonly rightSlots = computed(() =>
+    this.slots().slice(Math.ceil(this.slots().length / 2)),
+  );
 
   protected slotClass(slot: EquipmentSlotView): string {
     const classes = ['slot'];
@@ -230,5 +237,10 @@ export class EquipmentPanelComponent {
       return;
     }
     this.itemDropped.emit({ slotId, itemId });
+  }
+
+  protected selectFromSpace(event: Event, slot: EquipmentSlotView): void {
+    event.preventDefault();
+    this.slotSelected.emit(slot);
   }
 }

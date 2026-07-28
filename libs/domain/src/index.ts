@@ -5,6 +5,7 @@ import type {
   EncounterDto,
   GameLogEntryDto,
   GameSnapshotDto,
+  LoadoutDto,
   PendingActionDto,
   RuntimeReadoutDto,
 } from '@rusty-d20/protocol';
@@ -36,6 +37,7 @@ export interface CampaignView {
   readonly title: string;
   readonly phase: CampaignDto['phase'];
   readonly hero: CharacterDto;
+  readonly loadout: LoadoutDto;
   readonly activeEncounterId: string | null;
   readonly availableEncounters: CampaignDto['availableEncounters'];
 }
@@ -84,6 +86,7 @@ function projectCampaign(campaign: CampaignDto): CampaignView {
     title: campaign.title,
     phase: campaign.phase,
     hero: campaign.hero,
+    loadout: campaign.loadout,
     activeEncounterId: campaign.activeEncounterId,
     availableEncounters: campaign.availableEncounters,
   };
