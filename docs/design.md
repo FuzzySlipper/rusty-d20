@@ -18,21 +18,22 @@ TypeScript authoring source
   -> Angular store, features, and presentation
 ```
 
-The isolated `rules/` workspace and semantic kernel now implement the
-authoring-to-Rust portion of this path. TypeScript emits checked canonical
+The isolated `rules/` workspace, semantic kernel, and bounded Steel Guard
+encounter implement this path end to end. TypeScript emits checked canonical
 packages from a Rust-generated d20 contract; committed artifacts are decoded
-and compiled by headless Rust without Node. The product host still exposes only
-its bootstrap readout; connecting gameplay operations and projections is a
-later UI milestone.
+and compiled by Rust without Node. The product runtime constructs canonical
+Engine-backed entities from those definitions and projects only typed
+observations and command inputs to the browser.
 
 ## Runtime state
 
 Rust owns authoritative state. `D20Session` contains canonical Engine
 `EntityState`, one immutable `D20Ruleset`, explicit turn and deterministic roll
-positions, and no ambient scheduler or registry. Rusty D20 registers durable
-ability-score, action-resource, and scheduled-effect components beside Engine
-mechanics components. `GameRuntime` remains the smaller host bootstrap owner
-until product operations are connected.
+positions, and no ambient scheduler or registry. `GameRuntime` owns the
+downstream encounter lifecycle, optimistic product revision, opaque pending
+preview, bounded explanatory log, operation identities, and complete save
+wrapper. Rusty D20 registers durable ability-score, action-resource, and
+scheduled-effect components beside Engine mechanics components.
 
 `D20Session` stages heterogeneous action work in an `EntityState` clone and
 publishes only after every d20 and Engine service succeeds. Damage, equipment,
@@ -67,13 +68,15 @@ dependencies. See [rules authoring](rules-authoring.md).
 
 ## Transport and protocol
 
-`rusty-d20-host` serves the Angular build and `/api/v1/readout` from one origin.
+`rusty-d20-host` serves the Angular build plus read-only session projection and
+typed start, preview, reaction, action, turn, and save commands from one origin.
 Rust DTOs generate `libs/protocol/src/generated/api-types.ts`. The protocol
-layer strictly decodes unknown JSON; transport classifies HTTP/network failure;
-domain projects a view; store owns async UI state; features render it.
+layer strictly decodes unknown JSON with collection bounds; transport preserves
+typed HTTP rejection; domain projects a view; store owns async UI state and
+rejects late responses by request generation; features render it.
 
-The diagnostic readout observes authoritative facts. It is not a second
-authority, persistence format, or replay log.
+The combat log is a bounded receipt explanation. It observes committed facts
+and is not a second authority, persistence replay mechanism, or command source.
 
 ## Dependencies
 
@@ -84,10 +87,13 @@ graph in `boundaries.json`; production code cannot import testing fixtures.
 ## Persistence and execution
 
 `D20Session` saves the exact Engine revision, ruleset fingerprint, explicit RNG
-seed/roll position, caller-owned turn, and canonical entity snapshot. Compiled
-definitions are not copied into live saves. Reopen requires the matching
-immutable ruleset, reconstructs registered components, validates mechanics and
-d20 references, and reacquires non-durable component revisions.
+seed/roll position, caller-owned turn, and canonical entity snapshot. The
+product save wraps it with strict schema, product revision, next operation/log
+identities, and the bounded explanatory log. Opaque previews are intentionally
+not durable. Compiled definitions are not copied into live saves. Reopen
+requires the matching immutable ruleset, reconstructs registered components,
+validates mechanics and d20 references, reacquires non-durable component
+revisions, and continues deterministic rolls without replay.
 
 `advance_turn` is an explicit downstream command that expires recorded effect
 instances atomically. There is no clock callback, tick subscription, event bus,

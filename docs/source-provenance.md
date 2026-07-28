@@ -69,3 +69,16 @@ The copy owns every retained file.
 These decisions are recorded in
 [ADR 0001](adr/0001-ui-donor-and-real-rust-shell.md) and
 `template-manifest.json`.
+
+## GM7 product composition
+
+The interactive reference slice compiles the checked `starter-core.json` and
+`steel-guard.json` artifacts into the Rust-owned runtime. Their canonical
+package fingerprints and exact source paths remain recorded by
+`rules/artifacts/starter/manifest.json` and the artifacts themselves. The
+browser receives the compiled ruleset fingerprint, not authored TypeScript or
+an executable rules representation.
+
+This composition continues to use Rusty Engine revision
+`fb608e323a8b44a55195f5720101224ff37fd5db` and the UI donor revision
+`68ddfa5430ec3bc2cf7ca96963982db9511e79ba`; D20G0 does not change either pin.

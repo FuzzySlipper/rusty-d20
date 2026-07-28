@@ -195,6 +195,10 @@ impl D20Ruleset {
         self.reactions.values()
     }
 
+    pub fn actions(&self) -> impl Iterator<Item = &ActionDefinition> {
+        self.actions.values()
+    }
+
     pub fn damage_types(&self) -> impl Iterator<Item = &D20Id> {
         self.damage_types.iter()
     }

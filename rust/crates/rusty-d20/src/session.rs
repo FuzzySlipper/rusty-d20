@@ -7,11 +7,12 @@ use entity_state::{
 use gameplay_mechanics::{
     decode_snapshot_with_catalog_and_registry, ActiveEffectsComponent, DamagePart, DamageReceipt,
     DamageRequest, DamageService, EffectApplyRequest, EffectInstanceId, EffectMutationReceipt,
-    EffectRemovalRequest, EffectService, EquipmentComponent, EquipmentEquipRequest,
-    EquipmentMutationReceipt, EquipmentService, IntrinsicSourceBinding, IntrinsicSourcesComponent,
-    ItemComponent, MechanicsComponentKind, MechanicsError, MechanicsScalar, MechanicsSnapshotError,
-    ObservedComponentRevision, OperationId, SourceInstanceId, SourceInstanceIdentity,
-    StatEvaluation, StatService, StatValue, StatsComponent, TrackValue, TracksComponent,
+    EffectRefreshRequest, EffectRemovalRequest, EffectService, EquipmentComponent,
+    EquipmentEquipRequest, EquipmentMutationReceipt, EquipmentService, IntrinsicSourceBinding,
+    IntrinsicSourcesComponent, ItemComponent, MechanicsComponentKind, MechanicsError,
+    MechanicsScalar, MechanicsSnapshotError, ObservedComponentRevision, OperationId,
+    SourceInstanceId, SourceInstanceIdentity, StatEvaluation, StatService, StatValue,
+    StatsComponent, TrackValue, TracksComponent,
 };
 use serde::{Deserialize, Serialize};
 use svc_rng::{RngSeed, ScopedRng};
@@ -515,28 +516,20 @@ impl D20Session {
             preview.target,
             after_component,
         )?;
-        let effect_receipt = EffectService::apply(
-            &mut staged,
-            self.rules.mechanics(),
-            EffectApplyRequest {
-                operation: preview.operation.clone(),
-                entity: preview.target,
-                instance: effect_instance.clone(),
-                definition: mechanics_effect_id(&definition.effect),
-                provenance: request_source(&preview.operation, "reaction"),
-                stacks: 1,
-                expected_revision: None,
-            },
-        )?;
         let expires_at_turn = self
             .current_turn
             .checked_add(u64::from(effect.duration_turns))
             .ok_or(D20SessionError::TurnOverflow)?;
-        add_schedule(
+        let effect_receipt = apply_or_refresh_scheduled_effect(
             &mut staged,
+            &self.rules,
             preview.target,
+            &preview.operation,
+            &definition.effect,
+            effect_instance,
+            "reaction",
             &preview.target_scheduled_effects_revision,
-            ScheduledEffect::new(effect_instance, definition.effect.clone(), expires_at_turn),
+            expires_at_turn,
         )?;
         self.entities = staged;
         Ok(ReactionReceipt {
@@ -616,28 +609,20 @@ impl D20Session {
                     .rules
                     .effect(effect_id)
                     .expect("compiled action effect exists");
-                let receipt = EffectService::apply(
-                    &mut staged,
-                    self.rules.mechanics(),
-                    EffectApplyRequest {
-                        operation: request.preview.operation.clone(),
-                        entity: request.preview.target,
-                        instance: instance.clone(),
-                        definition: mechanics_effect_id(effect_id),
-                        provenance: request_source(&request.preview.operation, "action-effect"),
-                        stacks: 1,
-                        expected_revision: None,
-                    },
-                )?;
                 let expires_at = self
                     .current_turn
                     .checked_add(u64::from(effect.duration_turns))
                     .ok_or(D20SessionError::TurnOverflow)?;
-                add_schedule(
+                let receipt = apply_or_refresh_scheduled_effect(
                     &mut staged,
+                    &self.rules,
                     request.preview.target,
+                    &request.preview.operation,
+                    effect_id,
+                    instance,
+                    "action-effect",
                     &request.preview.target_scheduled_effects_revision,
-                    ScheduledEffect::new(instance, effect_id.clone(), expires_at),
+                    expires_at,
                 )?;
                 (Some(receipt), Some(expires_at))
             } else {
@@ -1111,21 +1096,94 @@ fn request_source(operation: &OperationId, label: &str) -> SourceInstanceIdentit
     }
 }
 
-fn add_schedule(
+#[allow(clippy::too_many_arguments)]
+fn apply_or_refresh_scheduled_effect(
     state: &mut EntityState,
+    rules: &D20Ruleset,
     entity: EntityId,
-    expected: &ComponentRevision,
-    effect: ScheduledEffect,
-) -> Result<(), D20SessionError> {
+    operation: &OperationId,
+    effect: &D20Id,
+    proposed_instance: EffectInstanceId,
+    source_label: &str,
+    expected_schedule_revision: &ComponentRevision,
+    expires_at_turn: u64,
+) -> Result<EffectMutationReceipt, D20SessionError> {
+    let mechanics_definition = mechanics_effect_id(effect);
+    let existing = state
+        .component::<ActiveEffectsComponent>(entity)?
+        .ok_or(D20SessionError::MissingComponent {
+            entity,
+            component: ActiveEffectsComponent::LABEL,
+        })?
+        .effects()
+        .iter()
+        .find(|active| active.definition() == &mechanics_definition)
+        .map(|active| active.instance().clone());
+    let refreshing = existing.is_some();
+    let provenance = request_source(operation, source_label);
+    let (receipt, scheduled_instance) = if let Some(existing) = existing {
+        (
+            EffectService::refresh(
+                state,
+                rules.mechanics(),
+                EffectRefreshRequest {
+                    operation: operation.clone(),
+                    entity,
+                    instance: existing.clone(),
+                    provenance,
+                    stacks: 1,
+                    expected_revision: None,
+                },
+            )?,
+            existing,
+        )
+    } else {
+        (
+            EffectService::apply(
+                state,
+                rules.mechanics(),
+                EffectApplyRequest {
+                    operation: operation.clone(),
+                    entity,
+                    instance: proposed_instance.clone(),
+                    definition: mechanics_definition,
+                    provenance,
+                    stacks: 1,
+                    expected_revision: None,
+                },
+            )?,
+            proposed_instance,
+        )
+    };
+
     let schedule = state
         .component::<ScheduledEffectsComponent>(entity)?
         .ok_or(D20SessionError::MissingComponent {
             entity,
             component: ScheduledEffectsComponent::LABEL,
-        })?
-        .with_added(effect)?;
-    EntityAuthoringService.replace_component(state, expected.clone(), entity, schedule)?;
-    Ok(())
+        })?;
+    let schedule = if refreshing {
+        schedule
+            .without_instances(std::slice::from_ref(&scheduled_instance))?
+            .with_added(ScheduledEffect::new(
+                scheduled_instance,
+                effect.clone(),
+                expires_at_turn,
+            ))?
+    } else {
+        schedule.with_added(ScheduledEffect::new(
+            scheduled_instance,
+            effect.clone(),
+            expires_at_turn,
+        ))?
+    };
+    EntityAuthoringService.replace_component(
+        state,
+        expected_schedule_revision.clone(),
+        entity,
+        schedule,
+    )?;
+    Ok(receipt)
 }
 
 fn ensure_component_revision(

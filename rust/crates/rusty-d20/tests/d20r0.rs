@@ -1,6 +1,7 @@
 use core_ids::EntityId;
 use gameplay_mechanics::{
-    EffectInstanceId, OperationId, SourceInstanceIdentity, TrackId, TracksComponent,
+    EffectInstanceId, EffectMutationKind, OperationId, SourceInstanceIdentity, TrackId,
+    TracksComponent,
 };
 use gameplay_rules::{
     admit_rule_package, decode_canonical_rule_package, encode_rule_package, AdmittedRulePackage,
@@ -520,7 +521,60 @@ fn deterministic_rng_and_complete_save_reopen_continue_identically() {
 }
 
 #[test]
-fn a_failed_late_effect_application_does_not_publish_damage_or_rng_progress() {
+fn repeated_refresh_effect_reuses_the_engine_instance_and_reschedules_atomically() {
+    let mut session = configured_session();
+    let first = session
+        .preview_action(
+            ATTACKER,
+            TARGET,
+            &id("strike"),
+            operation("refresh-reaction"),
+        )
+        .unwrap();
+    session
+        .apply_reaction(&first, &id("parry"), effect_instance("parry-original"))
+        .unwrap();
+    let second = session
+        .preview_action(
+            ATTACKER,
+            TARGET,
+            &id("strike"),
+            operation("refresh-reaction"),
+        )
+        .unwrap();
+    let refreshed = session
+        .apply_reaction(&second, &id("parry"), effect_instance("parry-unused"))
+        .unwrap();
+    assert_eq!(refreshed.effect.kind, EffectMutationKind::Refresh);
+    assert_eq!(
+        refreshed
+            .effect
+            .current
+            .as_ref()
+            .unwrap()
+            .instance()
+            .as_str(),
+        "parry-original"
+    );
+    let schedule = session
+        .entities()
+        .component::<rusty_d20::ScheduledEffectsComponent>(TARGET)
+        .unwrap()
+        .unwrap();
+    assert_eq!(schedule.effects().len(), 1);
+    assert_eq!(schedule.effects()[0].instance().as_str(), "parry-original");
+    let encoded = session.encode_save().unwrap();
+    assert_eq!(
+        D20Session::decode_save(ruleset(), &encoded)
+            .unwrap()
+            .encode_save()
+            .unwrap(),
+        encoded
+    );
+}
+
+#[test]
+fn a_failed_late_missing_effect_identity_does_not_publish_damage_or_rng_progress() {
     let mut session = configured_session();
     let first = session
         .preview_action(ATTACKER, TARGET, &id("strike"), operation("first-effect"))
@@ -533,21 +587,14 @@ fn a_failed_late_effect_application_does_not_publish_damage_or_rng_progress() {
         .unwrap();
     let before = session.encode_save().unwrap();
     let preview = session
-        .preview_action(
-            ATTACKER,
-            TARGET,
-            &id("strike"),
-            operation("duplicate-effect"),
-        )
+        .preview_action(ATTACKER, TARGET, &id("strike"), operation("missing-effect"))
         .unwrap();
     assert!(matches!(
         session.apply_action(ApplyActionRequest {
             preview,
-            effect_instance: Some(effect_instance("shared-bleeding")),
+            effect_instance: None,
         }),
-        Err(D20SessionError::Mechanics(
-            gameplay_mechanics::MechanicsError::DuplicateEffectInstance { .. }
-        ))
+        Err(D20SessionError::MissingEffectInstance(effect)) if effect.as_str() == "bleeding"
     ));
     assert_eq!(session.encode_save().unwrap(), before);
 

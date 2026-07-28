@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { decodeRuntimeReadout } from './index';
+import { decodeGameSnapshot, decodeRuntimeReadout } from './index';
 
 const validReadout = {
   engineRevision: 'fb608e323a8b44a55195f5720101224ff37fd5db',
-  entityCount: 1,
+  entityCount: 0,
   product: 'Rusty D20',
   status: 'ready',
   version: '0.1.0',
@@ -17,5 +17,28 @@ describe('decodeRuntimeReadout', () => {
   it('rejects unknown fields and unsafe counts', () => {
     expect(decodeRuntimeReadout({ ...validReadout, semanticStatus: 'pretend' })).toMatchObject({ ok: false });
     expect(decodeRuntimeReadout({ ...validReadout, entityCount: Number.MAX_SAFE_INTEGER + 1 })).toMatchObject({ ok: false });
+  });
+});
+
+describe('decodeGameSnapshot', () => {
+  const empty = {
+    product: 'Rusty D20',
+    version: '0.1.0',
+    engineRevision: 'fb608e323a8b44a55195f5720101224ff37fd5db',
+    rulesetFingerprint: 'rules',
+    revision: 0,
+    saved: false,
+    encounter: null,
+  };
+
+  it('accepts the exact empty-session shape', () => {
+    expect(decodeGameSnapshot(empty)).toEqual({ ok: true, value: empty });
+  });
+
+  it('rejects unknown fields and unsafe revisions', () => {
+    expect(decodeGameSnapshot({ ...empty, liveRules: [] })).toMatchObject({ ok: false });
+    expect(decodeGameSnapshot({ ...empty, revision: Number.MAX_SAFE_INTEGER + 1 })).toMatchObject({
+      ok: false,
+    });
   });
 });

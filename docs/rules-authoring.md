@@ -28,7 +28,7 @@ revision.
 - `@rusty-d20/starter-ruleset` owns concrete Rusty D20 content. It imports the
   SDK only through its package root.
 - `rules/artifacts/starter/` contains canonical JSON packages and the
-  fingerprint manifest consumed by Rust tests and later product loading.
+  fingerprint manifest consumed by Rust tests and the Rust product runtime.
 
 Definition arrays are sorted by stable identity before emission. Engine
 admission then canonicalizes dependencies, sources, provenance, object keys,

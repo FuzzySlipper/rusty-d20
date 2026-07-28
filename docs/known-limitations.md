@@ -1,24 +1,28 @@
 # Known limitations
 
-The headless semantic kernel proves a bounded d20 rules and action slice. The
-interactive product is still a bootstrap, not a playable d20 game.
+The interactive product proves one bounded authored d20 encounter. It is not
+yet a broad d20 game.
 
-- The Rust host still exposes one bootstrap entity and only
-  health/version/readout operations; it does not expose `D20Session` commands.
-- The kernel covers ability modifiers, one attack/check shape, typed damage
-  affinities, armor, reactions, ongoing effects, explicit turns, and complete
-  reopen. It does not yet define initiative, movement, spellcasting,
-  advancement, encounters, or broader d20 content.
-- TypeScript now authors checked starter artifacts, but there is no content
-  publication service, watch mode, browser editor, or ruleset migration policy.
-  Artifact generation remains an explicit build-time command.
-- Save bytes are an in-process product format with exact Engine and ruleset
-  identity checks. Filesystem layout, migration between rulesets, and user save
-  management are not implemented.
-- The host is local/trusted and has no authentication, TLS, rate limiting, or
-  multi-user policy.
-- The retained presentational widgets are not product proof until connected to
-  Rust-owned projections through real features.
+- The live slice has one player, one target, two Steel Guard actions, one armor
+  reaction, vitality, attributed resistance, scheduled effects, and explicit
+  turn advancement. It does not yet define initiative, movement, spellcasting,
+  advancement, encounter selection, defeat consequences, or broader content.
+- The checked authoring catalog also contains the Ember Ward composition, but
+  the first interactive encounter intentionally loads Starter Core plus Steel
+  Guard only.
+- There is no content publication service, watch mode, browser editor, or
+  ruleset migration policy. Artifact generation remains an explicit build-time
+  command.
+- The host uses one explicit local save path, defaulting to
+  `target/rusty-d20/save.json`. There is no save-slot UI, cloud/storage policy,
+  authentication, TLS, multi-user coordination, or migration between Engine or
+  ruleset revisions.
+- Opaque action previews are process-local and intentionally not saved. A
+  reopened user selects the action again; committed entity state, turn, RNG
+  position, operation/log identities, and bounded receipt explanations persist.
+- The retained inventory/equipment and world-navigation widgets remain
+  product-neutral building blocks. They are not Rusty D20 product proof until a
+  later downstream feature connects them to Rust-owned projections.
 
-Do not hide these boundaries with fake product data. Extend the real Rust
-contract and production store when a milestone needs new behavior.
+Broader Rusty D20 product and UI expansion is downstream follow-up, not an
+acceptance requirement for the Rusty Engine GM7 mechanism campaign.

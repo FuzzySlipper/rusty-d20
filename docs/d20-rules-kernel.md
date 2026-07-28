@@ -92,7 +92,10 @@ transaction. The original preview becomes stale; the caller must preview
 again. A fresh apply derives a deterministic scoped stream from the saved seed
 and roll index, resolves the d20 check, asks `DamageService` to apply typed
 damage, and applies/schedules any action effect. The staged `EntityState`
-publishes only if every late step succeeds.
+publishes only if every late step succeeds. Because authored temporary effects
+compile with Engine Refresh stacking, a repeated effect-bearing action refreshes
+the existing Engine instance and atomically reschedules its caller-owned expiry
+instead of creating a parallel effect or surfacing a stacking conflict.
 
 `advance_turn` is an explicit caller command. It expires due effects and updates
 their schedule components atomically. There is no ambient clock or update
@@ -100,7 +103,7 @@ callback.
 
 ## Persistence
 
-The complete save records:
+The semantic session save records:
 
 - save schema and exact Engine revision;
 - compiled ruleset fingerprint;
@@ -112,3 +115,9 @@ Reopen requires the matching ruleset, validates the Engine catalog and d20
 component references, verifies active effects have matching schedules, and
 reacquires live component revisions. Roll-index scoping makes continuation
 constant-time rather than replaying every prior random draw.
+
+The product runtime wraps that session with its strict schema, optimistic
+revision, next operation/log identities, and bounded receipt-explanation log.
+Pending preview authority is process-local and deliberately excluded. The
+browser never receives the `ActionPreview`; it receives a token plus immutable
+projection, while Rust retains and applies the actual preview.

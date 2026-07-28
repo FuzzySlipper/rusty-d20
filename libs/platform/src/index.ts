@@ -26,6 +26,7 @@ export interface HttpResponse {
 
 export interface HttpPort {
   readonly getJson: (path: string) => Promise<HttpResponse>;
+  readonly postJson: (path: string, body: unknown) => Promise<HttpResponse>;
 }
 
 export const browserClock: ClockPort = {
@@ -65,6 +66,16 @@ export const browserHttp = (): HttpPort => ({
     const response = await fetch(path, {
       headers: { accept: 'application/json' },
       method: 'GET',
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    const body: unknown = contentType.includes('application/json') ? await response.json() : await response.text();
+    return { status: response.status, body };
+  },
+  postJson: async (path, requestBody) => {
+    const response = await fetch(path, {
+      body: JSON.stringify(requestBody),
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      method: 'POST',
     });
     const contentType = response.headers.get('content-type') ?? '';
     const body: unknown = contentType.includes('application/json') ? await response.json() : await response.text();

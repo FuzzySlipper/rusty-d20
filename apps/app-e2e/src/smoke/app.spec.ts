@@ -1,34 +1,101 @@
 import { expect, test } from '@playwright/test';
 
-test('real Rust host serves health, shell, and authoritative readout', async ({ page, request }) => {
-  const health = await request.get('/healthz');
-  expect(health.ok()).toBe(true);
-  await expect(health.json()).resolves.toEqual({ status: 'ok', version: '0.1.0' });
+test.describe.serial('real Rust encounter shell', () => {
+  test('empty game starts and resolves authored action, reaction, turn, and save', async ({
+    page,
+    request,
+  }) => {
+    const health = await request.get('/healthz');
+    expect(health.ok()).toBe(true);
+    await expect(health.json()).resolves.toEqual({ status: 'ok', version: '0.1.0' });
 
-  await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1, name: 'Rusty D20', exact: true })).toBeVisible();
-  const readout = page.getByLabel('Rust runtime readout');
-  await expect(readout).toContainText('Runtime ready');
-  await expect(readout).toContainText('fb608e323a8b');
-  await expect(readout).toContainText('Canonical entities');
-  await expect(readout).toContainText('1');
-});
+    await page.goto('/');
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Rusty D20', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: "The Warden's Gate" })).toBeVisible();
+    await page.getByRole('button', { name: 'Start encounter' }).click();
 
-test('runtime connection failure is visibly classified and retryable', async ({ page }) => {
-  await page.route('**/api/v1/readout', (route) => route.abort('connectionrefused'));
-  await page.goto('/');
+    await expect(page.locator('aui-character-status')).toHaveCount(2);
+    await expect(page.getByText('Mara Venn', { exact: true })).toBeVisible();
+    await expect(
+      page.locator('aui-character-status').nth(1).getByText('Iron Warden', { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByLabel('Encounter identity')).toContainText('Engine fb608e323a8b');
 
-  const alert = page.getByRole('alert');
-  await expect(alert).toContainText('network failure');
-  await expect(page.getByRole('button', { name: 'Retry connection' })).toBeVisible();
-});
+    await page.getByLabel('Target').selectOption({ label: 'Iron Warden' });
+    await page.getByRole('button', { name: 'Longsword Strike' }).click();
+    const preview = page.getByLabel('Authoritative action preview');
+    await expect(preview).toContainText('against defense 15');
+    await expect(preview).toContainText('Equipped item 201');
 
-test('invalid runtime payload fails closed at the protocol border', async ({ page }) => {
-  await page.route('**/api/v1/readout', (route) =>
-    route.fulfill({ contentType: 'application/json', status: 200, body: '{"status":"ready"}' }),
-  );
-  await page.goto('/');
+    await page.getByRole('button', { name: /Parry · 1 Guard/ }).click();
+    await expect(preview).toContainText('against defense 17');
+    await expect(page.getByLabel('Combat log')).toContainText('raised a reaction');
 
-  await expect(page.getByRole('alert')).toContainText('unknown failure');
-  await expect(page.getByText('Runtime readout has an unexpected shape.')).toBeVisible();
+    await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
+    const explanation = page.getByLabel('Latest outcome explanation');
+    await expect(explanation).toContainText(/d20 \d+ \+ modifier/);
+    await expect(explanation).toContainText('Deterministic roll index 0');
+    await expect(explanation).toContainText(/Intrinsic|Equipped item|missed/);
+
+    await page.getByRole('button', { name: 'Advance turn' }).click();
+    await expect(page.getByLabel('Encounter identity')).toContainText('Turn 1');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+  });
+
+  test('a normal control presents a stale rejection after another client advances state', async ({
+    browser,
+    page,
+  }) => {
+    await page.goto('/');
+    const second = await browser.newPage();
+    await second.goto('/');
+
+    await second.getByRole('button', { name: 'Advance turn' }).click();
+    await expect(second.getByLabel('Encounter identity')).toContainText('Turn 2');
+
+    await page.getByRole('button', { name: 'Longsword Strike' }).click();
+    const alert = page.getByRole('alert');
+    await expect(alert).toContainText('stale rejection');
+    await expect(alert).toContainText('current revision');
+    await expect(page.getByRole('button', { name: 'Reload current state' })).toBeVisible();
+    await second.close();
+  });
+
+  test('mobile game shell remains usable without horizontal overflow', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    await expect(page.getByRole('button', { name: 'Advance turn' })).toBeVisible();
+    await expect(page.locator('aui-character-status')).toHaveCount(2);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+  });
+
+  test('runtime connection failure is visibly classified and retryable', async ({ page }) => {
+    await page.route('**/api/v1/session', (route) => route.abort('connectionrefused'));
+    await page.goto('/');
+
+    const alert = page.getByRole('alert');
+    await expect(alert).toContainText('network failure');
+    await expect(page.getByRole('button', { name: 'Retry connection' })).toBeVisible();
+  });
+
+  test('invalid runtime payload fails closed at the protocol border', async ({ page }) => {
+    await page.route('**/api/v1/session', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        status: 200,
+        body: '{"product":"Rusty D20"}',
+      }),
+    );
+    await page.goto('/');
+
+    await expect(page.getByRole('alert')).toContainText('unknown failure');
+    await expect(
+      page.getByText('Game snapshot has an unexpected or invalid shape.'),
+    ).toBeVisible();
+  });
 });

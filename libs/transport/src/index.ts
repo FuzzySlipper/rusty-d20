@@ -1,35 +1,91 @@
-import type { HttpPort } from '@rusty-d20/platform';
-import { decodeRuntimeReadout, type Result, type RuntimeReadoutDto } from '@rusty-d20/protocol';
+import type { HttpPort, HttpResponse } from '@rusty-d20/platform';
+import {
+  decodeApiError,
+  decodeGameSnapshot,
+  decodeRuntimeReadout,
+  type ApplyActionRequestDto,
+  type ApplyReactionRequestDto,
+  type ClassifiedError,
+  type GameSnapshotDto,
+  type PreviewActionRequestDto,
+  type Result,
+  type RuntimeReadoutDto,
+} from '@rusty-d20/protocol';
 
 export interface RustyD20Transport {
   readonly loadReadout: () => Promise<Result<RuntimeReadoutDto>>;
+  readonly loadSession: () => Promise<Result<GameSnapshotDto>>;
+  readonly startEncounter: (expectedRevision: number) => Promise<Result<GameSnapshotDto>>;
+  readonly previewAction: (request: PreviewActionRequestDto) => Promise<Result<GameSnapshotDto>>;
+  readonly applyReaction: (request: ApplyReactionRequestDto) => Promise<Result<GameSnapshotDto>>;
+  readonly applyAction: (request: ApplyActionRequestDto) => Promise<Result<GameSnapshotDto>>;
+  readonly advanceTurn: (expectedRevision: number) => Promise<Result<GameSnapshotDto>>;
+  readonly save: (expectedRevision: number) => Promise<Result<GameSnapshotDto>>;
 }
 
 export function createHttpRustyD20Transport(http: HttpPort): RustyD20Transport {
+  const get = async <T>(
+    path: string,
+    decode: (value: unknown) => Result<T>,
+  ): Promise<Result<T>> => request(() => http.getJson(path), decode);
+  const post = async <T>(
+    path: string,
+    body: unknown,
+    decode: (value: unknown) => Result<T>,
+  ): Promise<Result<T>> => request(() => http.postJson(path, body), decode);
+
   return {
-    loadReadout: async () => {
-      try {
-        const response = await http.getJson('/api/v1/readout');
-        if (response.status === 401) {
-          return { ok: false, error: { kind: 'unauthorized', message: 'Runtime access was denied.', retryable: false } };
-        }
-        if (response.status === 404) {
-          return { ok: false, error: { kind: 'not-found', message: 'Runtime readout was not found.', retryable: false } };
-        }
-        if (response.status < 200 || response.status >= 300) {
-          return { ok: false, error: { kind: 'unknown', message: `Runtime returned HTTP ${response.status}.`, retryable: false } };
-        }
-        return decodeRuntimeReadout(response.body);
-      } catch (error: unknown) {
-        return {
-          ok: false,
-          error: {
-            kind: 'network',
-            message: error instanceof Error ? error.message : 'Runtime connection failed.',
-            retryable: true,
-          },
-        };
-      }
-    },
+    loadReadout: () => get('/api/v1/readout', decodeRuntimeReadout),
+    loadSession: () => get('/api/v1/session', decodeGameSnapshot),
+    startEncounter: (expectedRevision) =>
+      post('/api/v1/session/start', { expectedRevision }, decodeGameSnapshot),
+    previewAction: (body) => post('/api/v1/session/preview', body, decodeGameSnapshot),
+    applyReaction: (body) => post('/api/v1/session/reaction', body, decodeGameSnapshot),
+    applyAction: (body) => post('/api/v1/session/action', body, decodeGameSnapshot),
+    advanceTurn: (expectedRevision) =>
+      post('/api/v1/session/turn', { expectedRevision }, decodeGameSnapshot),
+    save: (expectedRevision) =>
+      post('/api/v1/session/save', { expectedRevision }, decodeGameSnapshot),
   };
+}
+
+async function request<T>(
+  send: () => Promise<HttpResponse>,
+  decode: (value: unknown) => Result<T>,
+): Promise<Result<T>> {
+  try {
+    const response = await send();
+    if (response.status === 401) {
+      return {
+        ok: false,
+        error: {
+          kind: 'unauthorized',
+          message: 'Runtime access was denied.',
+          retryable: false,
+        },
+      };
+    }
+    if (response.status >= 200 && response.status < 300) {
+      return decode(response.body);
+    }
+    const error = decodeApiError(response.body);
+    if (error !== undefined) {
+      return { ok: false, error };
+    }
+    return {
+      ok: false,
+      error: {
+        kind: response.status === 404 ? 'not-found' : 'unknown',
+        message: `Runtime returned HTTP ${response.status}.`,
+        retryable: false,
+      },
+    };
+  } catch (error: unknown) {
+    const classified: ClassifiedError = {
+      kind: 'network',
+      message: error instanceof Error ? error.message : 'Runtime connection failed.',
+      retryable: true,
+    };
+    return { ok: false, error: classified };
+  }
 }

@@ -5,3 +5,33 @@ export type RuntimeStatusDto = "ready";
 export type RuntimeReadoutDto = { product: string, version: string, engineRevision: string, status: RuntimeStatusDto, entityCount: number, };
 
 export type HealthDto = { status: string, version: string, };
+
+export type GameLogKindDto = "system" | "reaction" | "hit" | "miss" | "turn";
+
+export type GameLogEntryDto = { id: number, turn: number, kind: GameLogKindDto, source: string, text: string, details: Array<string>, };
+
+export type ResourceDto = { id: string, label: string, current: number, maximum: number, };
+
+export type CharacterDto = { id: number, name: string, title: string, level: number, healthCurrent: number, healthMaximum: number, resources: Array<ResourceDto>, effects: Array<string>, };
+
+export type ActionDto = { id: string, label: string, ability: string, defense: string, damage: string, effect: string | null, };
+
+export type ReactionDto = { id: string, label: string, resource: string, cost: number, available: number, bonus: number, effect: string, };
+
+export type PendingActionDto = { token: string, actorId: number, targetId: number, actionId: string, actionLabel: string, abilityScore: number, abilityModifier: number, defense: number, defenseSources: Array<string>, reactions: Array<ReactionDto>, };
+
+export type EncounterDto = { turn: number, nextRoll: number, playerId: number, characters: Array<CharacterDto>, actions: Array<ActionDto>, pendingAction: PendingActionDto | null, log: Array<GameLogEntryDto>, };
+
+export type GameSnapshotDto = { product: string, version: string, engineRevision: string, rulesetFingerprint: string, revision: number, saved: boolean, encounter: EncounterDto | null, };
+
+export type ExpectedRevisionDto = { expectedRevision: number, };
+
+export type PreviewActionRequestDto = { expectedRevision: number, actorId: number, targetId: number, actionId: string, };
+
+export type ApplyReactionRequestDto = { expectedRevision: number, previewToken: string, reactionId: string, };
+
+export type ApplyActionRequestDto = { expectedRevision: number, previewToken: string, };
+
+export type ApiErrorKindDto = "stale" | "invalid" | "not-found" | "persistence" | "internal";
+
+export type ApiErrorDto = { kind: ApiErrorKindDto, message: string, retryable: boolean, };

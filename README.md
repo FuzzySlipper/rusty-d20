@@ -6,14 +6,15 @@ game orchestration, complete saves, transport, and presentation. Rusty Engine
 remains optional reusable infrastructure; other games never need to import this
 repository.
 
-The current product bootstrap is deliberately small but real: an Angular/Nx
-shell is served by a Rust process, calls a same-origin typed endpoint, strictly
-decodes a Rust-generated contract, and renders a readout derived from canonical
-`entity-state` state. Separately, the headless Rust kernel compiles bounded d20
-candidates authored through an isolated TypeScript SDK and runs deterministic,
-source-attributed action/reaction/effect lifecycles with complete saves. The
-checked starter catalog includes distinct steel/armor and ember/resolve
-compositions. Fake transport is available only from `libs/testing-fixtures`.
+The current product is a deliberately bounded but real encounter. An Angular/Nx
+shell is served by a Rust process and reaches Rust-owned state through a strict
+generated same-origin contract. The browser can start or reopen the Steel Guard
+starter encounter, choose an authored action and target, apply an optional
+reaction, resolve deterministic source-attributed damage/effects, advance the
+caller-owned turn, and save. A fresh Rust process continues from the same
+authoritative state without replay. The checked starter catalog also includes
+the separate ember/resolve composition for headless and authoring proof. Fake
+transport remains available only from `libs/testing-fixtures`.
 
 ## Start the product
 
@@ -22,8 +23,9 @@ pnpm install --frozen-lockfile
 pnpm run serve:local
 ```
 
-Open the printed `BASE_URL`. The page must report `Runtime ready`, one canonical
-entity, and the pinned Rusty Engine revision.
+Open the printed `BASE_URL`. With no prior save, start **The Warden's Gate**.
+The host writes an explicit save to `target/rusty-d20/save.json`; stopping and
+starting the command again reopens it.
 
 ## Verify
 
@@ -38,9 +40,9 @@ start at [docs/design.md](docs/design.md) and
 
 ## Current phase boundary
 
-The semantic kernel and first authored starter ruleset are implemented, but
-they are not yet connected to the product host or Angular UI. Encounter play
-and broader d20 content remain later milestones. See
+The GM7 reference slice is connected end to end. It is not yet a broad d20
+product: initiative, movement, spellcasting, advancement, content publication,
+save migration, and additional encounter/UI work remain later milestones. See
 [docs/known-limitations.md](docs/known-limitations.md).
 
 ## Provenance

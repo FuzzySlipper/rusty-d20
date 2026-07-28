@@ -76,6 +76,7 @@ export interface HotbarSlotView {
             <button
               class="slot"
               [class.slot--empty]="slot.empty"
+              [disabled]="slot.empty"
               type="button"
               [attr.aria-label]="slot.empty ? 'Empty slot ' + slot.keybind : slot.label"
               [title]="slot.empty ? '' : slot.label"

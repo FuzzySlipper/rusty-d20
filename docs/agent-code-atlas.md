@@ -7,6 +7,7 @@
 | `rust/crates/rusty-d20/src/compiler.rs` | Downstream semantic validation, correlated diagnostics, immutable definitions, mechanics catalog compilation | `cargo test -p rusty-d20 --test d20r0 compiler --locked` |
 | `rust/crates/rusty-d20/src/component.rs` | Durable d20 ability, resource, and caller-owned effect-schedule components | `cargo test -p rusty-d20 --test d20r0 --locked` |
 | `rust/crates/rusty-d20/src/session.rs` | Atomic preview/reaction/apply, deterministic rolls, explicit turn expiry, complete saves | `cargo test -p rusty-d20 --test d20r0 --locked` |
+| `rust/crates/rusty-d20/src/game.rs` | Product encounter lifecycle, opaque preview custody, projection, optimistic revisions, bounded explanations, product save/reopen | `cargo test -p rusty-d20 --lib --locked` |
 | `rust/crates/rusty-d20/src/identity.rs` | Bounded stable downstream definition identities | Rust tests and strict candidate decode |
 | `rust/crates/rusty-d20/tests/d20r0.rs` | Headless semantic, failure-atomicity, persistence, provenance, and composition evidence | `cargo test -p rusty-d20 --test d20r0 --locked` |
 | `rust/crates/rusty-d20/tests/d20a0.rs` | Node-free strict decode, starter composition, generated contract, fingerprint, and diagnostic-correlation proof | `cargo test -p rusty-d20 --test d20a0 --locked` |
@@ -15,9 +16,9 @@
 | `libs/protocol/` | Generated DTOs and strict unknown-JSON decode | `pnpm run protocol:check`; Vitest |
 | `libs/platform/` | Browser/host ports and browser adapters | Typecheck and Vitest consumers |
 | `libs/transport/` | Typed HTTP operations and failure classification | `http-transport.spec.ts` |
-| `libs/domain/` | Pure readout-to-view projection | Domain Vitest |
-| `libs/store/` | Angular async state and production providers | Store Vitest; boundary audit |
-| `libs/feature-main-menu/` | Permanent bootstrap/product entry feature | Playwright smoke/live evidence |
+| `libs/domain/` | Pure Rust DTO-to-product-view projection | Domain Vitest |
+| `libs/store/` | Angular async state, command orchestration, and stale-response guards | Store Vitest; boundary audit |
+| `libs/feature-main-menu/` | Permanent encounter entry/action/status/receipt feature | Playwright smoke/live evidence |
 | `libs/components`, `libs/renderer`, `libs/ui-*` | Retained product-neutral presentation building blocks | Typecheck, lint, later live consumers |
 | `libs/shell/`, `apps/app/` | Routes and application composition | Build and Playwright |
 | `libs/testing-fixtures/` | Explicit fake transport/readout helpers | Must never enter production graph |
