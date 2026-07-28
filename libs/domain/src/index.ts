@@ -1,5 +1,6 @@
 import type {
   ActionDto,
+  CampaignDto,
   CharacterDto,
   EncounterDto,
   GameLogEntryDto,
@@ -26,7 +27,17 @@ export interface GameSnapshotView {
   readonly rulesetFingerprintShort: string;
   readonly revision: number;
   readonly saved: boolean;
+  readonly campaign: CampaignView | null;
   readonly encounter: EncounterView | null;
+}
+
+export interface CampaignView {
+  readonly id: string;
+  readonly title: string;
+  readonly phase: CampaignDto['phase'];
+  readonly hero: CharacterDto;
+  readonly activeEncounterId: string | null;
+  readonly availableEncounters: CampaignDto['availableEncounters'];
 }
 
 export interface EncounterView {
@@ -62,7 +73,19 @@ export function projectGameSnapshot(snapshot: GameSnapshotDto): GameSnapshotView
     rulesetFingerprintShort: snapshot.rulesetFingerprint.slice(0, 12),
     revision: snapshot.revision,
     saved: snapshot.saved,
+    campaign: snapshot.campaign === null ? null : projectCampaign(snapshot.campaign),
     encounter: snapshot.encounter === null ? null : projectEncounter(snapshot.encounter),
+  };
+}
+
+function projectCampaign(campaign: CampaignDto): CampaignView {
+  return {
+    id: campaign.id,
+    title: campaign.title,
+    phase: campaign.phase,
+    hero: campaign.hero,
+    activeEncounterId: campaign.activeEncounterId,
+    availableEncounters: campaign.availableEncounters,
   };
 }
 

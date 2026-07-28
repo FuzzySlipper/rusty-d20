@@ -18,8 +18,8 @@ TypeScript authoring source
   -> Angular store, features, and presentation
 ```
 
-The isolated `rules/` workspace, semantic kernel, and bounded Steel Guard
-encounter implement this path end to end. TypeScript emits checked canonical
+The isolated `rules/` workspace, semantic kernel, and bounded Warden's Gate
+adventure implement this path end to end. TypeScript emits checked canonical
 packages from a Rust-generated d20 contract; committed artifacts are decoded
 and compiled by Rust without Node. The product runtime constructs canonical
 Engine-backed entities from those definitions and projects only typed
@@ -30,10 +30,13 @@ observations and command inputs to the browser.
 Rust owns authoritative state. `D20Session` contains canonical Engine
 `EntityState`, one immutable `D20Ruleset`, explicit turn and deterministic roll
 positions, and no ambient scheduler or registry. `GameRuntime` owns the
-downstream encounter lifecycle, optimistic product revision, opaque pending
-preview, bounded explanatory log, operation identities, and complete save
-wrapper. Rusty D20 registers durable ability-score, action-resource, and
-scheduled-effect components beside Engine mechanics components.
+downstream campaign and encounter lifecycle, optimistic product revision,
+opaque pending preview, bounded explanatory log, operation identities, and
+complete save wrapper. The durable campaign has explicit `camp` and
+`encounter` phases. It is product state for this adventure, not a generic
+Engine campaign mechanism. Rusty D20 registers durable ability-score,
+action-resource, and scheduled-effect components beside Engine mechanics
+components.
 
 `D20Session` stages heterogeneous action work in an `EntityState` clone and
 publishes only after every d20 and Engine service succeeds. Damage, equipment,
@@ -69,11 +72,14 @@ dependencies. See [rules authoring](rules-authoring.md).
 ## Transport and protocol
 
 `rusty-d20-host` serves the Angular build plus read-only session projection and
-typed start, preview, reaction, action, turn, and save commands from one origin.
-Rust DTOs generate `libs/protocol/src/generated/api-types.ts`. The protocol
-layer strictly decodes unknown JSON with collection bounds; transport preserves
-typed HTTP rejection; domain projects a view; store owns async UI state and
-rejects late responses by request generation; features render it.
+typed new-adventure, enter-encounter, preview, reaction, action, turn, and save
+commands from one origin. Rust DTOs generate
+`libs/protocol/src/generated/api-types.ts`. The protocol layer strictly decodes
+unknown JSON with collection bounds; transport preserves typed HTTP rejection;
+domain projects a view; store owns async UI state and rejects late responses by
+request generation; features render it. Continue is a local presentation
+choice over an already loaded Rust projection; it does not mutate or duplicate
+campaign authority.
 
 The combat log is a bounded receipt explanation. It observes committed facts
 and is not a second authority, persistence replay mechanism, or command source.
@@ -87,16 +93,19 @@ graph in `boundaries.json`; production code cannot import testing fixtures.
 ## Persistence and execution
 
 `D20Session` saves the exact Engine revision, ruleset fingerprint, explicit RNG
-seed/roll position, caller-owned turn, and canonical entity snapshot. The
-product save wraps it with strict schema, product revision, next operation/log
-identities, and the bounded explanatory log. Opaque previews are intentionally
-not durable, so save rejects before file mutation while an action is pending;
-the user must resolve it first. This includes a pending action whose reaction
-has already committed resource and effect changes. Compiled definitions are not
+seed/roll position, caller-owned turn, and canonical entity snapshot. Product
+save schema 2 wraps it with strict campaign identity and phase, product
+revision, next operation/log identities, and the bounded explanatory log.
+Schema 1 D20G0 saves migrate deterministically to the active Iron Warden
+encounter; unknown schemas and inconsistent phase/encounter pairs reject rather
+than defaulting or discarding state. Opaque previews are intentionally not
+durable, so save rejects before file mutation while an action is pending; the
+user must resolve it first. This includes a pending action whose reaction has
+already committed resource and effect changes. Compiled definitions are not
 copied into live saves. Reopen requires the matching immutable ruleset,
 reconstructs registered components, validates mechanics and d20 references,
-reacquires non-durable component revisions, and continues deterministic rolls
-without replay.
+reacquires non-durable component revisions, and continues the exact camp or
+encounter phase and deterministic rolls without replay.
 
 `advance_turn` is an explicit downstream command that expires recorded effect
 instances atomically. There is no clock callback, tick subscription, event bus,

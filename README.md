@@ -6,12 +6,13 @@ game orchestration, complete saves, transport, and presentation. Rusty Engine
 remains optional reusable infrastructure; other games never need to import this
 repository.
 
-The current product is a deliberately bounded but real encounter. An Angular/Nx
-shell is served by a Rust process and reaches Rust-owned state through a strict
-generated same-origin contract. The browser can start or reopen the Steel Guard
-starter encounter, choose an authored action and target, apply an optional
-reaction, resolve deterministic source-attributed damage/effects, advance the
-caller-owned turn, and save. A fresh Rust process continues from the same
+The current product is a deliberately bounded but real adventure shell. An
+Angular/Nx application is served by a Rust process and reaches Rust-owned state
+through a strict generated same-origin contract. The browser can begin or
+continue **The Warden's Gate**, save in camp, enter the Steel Guard encounter,
+choose an authored action and target, apply an optional reaction, resolve
+deterministic source-attributed damage/effects, advance the caller-owned turn,
+and save. A fresh Rust process continues the exact campaign phase and
 authoritative state without replay. The checked starter catalog also includes
 the separate ember/resolve composition for headless and authoring proof. Fake
 transport remains available only from `libs/testing-fixtures`.
@@ -23,10 +24,12 @@ pnpm install --frozen-lockfile
 pnpm run serve:local
 ```
 
-Open the printed `BASE_URL`. With no prior save, start **The Warden's Gate**.
-The host writes an explicit save to `target/rusty-d20/save.json`; stopping and
-starting the command again reopens it. Resolve any pending action before saving;
-the Rust host rejects pending saves before changing the existing save file.
+Open the printed `BASE_URL`. With no prior save, choose **New Adventure**, save
+or leave Warden's Gate Camp, then enter **The Iron Warden**. The host writes an
+explicit save to `target/rusty-d20/save.json`; after restart, **Continue
+Adventure** resumes the exact camp or encounter phase. Resolve any pending
+action before saving; the Rust host rejects pending saves before changing the
+existing save file.
 
 ## Verify
 
@@ -41,9 +44,10 @@ start at [docs/design.md](docs/design.md) and
 
 ## Current phase boundary
 
-The GM7 reference slice is connected end to end. It is not yet a broad d20
-product: initiative, movement, spellcasting, advancement, content publication,
-save migration, and additional encounter/UI work remain later milestones. See
+The GM7 reference slice is connected end to end and the D20G1 campaign shell is
+underway. It is not yet a broad d20 product: initiative/opposition, movement,
+spellcasting, advancement, content publication, inventory/equipment adoption,
+and additional encounters remain later milestones. See
 [docs/known-limitations.md](docs/known-limitations.md).
 
 ## Provenance

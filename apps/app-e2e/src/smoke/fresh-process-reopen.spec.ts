@@ -21,12 +21,13 @@ test('pending saves reject atomically and completed state survives a fresh Rust 
     host = startHost(port, savePath);
     await waitForHealth(baseUrl, host);
     await page.goto(baseUrl);
-    await page.getByRole('button', { name: 'Start encounter' }).click();
+    await page.getByRole('button', { name: 'New Adventure' }).click();
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     const baseline = await sessionSnapshot(request, baseUrl);
     const baselineFile = await readFile(savePath);
 
+    await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
     await page.getByRole('button', { name: 'Precise Shot' }).click();
     await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
     await expect(page.getByText('Resolve the pending action before saving.')).toBeVisible();
@@ -42,6 +43,8 @@ test('pending saves reject atomically and completed state survives a fresh Rust 
     await waitForHealth(baseUrl, host);
     expect(await sessionSnapshot(request, baseUrl)).toEqual(baseline);
     await page.goto(baseUrl);
+    await page.getByRole('button', { name: 'Continue Adventure' }).click();
+    await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
     await page.getByRole('button', { name: 'Longsword Strike' }).click();
     await page.getByRole('button', { name: /Parry · 1 Guard/ }).click();
     await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
@@ -69,6 +72,8 @@ test('pending saves reject atomically and completed state survives a fresh Rust 
     await waitForHealth(baseUrl, host);
     expect(await sessionSnapshot(request, baseUrl)).toEqual(baseline);
     await page.goto(baseUrl);
+    await page.getByRole('button', { name: 'Continue Adventure' }).click();
+    await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
     await page.getByRole('button', { name: 'Precise Shot' }).click();
     await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
     await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -83,6 +88,7 @@ test('pending saves reject atomically and completed state survives a fresh Rust 
     host = startHost(port, savePath);
     await waitForHealth(baseUrl, host);
     await page.goto(baseUrl);
+    await page.getByRole('button', { name: 'Continue Adventure' }).click();
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     for (const line of before) {
       await expect(page.getByLabel('Encounter identity')).toContainText(line);

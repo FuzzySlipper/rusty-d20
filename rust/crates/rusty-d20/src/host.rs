@@ -14,8 +14,8 @@ use tower_http::trace::TraceLayer;
 
 use crate::{
     ApiErrorDto, ApiErrorKindDto, ApplyActionRequestDto, ApplyReactionRequestDto,
-    ExpectedRevisionDto, GameRuntime, GameRuntimeError, GameSnapshotDto, HealthDto,
-    PreviewActionRequestDto, RuntimeReadoutDto,
+    EnterEncounterRequestDto, ExpectedRevisionDto, GameRuntime, GameRuntimeError, GameSnapshotDto,
+    HealthDto, PreviewActionRequestDto, RuntimeReadoutDto,
 };
 
 #[derive(Clone)]
@@ -35,7 +35,8 @@ pub fn router(
         .route("/healthz", get(health))
         .route("/api/v1/readout", get(readout))
         .route("/api/v1/session", get(session))
-        .route("/api/v1/session/start", post(start))
+        .route("/api/v1/session/new", post(new_adventure))
+        .route("/api/v1/session/encounter", post(enter_encounter))
         .route("/api/v1/session/preview", post(preview))
         .route("/api/v1/session/reaction", post(reaction))
         .route("/api/v1/session/action", post(action))
@@ -113,13 +114,20 @@ async fn session(State(state): State<HostState>) -> ApiResult {
     snapshot(&state)
 }
 
-async fn start(
+async fn new_adventure(
     State(state): State<HostState>,
     Json(request): Json<ExpectedRevisionDto>,
 ) -> ApiResult {
     mutate(&state, |runtime| {
-        runtime.start_encounter(request.expected_revision)
+        runtime.new_adventure(request.expected_revision)
     })
+}
+
+async fn enter_encounter(
+    State(state): State<HostState>,
+    Json(request): Json<EnterEncounterRequestDto>,
+) -> ApiResult {
+    mutate(&state, |runtime| runtime.enter_encounter(request))
 }
 
 async fn preview(
@@ -285,7 +293,7 @@ mod tests {
         let start_response = app
             .clone()
             .oneshot(
-                Request::post("/api/v1/session/start")
+                Request::post("/api/v1/session/new")
                     .header("content-type", "application/json")
                     .body(Body::from(r#"{"expectedRevision":0}"#))
                     .unwrap(),
@@ -329,7 +337,9 @@ mod tests {
             .unwrap();
         assert_eq!(save_response.status(), StatusCode::OK);
         let reopened = load_runtime(&save_path).unwrap();
-        assert!(reopened.snapshot().unwrap().encounter.is_some());
+        let reopened = reopened.snapshot().unwrap();
+        assert!(reopened.campaign.is_some());
+        assert!(reopened.encounter.is_none());
         fs::remove_file(save_path).unwrap();
     }
 
@@ -341,8 +351,18 @@ mod tests {
 
     async fn assert_pending_save_rejection(apply_reaction: bool) {
         let (app, save_path) = test_state();
-        let (_, start_body) =
-            post_json(&app, "/api/v1/session/start", r#"{"expectedRevision":0}"#).await;
+        let (_, camp_body) =
+            post_json(&app, "/api/v1/session/new", r#"{"expectedRevision":0}"#).await;
+        let camp: GameSnapshotDto = serde_json::from_slice(&camp_body).unwrap();
+        let (_, start_body) = post_json(
+            &app,
+            "/api/v1/session/encounter",
+            &format!(
+                r#"{{"expectedRevision":{},"encounterId":"iron-warden"}}"#,
+                camp.revision
+            ),
+        )
+        .await;
         let start: GameSnapshotDto = serde_json::from_slice(&start_body).unwrap();
 
         let (save_status, _) = post_json(

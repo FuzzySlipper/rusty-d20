@@ -61,8 +61,14 @@ export class SessionStore {
     this.publish(generation, result, true);
   }
 
-  async startEncounter(): Promise<void> {
-    await this.mutate((revision) => this.transport.startEncounter(revision));
+  async newAdventure(): Promise<void> {
+    await this.mutate((revision) => this.transport.newAdventure(revision));
+  }
+
+  async enterEncounter(encounterId: string): Promise<void> {
+    await this.mutate((expectedRevision) =>
+      this.transport.enterEncounter({ expectedRevision, encounterId }),
+    );
   }
 
   async previewAction(actionId: string, actorId: number, targetId: number): Promise<void> {

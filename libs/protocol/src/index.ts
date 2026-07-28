@@ -4,7 +4,9 @@ import type {
   ActionDto,
   ApiErrorDto,
   ApiErrorKindDto,
+  CampaignDto,
   CharacterDto,
+  EncounterChoiceDto,
   EncounterDto,
   GameLogEntryDto,
   GameLogKindDto,
@@ -73,6 +75,7 @@ export function decodeApiError(value: unknown): ApiErrorDto | undefined {
 function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
   if (
     !hasExactKeys(value, [
+      'campaign',
       'encounter',
       'engineRevision',
       'product',
@@ -84,6 +87,8 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
   ) {
     return undefined;
   }
+  const campaignValue = value['campaign'];
+  const campaign = campaignValue === null ? null : decodeCampaign(campaignValue);
   const encounterValue = value['encounter'];
   const encounter = encounterValue === null ? null : decodeEncounter(encounterValue);
   if (
@@ -93,7 +98,11 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
     typeof value['rulesetFingerprint'] !== 'string' ||
     !isSafeNonNegativeInteger(value['revision']) ||
     typeof value['saved'] !== 'boolean' ||
-    encounter === undefined
+    campaign === undefined ||
+    encounter === undefined ||
+    (campaign === null && encounter !== null) ||
+    (campaign?.phase === 'camp' && encounter !== null) ||
+    (campaign?.phase === 'encounter' && encounter === null)
   ) {
     return undefined;
   }
@@ -104,8 +113,59 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
     rulesetFingerprint: value['rulesetFingerprint'],
     revision: value['revision'],
     saved: value['saved'],
+    campaign,
     encounter,
   };
+}
+
+function decodeCampaign(value: unknown): CampaignDto | undefined {
+  if (
+    !hasExactKeys(value, [
+      'activeEncounterId',
+      'availableEncounters',
+      'hero',
+      'id',
+      'phase',
+      'title',
+    ])
+  ) {
+    return undefined;
+  }
+  const hero = decodeCharacter(value['hero']);
+  const encounters = decodeArray(value['availableEncounters'], 16, decodeEncounterChoice);
+  const activeEncounterId = value['activeEncounterId'];
+  const phase = value['phase'];
+  if (
+    typeof value['id'] !== 'string' ||
+    typeof value['title'] !== 'string' ||
+    (phase !== 'camp' && phase !== 'encounter') ||
+    (activeEncounterId !== null && typeof activeEncounterId !== 'string') ||
+    hero === undefined ||
+    encounters === undefined ||
+    (phase === 'camp' && activeEncounterId !== null) ||
+    (phase === 'encounter' && activeEncounterId === null)
+  ) {
+    return undefined;
+  }
+  return {
+    id: value['id'],
+    title: value['title'],
+    phase,
+    hero,
+    activeEncounterId,
+    availableEncounters: encounters,
+  };
+}
+
+function decodeEncounterChoice(value: unknown): EncounterChoiceDto | undefined {
+  if (!hasExactKeys(value, ['id', 'summary', 'title'])) {
+    return undefined;
+  }
+  return typeof value['id'] === 'string' &&
+    typeof value['title'] === 'string' &&
+    typeof value['summary'] === 'string'
+    ? { id: value['id'], title: value['title'], summary: value['summary'] }
+    : undefined;
 }
 
 function decodeEncounter(value: unknown): EncounterDto | undefined {

@@ -6,13 +6,20 @@ liveScenario('Rust-owned authored encounter live evidence @live', async ({
   liveBaseUrl,
 }) => {
   collector.addNonClaim(
-    'This certifies one bounded GM7 encounter slice, not broader initiative, movement, spellcasting, advancement, content publication, or save migration.',
+    'This certifies the D20G1A landing, camp, and bounded encounter path, not later inventory, opposition, rewards, alternate content, or navigation.',
   );
 
   await page.goto(liveBaseUrl);
-  if (await page.getByRole('button', { name: 'Start encounter' }).isVisible()) {
+  if (await page.getByRole('button', { name: 'New Adventure' }).isVisible()) {
     await collector.milestone('empty game ready', { screenshot: true });
-    await page.getByRole('button', { name: 'Start encounter' }).click();
+    await page.getByRole('button', { name: 'New Adventure' }).click();
+    await expect(page.getByRole('heading', { name: "Warden's Gate Camp" })).toBeVisible();
+    await collector.milestone('durable adventure camp', { screenshot: true });
+  } else if (await page.getByRole('button', { name: 'Continue Adventure' }).isVisible()) {
+    await page.getByRole('button', { name: 'Continue Adventure' }).click();
+  }
+  if (await page.getByRole('button', { name: 'Enter The Iron Warden' }).isVisible()) {
+    await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
   }
   await expect(page.locator('aui-character-status')).toHaveCount(2);
   await page.getByRole('button', { name: 'Longsword Strike' }).click();

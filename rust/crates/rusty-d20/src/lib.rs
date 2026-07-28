@@ -40,7 +40,8 @@ pub use component::{
 };
 pub use game::{
     ActionDto, ApiErrorDto, ApiErrorKindDto, ApplyActionRequestDto, ApplyReactionRequestDto,
-    CharacterDto, EncounterDto, ExpectedRevisionDto, GameLogEntryDto, GameLogKindDto, GameRuntime,
+    CampaignDto, CampaignPhaseDto, CharacterDto, EncounterChoiceDto, EncounterDto,
+    EnterEncounterRequestDto, ExpectedRevisionDto, GameLogEntryDto, GameLogKindDto, GameRuntime,
     GameRuntimeError, GameSnapshotDto, PendingActionDto, PreviewActionRequestDto, ReactionDto,
     ResourceDto,
 };
@@ -106,8 +107,12 @@ pub fn generated_typescript() -> String {
         ReactionDto::decl(),
         PendingActionDto::decl(),
         EncounterDto::decl(),
+        CampaignPhaseDto::decl(),
+        EncounterChoiceDto::decl(),
+        CampaignDto::decl(),
         GameSnapshotDto::decl(),
         ExpectedRevisionDto::decl(),
+        EnterEncounterRequestDto::decl(),
         PreviewActionRequestDto::decl(),
         ApplyReactionRequestDto::decl(),
         ApplyActionRequestDto::decl(),

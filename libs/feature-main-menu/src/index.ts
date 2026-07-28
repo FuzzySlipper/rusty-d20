@@ -338,13 +338,13 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
         <div class="topbar__identity">
           <div class="mark" aria-hidden="true">D20</div>
           <div>
-            <p class="eyebrow">Rust-owned encounter</p>
+            <p class="eyebrow">Rust-owned adventure</p>
             <h1>Rusty D20</h1>
           </div>
         </div>
 
         @if (game(); as snapshot) {
-          @if (snapshot.encounter !== null) {
+          @if (campaignEntered() && snapshot.campaign !== null) {
             <div class="topbar__controls">
               <span
                 class="save-state"
@@ -355,9 +355,12 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
               </span>
               <button
                 type="button"
-                [disabled]="store.busy() || snapshot.encounter.pendingAction !== null"
+                [disabled]="
+                  store.busy() ||
+                  (snapshot.encounter !== null && snapshot.encounter.pendingAction !== null)
+                "
                 [attr.title]="
-                  snapshot.encounter.pendingAction !== null
+                  snapshot.encounter !== null && snapshot.encounter.pendingAction !== null
                     ? 'Resolve the pending action before saving'
                     : null
                 "
@@ -365,14 +368,16 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
               >
                 Save
               </button>
-              @if (snapshot.encounter.pendingAction !== null) {
+              @if (snapshot.encounter !== null && snapshot.encounter.pendingAction !== null) {
                 <span class="save-hint" role="status">
                   Resolve the pending action before saving.
                 </span>
               }
-              <button type="button" [disabled]="store.busy()" (click)="advanceTurn()">
-                Advance turn
-              </button>
+              @if (snapshot.encounter !== null) {
+                <button type="button" [disabled]="store.busy()" (click)="advanceTurn()">
+                  Advance turn
+                </button>
+              }
             </div>
           }
         }
@@ -400,26 +405,79 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
           </section>
         }
         @case ('data') {
-          @if (game()?.encounter === null) {
-            <section class="rusty-engine-panel empty" aria-label="New encounter">
+          @if (store.commandError(); as error) {
+            <section class="command-error" role="alert">
+              <strong>{{ error.kind }} rejection</strong>
+              <span>{{ error.message }}</span>
+              <div class="command-error__actions">
+                @if (error.retryable) {
+                  <button type="button" (click)="reload()">Reload current state</button>
+                }
+                <button type="button" (click)="dismissError()">Dismiss</button>
+              </div>
+            </section>
+          }
+
+          @if (game()?.campaign === null) {
+            <section class="rusty-engine-panel empty" aria-label="New adventure">
               <p class="eyebrow">Starter Core · Steel Guard</p>
               <h2>The Warden's Gate</h2>
               <p class="lede">
-                Begin a compact authored encounter. Rust compiles the rules package, owns every
-                roll and mutation, and records the Engine sources that shaped the outcome.
+                Begin a durable authored adventure. Rust owns campaign phase, every roll and
+                mutation, and the Engine-backed save you can continue in a fresh process.
               </p>
               <button
                 class="primary"
                 type="button"
                 [disabled]="store.busy()"
-                (click)="startEncounter()"
+                (click)="newAdventure()"
               >
-                Start encounter
+                New Adventure
               </button>
               <p class="muted">
                 Engine {{ game()?.engineRevisionShort }} · rules
                 <span [title]="game()?.rulesetFingerprint">Starter + Steel</span>
               </p>
+            </section>
+          } @else if (!campaignEntered()) {
+            <section class="rusty-engine-panel empty" aria-label="Continue adventure">
+              <p class="eyebrow">Durable campaign found</p>
+              <h2>Continue {{ game()?.campaign?.title }}</h2>
+              <p class="lede">
+                Resume in {{ game()?.campaign?.phase === 'camp' ? 'camp' : 'the active encounter' }}
+                at state revision {{ game()?.revision }}.
+              </p>
+              <button class="primary" type="button" (click)="continueCampaign()">
+                Continue Adventure
+              </button>
+            </section>
+          } @else if (game()?.campaign?.phase === 'camp') {
+            <section class="rusty-engine-panel empty" aria-label="Adventure camp">
+              <p class="eyebrow">Rust-owned camp</p>
+              <h2>Warden's Gate Camp</h2>
+              <p class="lede">
+                Prepare Mara Venn, save this stable campaign state, or enter the authored
+                encounter. Inventory and equipment arrive in the next reviewed product slice.
+              </p>
+              @if (game()?.campaign?.hero; as hero) {
+                <article class="character-card">
+                  <aui-character-status [status]="characterStatus(hero)" />
+                </article>
+              }
+              @for (choice of game()?.campaign?.availableEncounters ?? []; track choice.id) {
+                <article class="action-note">
+                  <strong>{{ choice.title }}</strong>
+                  <span>{{ choice.summary }}</span>
+                  <button
+                    class="primary"
+                    type="button"
+                    [disabled]="store.busy()"
+                    (click)="enterEncounter(choice.id)"
+                  >
+                    Enter {{ choice.title }}
+                  </button>
+                </article>
+              }
             </section>
           } @else {
             <section class="encounter-meta" aria-label="Encounter identity">
@@ -432,19 +490,6 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
                 <code [title]="game()?.rulesetFingerprint">Starter + Steel</code>
               </span>
             </section>
-
-            @if (store.commandError(); as error) {
-              <section class="command-error" role="alert">
-                <strong>{{ error.kind }} rejection</strong>
-                <span>{{ error.message }}</span>
-                <div class="command-error__actions">
-                  @if (error.retryable) {
-                    <button type="button" (click)="reload()">Reload current state</button>
-                  }
-                  <button type="button" (click)="dismissError()">Dismiss</button>
-                </div>
-              </section>
-            }
 
             <section class="characters" aria-label="Character status">
               @for (character of encounter().characters; track character.id) {
@@ -568,6 +613,7 @@ import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
 export class MainMenuScreenComponent implements OnInit {
   protected readonly store = inject(SessionStore);
   private readonly selectedTarget = signal<number | null>(null);
+  protected readonly campaignEntered = signal(false);
 
   protected readonly game = computed(() => {
     const state = this.store.session();
@@ -660,8 +706,19 @@ export class MainMenuScreenComponent implements OnInit {
     }
   }
 
-  protected startEncounter(): void {
-    void this.store.startEncounter();
+  protected async newAdventure(): Promise<void> {
+    await this.store.newAdventure();
+    if (this.game()?.campaign !== null) {
+      this.campaignEntered.set(true);
+    }
+  }
+
+  protected continueCampaign(): void {
+    this.campaignEntered.set(true);
+  }
+
+  protected enterEncounter(encounterId: string): void {
+    void this.store.enterEncounter(encounterId);
   }
 
   protected applyReaction(token: string, reactionId: string): void {

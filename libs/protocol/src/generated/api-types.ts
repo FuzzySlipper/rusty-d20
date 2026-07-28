@@ -22,9 +22,17 @@ export type PendingActionDto = { token: string, actorId: number, targetId: numbe
 
 export type EncounterDto = { turn: number, nextRoll: number, playerId: number, characters: Array<CharacterDto>, actions: Array<ActionDto>, pendingAction: PendingActionDto | null, log: Array<GameLogEntryDto>, };
 
-export type GameSnapshotDto = { product: string, version: string, engineRevision: string, rulesetFingerprint: string, revision: number, saved: boolean, encounter: EncounterDto | null, };
+export type CampaignPhaseDto = "camp" | "encounter";
+
+export type EncounterChoiceDto = { id: string, title: string, summary: string, };
+
+export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, hero: CharacterDto, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, };
+
+export type GameSnapshotDto = { product: string, version: string, engineRevision: string, rulesetFingerprint: string, revision: number, saved: boolean, campaign: CampaignDto | null, encounter: EncounterDto | null, };
 
 export type ExpectedRevisionDto = { expectedRevision: number, };
+
+export type EnterEncounterRequestDto = { expectedRevision: number, encounterId: string, };
 
 export type PreviewActionRequestDto = { expectedRevision: number, actorId: number, targetId: number, actionId: string, };
 

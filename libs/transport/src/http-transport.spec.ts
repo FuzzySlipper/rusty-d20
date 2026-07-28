@@ -17,6 +17,7 @@ const snapshot = {
   rulesetFingerprint: 'rules',
   revision: 0,
   saved: false,
+  campaign: null,
   encounter: null,
 };
 
@@ -33,7 +34,9 @@ describe('createHttpRustyD20Transport', () => {
     const transport = createHttpRustyD20Transport(port);
     await expect(transport.loadReadout()).resolves.toEqual({ ok: true, value: readout });
     await expect(transport.loadSession()).resolves.toEqual({ ok: true, value: snapshot });
-    await expect(transport.startEncounter(0)).resolves.toEqual({ ok: true, value: snapshot });
+    await expect(transport.newAdventure(0)).resolves.toEqual({ ok: true, value: snapshot });
+    await expect(transport.enterEncounter({ expectedRevision: 0, encounterId: 'iron-warden' }))
+      .resolves.toEqual({ ok: true, value: snapshot });
   });
 
   it('preserves typed stale errors and classifies network and invalid-body failures', async () => {

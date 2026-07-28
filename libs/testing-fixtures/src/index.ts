@@ -28,6 +28,7 @@ export function makeGameSnapshot(
     rulesetFingerprint: 'starter-core=fingerprint|steel-guard=fingerprint',
     revision: 0,
     saved: false,
+    campaign: null,
     encounter: null,
     ...overrides,
   };
@@ -46,7 +47,8 @@ export function createFakeRustyD20Transport(
   return {
     loadReadout: async () => readoutResult,
     loadSession: async () => sessionResult,
-    startEncounter: async () => sessionResult,
+    newAdventure: async () => sessionResult,
+    enterEncounter: async () => sessionResult,
     previewAction: async () => sessionResult,
     applyReaction: async () => sessionResult,
     applyAction: async () => sessionResult,

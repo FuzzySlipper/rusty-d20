@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 test.describe.serial('real Rust encounter shell', () => {
   test('empty game starts and resolves authored action, reaction, turn, and save', async ({
@@ -14,7 +14,15 @@ test.describe.serial('real Rust encounter shell', () => {
       page.getByRole('heading', { level: 1, name: 'Rusty D20', exact: true }),
     ).toBeVisible();
     await expect(page.getByRole('heading', { name: "The Warden's Gate" })).toBeVisible();
-    await page.getByRole('button', { name: 'Start encounter' }).click();
+    await page.getByRole('button', { name: 'New Adventure' }).click();
+    await expect(page.getByRole('heading', { name: "Warden's Gate Camp" })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('aui-character-status')).toHaveCount(1);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
 
     await expect(page.locator('aui-character-status')).toHaveCount(2);
     await expect(page.getByText('Mara Venn', { exact: true })).toBeVisible();
@@ -52,6 +60,8 @@ test.describe.serial('real Rust encounter shell', () => {
     await page.goto('/');
     const second = await browser.newPage();
     await second.goto('/');
+    await continueIfNeeded(page);
+    await continueIfNeeded(second);
 
     await second.getByRole('button', { name: 'Advance turn' }).click();
     await expect(second.getByLabel('Encounter identity')).toContainText('Turn 2');
@@ -67,6 +77,7 @@ test.describe.serial('real Rust encounter shell', () => {
   test('mobile game shell remains usable without horizontal overflow', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
+    await continueIfNeeded(page);
     await expect(page.getByRole('button', { name: 'Advance turn' })).toBeVisible();
     await expect(page.locator('aui-character-status')).toHaveCount(2);
     expect(
@@ -99,3 +110,10 @@ test.describe.serial('real Rust encounter shell', () => {
     ).toBeVisible();
   });
 });
+
+async function continueIfNeeded(page: Page): Promise<void> {
+  const button = page.getByRole('button', { name: 'Continue Adventure' });
+  if (await button.isVisible()) {
+    await button.click();
+  }
+}

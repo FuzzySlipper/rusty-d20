@@ -28,6 +28,7 @@ describe('decodeGameSnapshot', () => {
     rulesetFingerprint: 'rules',
     revision: 0,
     saved: false,
+    campaign: null,
     encounter: null,
   };
 
@@ -40,5 +41,56 @@ describe('decodeGameSnapshot', () => {
     expect(decodeGameSnapshot({ ...empty, revision: Number.MAX_SAFE_INTEGER + 1 })).toMatchObject({
       ok: false,
     });
+  });
+
+  it('strictly validates campaign phase ownership', () => {
+    const hero = {
+      id: 101,
+      name: 'Mara Venn',
+      title: 'Steel Adept',
+      level: 1,
+      healthCurrent: 100,
+      healthMaximum: 100,
+      resources: [],
+      effects: [],
+    };
+    const campaign = {
+      id: 'wardens-gate',
+      title: "The Warden's Gate",
+      phase: 'camp',
+      hero,
+      activeEncounterId: null,
+      availableEncounters: [
+        { id: 'iron-warden', title: 'The Iron Warden', summary: 'Challenge the sentinel.' },
+      ],
+    };
+    expect(decodeGameSnapshot({ ...empty, campaign })).toMatchObject({ ok: true });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: { ...campaign, phase: 'encounter', activeEncounterId: null },
+      }),
+    ).toMatchObject({ ok: false });
+
+    const target = { ...hero, id: 102, name: 'Iron Warden', title: 'Armored Sentinel' };
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          phase: 'encounter',
+          activeEncounterId: 'iron-warden',
+        },
+        encounter: {
+          turn: 0,
+          nextRoll: 0,
+          playerId: 101,
+          characters: [hero, target],
+          actions: [],
+          pendingAction: null,
+          log: [],
+        },
+      }),
+    ).toMatchObject({ ok: true });
   });
 });

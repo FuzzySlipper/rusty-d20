@@ -16,7 +16,12 @@ use crate::{
     SessionSaveError, ENGINE_REVISION,
 };
 
-const GAME_SAVE_SCHEMA_VERSION: u32 = 1;
+const GAME_SAVE_SCHEMA_VERSION: u32 = 2;
+const LEGACY_GAME_SAVE_SCHEMA_VERSION: u32 = 1;
+const ADVENTURE_ID: &str = "wardens-gate";
+const ADVENTURE_TITLE: &str = "The Warden's Gate";
+const ENCOUNTER_ID: &str = "iron-warden";
+const ENCOUNTER_TITLE: &str = "The Iron Warden";
 const PLAYER: EntityId = EntityId::new(101);
 const OPPONENT: EntityId = EntityId::new(102);
 const OPPONENT_ARMOR: EntityId = EntityId::new(201);
@@ -141,6 +146,35 @@ pub struct EncounterDto {
     pub log: Vec<GameLogEntryDto>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum CampaignPhaseDto {
+    Camp,
+    Encounter,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct EncounterChoiceDto {
+    pub id: String,
+    pub title: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct CampaignDto {
+    pub id: String,
+    pub title: String,
+    pub phase: CampaignPhaseDto,
+    pub hero: CharacterDto,
+    pub active_encounter_id: Option<String>,
+    pub available_encounters: Vec<EncounterChoiceDto>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
@@ -152,6 +186,7 @@ pub struct GameSnapshotDto {
     #[ts(type = "number")]
     pub revision: u64,
     pub saved: bool,
+    pub campaign: Option<CampaignDto>,
     pub encounter: Option<EncounterDto>,
 }
 
@@ -161,6 +196,15 @@ pub struct GameSnapshotDto {
 pub struct ExpectedRevisionDto {
     #[ts(type = "number")]
     pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct EnterEncounterRequestDto {
+    #[ts(type = "number")]
+    pub expected_revision: u64,
+    pub encounter_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -222,9 +266,23 @@ struct PendingAction {
     preview: ActionPreview,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum CampaignPhase {
+    Camp,
+    Encounter,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CampaignState {
+    phase: CampaignPhase,
+    active_encounter_id: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct GameRuntime {
     rules: D20Ruleset,
+    campaign: Option<CampaignState>,
     session: Option<D20Session>,
     revision: u64,
     saved_revision: Option<u64>,
@@ -238,6 +296,7 @@ impl GameRuntime {
     pub fn empty() -> Result<Self, GameRuntimeError> {
         Ok(Self {
             rules: starter_ruleset()?,
+            campaign: None,
             session: None,
             revision: 0,
             saved_revision: None,
@@ -255,26 +314,64 @@ impl GameRuntime {
                 input.len()
             )));
         }
-        let save: GameSave = serde_json::from_str(input)?;
-        if save.schema_version != GAME_SAVE_SCHEMA_VERSION {
-            return Err(GameRuntimeError::UnsupportedSaveSchema {
-                actual: save.schema_version,
-            });
-        }
+        let value: serde_json::Value = serde_json::from_str(input)?;
+        let envelope: SaveEnvelope = serde_json::from_value(value.clone())?;
         let rules = starter_ruleset()?;
-        let session_json = serde_json::to_string(&save.session)?;
+        match envelope.schema_version {
+            LEGACY_GAME_SAVE_SCHEMA_VERSION => {
+                let save: LegacyGameSave = serde_json::from_value(value)?;
+                Self::restore(
+                    rules,
+                    save.revision,
+                    save.next_operation,
+                    save.next_log_id,
+                    save.log,
+                    save.session,
+                    CampaignState {
+                        phase: CampaignPhase::Encounter,
+                        active_encounter_id: Some(ENCOUNTER_ID.to_owned()),
+                    },
+                )
+            }
+            GAME_SAVE_SCHEMA_VERSION => {
+                let save: GameSave = serde_json::from_value(value)?;
+                let campaign = validate_campaign_save(save.campaign)?;
+                Self::restore(
+                    rules,
+                    save.revision,
+                    save.next_operation,
+                    save.next_log_id,
+                    save.log,
+                    save.session,
+                    campaign,
+                )
+            }
+            actual => Err(GameRuntimeError::UnsupportedSaveSchema { actual }),
+        }
+    }
+
+    fn restore(
+        rules: D20Ruleset,
+        revision: u64,
+        next_operation: u64,
+        next_log_id: u64,
+        log: Vec<GameLogEntryDto>,
+        session: serde_json::Value,
+        campaign: CampaignState,
+    ) -> Result<Self, GameRuntimeError> {
+        let session_json = serde_json::to_string(&session)?;
         let session = D20Session::decode_save(rules.clone(), &session_json)?;
-        if save.next_operation == 0 || save.next_log_id == 0 || save.log.len() > MAX_LOG_ENTRIES {
+        if next_operation == 0 || next_log_id == 0 || log.len() > MAX_LOG_ENTRIES {
             return Err(GameRuntimeError::InvalidSave(
                 "operation/log counters or bounded log are invalid".to_owned(),
             ));
         }
-        if save.log.windows(2).any(|pair| pair[0].id >= pair[1].id) {
+        if log.windows(2).any(|pair| pair[0].id >= pair[1].id) {
             return Err(GameRuntimeError::InvalidSave(
                 "log identities are not in strict order".to_owned(),
             ));
         }
-        if save.log.iter().any(|entry| {
+        if log.iter().any(|entry| {
             entry.id == 0
                 || entry.source.len() > MAX_LOG_SOURCE_BYTES
                 || entry.text.len() > MAX_LOG_TEXT_BYTES
@@ -283,10 +380,7 @@ impl GameRuntime {
                     .details
                     .iter()
                     .any(|detail| detail.len() > MAX_LOG_DETAIL_BYTES)
-        }) || save
-            .log
-            .last()
-            .is_some_and(|entry| save.next_log_id <= entry.id)
+        }) || log.last().is_some_and(|entry| next_log_id <= entry.id)
         {
             return Err(GameRuntimeError::InvalidSave(
                 "log entry bounds or next identity are invalid".to_owned(),
@@ -294,13 +388,14 @@ impl GameRuntime {
         }
         Ok(Self {
             rules,
+            campaign: Some(campaign),
             session: Some(session),
-            revision: save.revision,
-            saved_revision: Some(save.revision),
-            next_operation: save.next_operation,
-            next_log_id: save.next_log_id,
+            revision,
+            saved_revision: Some(revision),
+            next_operation,
+            next_log_id,
             pending: None,
-            log: save.log,
+            log,
         })
     }
 
@@ -308,6 +403,10 @@ impl GameRuntime {
         if self.pending.is_some() {
             return Err(GameRuntimeError::PendingActionCannotBeSaved);
         }
+        let campaign = self
+            .campaign
+            .as_ref()
+            .ok_or(GameRuntimeError::NoEncounter)?;
         let session = self.session.as_ref().ok_or(GameRuntimeError::NoEncounter)?;
         let session = serde_json::from_str(&session.encode_save()?)?;
         Ok(serde_json::to_string_pretty(&GameSave {
@@ -316,6 +415,11 @@ impl GameRuntime {
             next_operation: self.next_operation,
             next_log_id: self.next_log_id,
             log: self.log.clone(),
+            campaign: CampaignSave {
+                adventure_id: ADVENTURE_ID.to_owned(),
+                phase: campaign.phase,
+                active_encounter_id: campaign.active_encounter_id.clone(),
+            },
             session,
         })?)
     }
@@ -338,6 +442,22 @@ impl GameRuntime {
     }
 
     pub fn snapshot(&self) -> Result<GameSnapshotDto, GameRuntimeError> {
+        let session = self.session.as_ref();
+        let campaign = match (&self.campaign, session) {
+            (Some(campaign), Some(session)) => Some(self.project_campaign(campaign, session)?),
+            (None, None) => None,
+            _ => {
+                return Err(GameRuntimeError::InvalidState(
+                    "campaign and session ownership diverged".to_owned(),
+                ));
+            }
+        };
+        let encounter = match (&self.campaign, session) {
+            (Some(campaign), Some(session)) if campaign.phase == CampaignPhase::Encounter => {
+                Some(self.project_encounter(session)?)
+            }
+            _ => None,
+        };
         Ok(GameSnapshotDto {
             product: "Rusty D20".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -345,20 +465,22 @@ impl GameRuntime {
             ruleset_fingerprint: self.rules.fingerprint().to_owned(),
             revision: self.revision,
             saved: self.saved_revision == Some(self.revision),
-            encounter: self
-                .session
-                .as_ref()
-                .map(|session| self.project_encounter(session))
-                .transpose()?,
+            campaign,
+            encounter,
         })
     }
 
-    pub fn start_encounter(
+    pub fn new_adventure(
         &mut self,
         expected_revision: u64,
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
         self.ensure_revision(expected_revision)?;
-        self.ensure_mutation_capacity(false, false)?;
+        if self.campaign.is_some() {
+            return Err(GameRuntimeError::InvalidCommand(
+                "an adventure is already active".to_owned(),
+            ));
+        }
+        self.ensure_mutation_capacity(false, true)?;
         let mut session = D20Session::new(
             self.rules.clone(),
             RngSeed::new(0xD20_2026),
@@ -388,6 +510,10 @@ impl GameRuntime {
             &id("chain-armor")?,
             operation("equip-warden-chain")?,
         )?;
+        self.campaign = Some(CampaignState {
+            phase: CampaignPhase::Camp,
+            active_encounter_id: None,
+        });
         self.session = Some(session);
         self.pending = None;
         self.log.clear();
@@ -397,10 +523,50 @@ impl GameRuntime {
         self.saved_revision = None;
         self.push_log(
             GameLogKindDto::System,
+            "Adventure",
+            "Mara Venn prepares at the Warden's Gate camp.",
+            vec![
+                "Starter Core + Steel Guard authored packages compiled by Rust.".to_owned(),
+                "The Iron Warden encounter is available from camp.".to_owned(),
+            ],
+        )?;
+        self.snapshot()
+    }
+
+    pub fn enter_encounter(
+        &mut self,
+        request: EnterEncounterRequestDto,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        self.ensure_revision(request.expected_revision)?;
+        self.ensure_mutation_capacity(false, true)?;
+        if request.encounter_id != ENCOUNTER_ID {
+            return Err(GameRuntimeError::InvalidCommand(format!(
+                "unknown encounter {}",
+                request.encounter_id
+            )));
+        }
+        let campaign = self
+            .campaign
+            .as_ref()
+            .ok_or(GameRuntimeError::NoEncounter)?;
+        if campaign.phase != CampaignPhase::Camp {
+            return Err(GameRuntimeError::InvalidCommand(
+                "an encounter can only be entered from camp".to_owned(),
+            ));
+        }
+        let campaign = self
+            .campaign
+            .as_mut()
+            .expect("campaign was validated before mutation");
+        campaign.phase = CampaignPhase::Encounter;
+        campaign.active_encounter_id = Some(ENCOUNTER_ID.to_owned());
+        self.bump_revision()?;
+        self.saved_revision = None;
+        self.push_log(
+            GameLogKindDto::System,
             "Encounter",
             "Mara Venn faces the Iron Warden.",
             vec![
-                "Starter Core + Steel Guard authored packages compiled by Rust.".to_owned(),
                 "Iron Warden's chain armor and slashing resistance are active sources.".to_owned(),
             ],
         )?;
@@ -412,6 +578,7 @@ impl GameRuntime {
         request: PreviewActionRequestDto,
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
         self.ensure_revision(request.expected_revision)?;
+        self.ensure_encounter_phase()?;
         self.ensure_mutation_capacity(true, false)?;
         let actor = entity(request.actor_id)?;
         let target = entity(request.target_id)?;
@@ -445,6 +612,7 @@ impl GameRuntime {
         request: ApplyReactionRequestDto,
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
         self.ensure_revision(request.expected_revision)?;
+        self.ensure_encounter_phase()?;
         self.ensure_mutation_capacity(false, true)?;
         let pending = self.require_pending(&request.preview_token)?.clone();
         let reaction = id(&request.reaction_id)?;
@@ -474,6 +642,7 @@ impl GameRuntime {
         request: ApplyActionRequestDto,
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
         self.ensure_revision(request.expected_revision)?;
+        self.ensure_encounter_phase()?;
         self.ensure_mutation_capacity(false, true)?;
         let pending = self.require_pending(&request.preview_token)?.clone();
         let action_definition = self
@@ -550,6 +719,7 @@ impl GameRuntime {
         expected_revision: u64,
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
         self.ensure_revision(expected_revision)?;
+        self.ensure_encounter_phase()?;
         self.ensure_mutation_capacity(true, true)?;
         let serial = self.next_operation;
         let next_turn = self
@@ -580,6 +750,28 @@ impl GameRuntime {
             )],
         )?;
         self.snapshot()
+    }
+
+    fn project_campaign(
+        &self,
+        campaign: &CampaignState,
+        session: &D20Session,
+    ) -> Result<CampaignDto, GameRuntimeError> {
+        Ok(CampaignDto {
+            id: ADVENTURE_ID.to_owned(),
+            title: ADVENTURE_TITLE.to_owned(),
+            phase: match campaign.phase {
+                CampaignPhase::Camp => CampaignPhaseDto::Camp,
+                CampaignPhase::Encounter => CampaignPhaseDto::Encounter,
+            },
+            hero: self.project_character(session, PLAYER, "Steel Adept")?,
+            active_encounter_id: campaign.active_encounter_id.clone(),
+            available_encounters: vec![EncounterChoiceDto {
+                id: ENCOUNTER_ID.to_owned(),
+                title: ENCOUNTER_TITLE.to_owned(),
+                summary: "Challenge the armored sentinel guarding the mountain pass.".to_owned(),
+            }],
+        })
     }
 
     fn project_encounter(&self, session: &D20Session) -> Result<EncounterDto, GameRuntimeError> {
@@ -823,6 +1015,16 @@ impl GameRuntime {
             })
     }
 
+    fn ensure_encounter_phase(&self) -> Result<(), GameRuntimeError> {
+        match self.campaign.as_ref().map(|campaign| campaign.phase) {
+            Some(CampaignPhase::Encounter) => Ok(()),
+            Some(CampaignPhase::Camp) => Err(GameRuntimeError::InvalidCommand(
+                "this command is only available during an active encounter".to_owned(),
+            )),
+            None => Err(GameRuntimeError::NoEncounter),
+        }
+    }
+
     fn ensure_revision(&self, expected: u64) -> Result<(), GameRuntimeError> {
         if expected != self.revision {
             return Err(GameRuntimeError::StaleCommand(format!(
@@ -856,6 +1058,32 @@ impl GameRuntime {
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveEnvelope {
+    schema_version: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct LegacyGameSave {
+    #[serde(rename = "schemaVersion")]
+    _schema_version: u32,
+    revision: u64,
+    next_operation: u64,
+    next_log_id: u64,
+    log: Vec<GameLogEntryDto>,
+    session: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CampaignSave {
+    adventure_id: String,
+    phase: CampaignPhase,
+    active_encounter_id: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct GameSave {
@@ -864,7 +1092,30 @@ struct GameSave {
     next_operation: u64,
     next_log_id: u64,
     log: Vec<GameLogEntryDto>,
+    campaign: CampaignSave,
     session: serde_json::Value,
+}
+
+fn validate_campaign_save(save: CampaignSave) -> Result<CampaignState, GameRuntimeError> {
+    if save.adventure_id != ADVENTURE_ID {
+        return Err(GameRuntimeError::InvalidSave(format!(
+            "unknown adventure {}",
+            save.adventure_id
+        )));
+    }
+    let valid_phase = match save.phase {
+        CampaignPhase::Camp => save.active_encounter_id.is_none(),
+        CampaignPhase::Encounter => save.active_encounter_id.as_deref() == Some(ENCOUNTER_ID),
+    };
+    if !valid_phase {
+        return Err(GameRuntimeError::InvalidSave(
+            "campaign phase and active encounter are inconsistent".to_owned(),
+        ));
+    }
+    Ok(CampaignState {
+        phase: save.phase,
+        active_encounter_id: save.active_encounter_id,
+    })
 }
 
 #[derive(Debug)]
@@ -1114,11 +1365,25 @@ mod tests {
 
     use super::*;
 
+    fn start_test_encounter(runtime: &mut GameRuntime) -> GameSnapshotDto {
+        let camp = runtime.new_adventure(runtime.revision).unwrap();
+        assert_eq!(
+            camp.campaign.as_ref().unwrap().phase,
+            CampaignPhaseDto::Camp
+        );
+        runtime
+            .enter_encounter(EnterEncounterRequestDto {
+                expected_revision: camp.revision,
+                encounter_id: ENCOUNTER_ID.to_owned(),
+            })
+            .unwrap()
+    }
+
     #[test]
     fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
         let mut runtime = GameRuntime::empty().unwrap();
         assert!(runtime.snapshot().unwrap().encounter.is_none());
-        let started = runtime.start_encounter(0).unwrap();
+        let started = start_test_encounter(&mut runtime);
         let encounter = started.encounter.unwrap();
         assert_eq!(encounter.characters.len(), 2);
         assert_eq!(encounter.actions.len(), 2);
@@ -1198,9 +1463,104 @@ mod tests {
     }
 
     #[test]
+    fn campaign_phases_and_legacy_migration_are_strict_and_fail_atomic() {
+        let mut runtime = GameRuntime::empty().unwrap();
+        assert!(runtime.snapshot().unwrap().campaign.is_none());
+        assert!(matches!(
+            runtime.new_adventure(1),
+            Err(GameRuntimeError::StaleCommand(_))
+        ));
+        assert!(runtime.snapshot().unwrap().campaign.is_none());
+
+        let camp = runtime.new_adventure(0).unwrap();
+        assert_eq!(
+            camp.campaign.as_ref().unwrap().phase,
+            CampaignPhaseDto::Camp
+        );
+        assert!(camp.encounter.is_none());
+        let camp_save = runtime.encode_save().unwrap();
+        assert_eq!(
+            GameRuntime::decode_save(&camp_save)
+                .unwrap()
+                .snapshot()
+                .unwrap(),
+            {
+                let mut saved = camp.clone();
+                saved.saved = true;
+                saved
+            }
+        );
+
+        let before_invalid = runtime.snapshot().unwrap();
+        assert!(matches!(
+            runtime.enter_encounter(EnterEncounterRequestDto {
+                expected_revision: camp.revision,
+                encounter_id: "unknown".to_owned(),
+            }),
+            Err(GameRuntimeError::InvalidCommand(_))
+        ));
+        assert_eq!(runtime.snapshot().unwrap(), before_invalid);
+        assert!(matches!(
+            runtime.preview_action(PreviewActionRequestDto {
+                expected_revision: camp.revision,
+                actor_id: PLAYER.raw(),
+                target_id: OPPONENT.raw(),
+                action_id: "longsword-strike".to_owned(),
+            }),
+            Err(GameRuntimeError::InvalidCommand(_))
+        ));
+        assert_eq!(runtime.snapshot().unwrap(), before_invalid);
+
+        let encounter = runtime
+            .enter_encounter(EnterEncounterRequestDto {
+                expected_revision: camp.revision,
+                encounter_id: ENCOUNTER_ID.to_owned(),
+            })
+            .unwrap();
+        assert_eq!(
+            encounter.campaign.as_ref().unwrap().phase,
+            CampaignPhaseDto::Encounter
+        );
+        assert!(encounter.encounter.is_some());
+        let before_duplicate = runtime.snapshot().unwrap();
+        assert!(matches!(
+            runtime.enter_encounter(EnterEncounterRequestDto {
+                expected_revision: encounter.revision,
+                encounter_id: ENCOUNTER_ID.to_owned(),
+            }),
+            Err(GameRuntimeError::InvalidCommand(_))
+        ));
+        assert_eq!(runtime.snapshot().unwrap(), before_duplicate);
+
+        let mut legacy: serde_json::Value =
+            serde_json::from_str(&runtime.encode_save().unwrap()).unwrap();
+        legacy["schemaVersion"] = json!(LEGACY_GAME_SAVE_SCHEMA_VERSION);
+        legacy.as_object_mut().unwrap().remove("campaign");
+        let migrated = GameRuntime::decode_save(&serde_json::to_string(&legacy).unwrap()).unwrap();
+        assert_eq!(
+            migrated.snapshot().unwrap().campaign.unwrap().phase,
+            CampaignPhaseDto::Encounter
+        );
+        let migrated_save: serde_json::Value =
+            serde_json::from_str(&migrated.encode_save().unwrap()).unwrap();
+        assert_eq!(
+            migrated_save["schemaVersion"],
+            json!(GAME_SAVE_SCHEMA_VERSION)
+        );
+
+        let mut invalid: serde_json::Value =
+            serde_json::from_str(&runtime.encode_save().unwrap()).unwrap();
+        invalid["campaign"]["activeEncounterId"] = serde_json::Value::Null;
+        assert!(matches!(
+            GameRuntime::decode_save(&serde_json::to_string(&invalid).unwrap()),
+            Err(GameRuntimeError::InvalidSave(_))
+        ));
+    }
+
+    #[test]
     fn preview_only_and_reacted_pending_saves_reject_without_mutation() {
         let mut runtime = GameRuntime::empty().unwrap();
-        let started = runtime.start_encounter(0).unwrap();
+        let started = start_test_encounter(&mut runtime);
         let previewed = runtime
             .preview_action(PreviewActionRequestDto {
                 expected_revision: started.revision,
@@ -1264,7 +1624,7 @@ mod tests {
     #[test]
     fn saturated_product_counters_and_oversized_saves_fail_before_mutation() {
         let mut runtime = GameRuntime::empty().unwrap();
-        let started = runtime.start_encounter(0).unwrap();
+        let started = start_test_encounter(&mut runtime);
         let mut save: serde_json::Value =
             serde_json::from_str(&runtime.encode_save().unwrap()).unwrap();
         save["revision"] = json!(u64::MAX);

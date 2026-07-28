@@ -46,7 +46,8 @@ The copy owns every retained file.
 
 - Package imports changed from `@rusty-engine-ui/*` to `@rusty-d20/*`.
 - Transport may depend on the platform HTTP port in addition to protocol.
-- Main-menu feature became the permanent Rust runtime bootstrap screen.
+- Main-menu feature became the permanent Rust-owned landing, camp, and
+  encounter screen.
 - Playwright and local serving now start the real Rust host.
 - CI and aggregate verification now cover both Rust and TypeScript.
 
@@ -82,3 +83,16 @@ an executable rules representation.
 This composition continues to use Rusty Engine revision
 `fb608e323a8b44a55195f5720101224ff37fd5db` and the UI donor revision
 `68ddfa5430ec3bc2cf7ca96963982db9511e79ba`; D20G0 does not change either pin.
+
+## D20G1 campaign-shell disposition
+
+D20G1A keeps both reviewed pins unchanged while turning the permanent shell
+into the start of one durable Rust-owned adventure. Character status, hotbar,
+and combat log remain real encounter surfaces. Character status is also reused
+for the real camp hero projection.
+
+The retained inventory and equipment widgets remain reserved for the later
+Engine-backed camp slice. Compass and minimap remain excluded until Rusty D20
+owns real navigation facts, and settings remain deferred until the product has
+meaningful settings to expose. No fixture-driven donor screen or second UI
+authority was reintroduced.

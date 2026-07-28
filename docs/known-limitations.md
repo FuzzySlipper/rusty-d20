@@ -1,12 +1,13 @@
 # Known limitations
 
-The interactive product proves one bounded authored d20 encounter. It is not
-yet a broad d20 game.
+The interactive product proves one durable adventure shell and one bounded
+authored d20 encounter. It is not yet a broad d20 game.
 
 - The live slice has one player, one target, two Steel Guard actions, one armor
   reaction, vitality, attributed resistance, scheduled effects, and explicit
-  turn advancement. It does not yet define initiative, movement, spellcasting,
-  advancement, encounter selection, defeat consequences, or broader content.
+  turn advancement. Camp exposes one authored encounter choice. It does not yet
+  define initiative/opposition, movement, spellcasting, advancement, encounter
+  outcomes, rewards, defeat consequences, or broader content.
 - The checked authoring catalog also contains the Ember Ward composition, but
   the first interactive encounter intentionally loads Starter Core plus Steel
   Guard only.
@@ -16,7 +17,9 @@ yet a broad d20 game.
 - The host uses one explicit local save path, defaulting to
   `target/rusty-d20/save.json`. There is no save-slot UI, cloud/storage policy,
   authentication, TLS, multi-user coordination, or migration between Engine or
-  ruleset revisions.
+  ruleset revisions. Product schema 1 saves have one explicit migration into
+  the schema 2 active Iron Warden encounter; this is not a general migration
+  framework.
 - Opaque action previews are process-local and intentionally not saved. Save is
   unavailable until the pending action is resolved, including after a reaction
   commits its cost and effect. Completed entity state, turn, RNG position,
