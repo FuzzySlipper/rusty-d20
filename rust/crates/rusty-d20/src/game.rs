@@ -2385,7 +2385,56 @@ fn validate_product_state(
                 .to_owned(),
         ));
     }
+    validate_campaign_vitality(session, campaign)?;
     Ok(())
+}
+
+fn validate_campaign_vitality(
+    session: &D20Session,
+    campaign: &CampaignState,
+) -> Result<(), GameRuntimeError> {
+    let player_vitality = saved_vitality(session, PLAYER)?;
+    let opponent_vitality = saved_vitality(session, OPPONENT)?;
+    let valid = match (campaign.phase, campaign.outcome) {
+        (CampaignPhase::Encounter, None) | (CampaignPhase::Camp, None) => {
+            player_vitality > 0 && opponent_vitality > 0
+        }
+        (CampaignPhase::Outcome | CampaignPhase::Camp, Some(EncounterOutcome::Victory)) => {
+            player_vitality > 0 && opponent_vitality == 0
+        }
+        (CampaignPhase::Outcome, Some(EncounterOutcome::Defeat)) => {
+            player_vitality == 0 && opponent_vitality > 0
+        }
+        (CampaignPhase::Camp, Some(EncounterOutcome::Defeat)) => {
+            player_vitality > 0 && opponent_vitality > 0
+        }
+        (CampaignPhase::Encounter, Some(_)) | (CampaignPhase::Outcome, None) => false,
+    };
+    if !valid {
+        return Err(GameRuntimeError::InvalidSave(format!(
+            "campaign phase/outcome contradict authoritative vitality: player={player_vitality}, opponent={opponent_vitality}"
+        )));
+    }
+    Ok(())
+}
+
+fn saved_vitality(session: &D20Session, entity: EntityId) -> Result<i64, GameRuntimeError> {
+    session
+        .entities()
+        .component::<TracksComponent>(entity)?
+        .and_then(|tracks| {
+            tracks
+                .values()
+                .iter()
+                .find(|value| value.track().as_str() == "vitality")
+                .map(|value| value.current().get())
+        })
+        .ok_or_else(|| {
+            GameRuntimeError::InvalidSave(format!(
+                "entity {} authoritative vitality is missing",
+                entity.raw()
+            ))
+        })
 }
 
 fn validate_inventory(
@@ -3034,6 +3083,62 @@ mod tests {
         );
     }
 
+    #[test]
+    fn schema_four_rejects_outcome_that_disagrees_with_authoritative_vitality() {
+        let mut active_runtime = GameRuntime::empty().unwrap();
+        start_test_encounter(&mut active_runtime);
+        let active_save: serde_json::Value =
+            serde_json::from_str(&active_runtime.encode_save().unwrap()).unwrap();
+
+        let mut forged_defeat = active_save.clone();
+        forged_defeat["campaign"]["phase"] = json!("outcome");
+        forged_defeat["campaign"]["turnOwner"] = serde_json::Value::Null;
+        forged_defeat["campaign"]["outcome"] = json!("defeat");
+        assert_vitality_mismatch_rejected(&forged_defeat);
+
+        let mut dead_active_encounter = active_save;
+        set_saved_vitality(&mut dead_active_encounter, PLAYER, 0);
+        assert_vitality_mismatch_rejected(&dead_active_encounter);
+
+        let mut victory_runtime = GameRuntime::empty().unwrap();
+        start_test_encounter(&mut victory_runtime);
+        let victory = play_to_outcome(&mut victory_runtime, "precise-shot", false, true);
+        let victory_save = victory_runtime.encode_save().unwrap();
+        GameRuntime::decode_save(&victory_save).unwrap();
+
+        let mut forged_victory: serde_json::Value = serde_json::from_str(&victory_save).unwrap();
+        set_saved_vitality(&mut forged_victory, OPPONENT, 1);
+        assert_vitality_mismatch_rejected(&forged_victory);
+
+        victory_runtime.return_to_camp(victory.revision).unwrap();
+        GameRuntime::decode_save(&victory_runtime.encode_save().unwrap()).unwrap();
+
+        let mut defeat_runtime = GameRuntime::empty().unwrap();
+        let camp = defeat_runtime.new_adventure(0).unwrap();
+        let without_chain = defeat_runtime
+            .unequip_item(UnequipItemRequestDto {
+                expected_revision: camp.revision,
+                item_id: PLAYER_CHAIN_ARMOR.raw(),
+            })
+            .unwrap();
+        let without_armor = defeat_runtime
+            .unequip_item(UnequipItemRequestDto {
+                expected_revision: without_chain.revision,
+                item_id: PLAYER_BUCKLER.raw(),
+            })
+            .unwrap();
+        defeat_runtime
+            .enter_encounter(EnterEncounterRequestDto {
+                expected_revision: without_armor.revision,
+                encounter_id: ENCOUNTER_ID.to_owned(),
+            })
+            .unwrap();
+        let defeat = play_to_outcome(&mut defeat_runtime, "longsword-strike", true, false);
+        GameRuntime::decode_save(&defeat_runtime.encode_save().unwrap()).unwrap();
+        defeat_runtime.return_to_camp(defeat.revision).unwrap();
+        GameRuntime::decode_save(&defeat_runtime.encode_save().unwrap()).unwrap();
+    }
+
     fn play_to_outcome(
         runtime: &mut GameRuntime,
         player_action: &str,
@@ -3122,6 +3227,40 @@ mod tests {
             }
         }
         panic!("deterministic encounter did not reach an outcome within 64 rounds");
+    }
+
+    fn set_saved_vitality(save: &mut serde_json::Value, entity: EntityId, current: i64) {
+        let tracks = save["session"]["entityState"]["registeredComponents"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|registered| registered["typeId"] == "rusty.mechanics.tracks")
+            .unwrap();
+        let entity_tracks = tracks["values"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry["entity"] == json!(entity.raw()))
+            .unwrap();
+        let vitality = entity_tracks["value"]["values"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|track| track["track"] == "vitality")
+            .unwrap();
+        vitality["current"] = json!(current);
+    }
+
+    fn assert_vitality_mismatch_rejected(save: &serde_json::Value) {
+        let error = GameRuntime::decode_save(&serde_json::to_string(save).unwrap()).unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                GameRuntimeError::InvalidSave(message)
+                    if message.contains("contradict authoritative vitality")
+            ),
+            "unexpected save rejection: {error:?}"
+        );
     }
 
     #[test]

@@ -130,9 +130,10 @@ includes a pending action whose reaction has already committed resource and
 effect changes. Compiled definitions are not copied into live saves. Reopen
 requires the matching immutable ruleset, reconstructs registered components,
 validates mechanics, d20 references, product loadout and reward identities,
-reacquires non-durable component revisions, and continues the exact camp,
-encounter, or outcome phase, turn owner, loadout, and deterministic rolls
-without replay.
+cross-checks encounter phase and outcome against authoritative participant
+vitality, reacquires non-durable component revisions, and continues the exact
+camp, encounter, or outcome phase, turn owner, loadout, and deterministic
+rolls without replay.
 
 Round advancement is an explicit downstream consequence of resolving the
 opposition action and expires recorded effect instances atomically before the
