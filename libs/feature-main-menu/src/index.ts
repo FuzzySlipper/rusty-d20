@@ -274,10 +274,15 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
       }
 
       .action-workbench,
-      .outcome {
+      .outcome,
+      .outcome-banner {
         align-content: start;
         display: grid;
         gap: 14px;
+      }
+
+      .outcome-banner {
+        border-color: var(--rusty-engine-accent);
       }
 
       .actions__header {
@@ -457,9 +462,18 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                   Resolve the pending action before saving.
                 </span>
               }
-              @if (snapshot.encounter !== null) {
-                <button type="button" [disabled]="store.busy()" (click)="advanceTurn()">
-                  Advance turn
+              @if (
+                snapshot.campaign.phase === 'encounter' &&
+                snapshot.encounter?.turnOwner === 'opposition' &&
+                snapshot.encounter.pendingAction === null
+              ) {
+                <button
+                  class="primary"
+                  type="button"
+                  [disabled]="store.busy()"
+                  (click)="beginOppositionTurn()"
+                >
+                  Begin Iron Warden turn
                 </button>
               }
             </div>
@@ -554,6 +568,24 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                     }}
                   </span>
                 </header>
+
+                @if (campaign.latestOutcome; as outcome) {
+                  <section
+                    class="rusty-engine-panel outcome-banner"
+                    [attr.aria-label]="'Latest encounter ' + outcome.kind"
+                  >
+                    <div>
+                      <p class="eyebrow">{{ outcome.kind }}</p>
+                      <h2>{{ outcome.title }}</h2>
+                    </div>
+                    <p>{{ outcome.summary }}</p>
+                    @if (outcome.reward !== null) {
+                      <p class="muted">
+                        Reward: {{ outcome.reward }} · entity {{ outcome.rewardItemId }}
+                      </p>
+                    }
+                  </section>
+                }
 
                 <section class="camp__layout">
                   <div class="loadout">
@@ -674,6 +706,15 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
           } @else {
             <section class="encounter-meta" aria-label="Encounter identity">
               <span>Turn {{ encounter().turn }}</span>
+              <span>
+                {{
+                  encounter().turnOwner === 'player'
+                    ? 'Mara acting'
+                    : encounter().turnOwner === 'opposition'
+                      ? 'Iron Warden acting'
+                      : 'Encounter resolved'
+                }}
+              </span>
               <span>Next deterministic roll {{ encounter().nextRoll }}</span>
               <span>State revision {{ game()?.revision }}</span>
               <span>Armor defense {{ game()?.campaign?.loadout?.armorDefense }}</span>
@@ -701,40 +742,119 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
               }
             </section>
 
-            <section class="workspace">
+            @if (game()?.campaign?.phase === 'outcome') {
+              @if (game()?.campaign?.latestOutcome; as outcome) {
+                <section class="workspace">
+                  <article
+                    class="rusty-engine-panel outcome-banner"
+                    [attr.aria-label]="'Encounter ' + outcome.kind"
+                  >
+                    <p class="eyebrow">{{ outcome.kind }}</p>
+                    <h2>{{ outcome.title }}</h2>
+                    <p class="lede">{{ outcome.summary }}</p>
+                    @if (outcome.reward !== null) {
+                      <p>
+                        <strong>Reward admitted:</strong>
+                        {{ outcome.reward }} · canonical entity {{ outcome.rewardItemId }}
+                      </p>
+                    } @else {
+                      <p class="muted">
+                        Returning to camp applies bounded recovery without granting a reward.
+                      </p>
+                    }
+                    <button
+                      class="primary"
+                      type="button"
+                      [disabled]="store.busy()"
+                      (click)="returnToCamp()"
+                    >
+                      Return to Warden's Gate Camp
+                    </button>
+                  </article>
+                  <aside class="rusty-engine-panel outcome">
+                    <aui-combat-log [entries]="combatLog()" />
+                    @if (latestLog(); as latest) {
+                      <section class="latest" aria-label="Latest outcome explanation">
+                        <p class="meta-label">Latest receipt · turn {{ latest.turn }}</p>
+                        <strong>{{ latest.source }}</strong>
+                        <p>{{ latest.text }}</p>
+                        <ul class="detail-list">
+                          @for (detail of latest.details; track detail) {
+                            <li>{{ detail }}</li>
+                          }
+                        </ul>
+                      </section>
+                    }
+                  </aside>
+                </section>
+              }
+            } @else {
+              <section class="workspace">
               <div class="action-workbench">
                 <section class="rusty-engine-panel">
                   <header class="actions__header">
                     <div>
-                      <p class="meta-label">Authored actions</p>
-                      <h2>Choose an action</h2>
+                      <p class="meta-label">
+                        {{
+                          encounter().turnOwner === 'player'
+                            ? 'Authored player actions'
+                            : 'Deterministic opposition'
+                        }}
+                      </p>
+                      <h2>
+                        {{
+                          encounter().turnOwner === 'player'
+                            ? 'Choose an action'
+                            : encounter().pendingAction === null
+                              ? 'Iron Warden is ready'
+                              : 'Respond to the Iron Warden'
+                        }}
+                      </h2>
                     </div>
-                    <div class="target-control">
+                    @if (encounter().turnOwner === 'player') {
+                      <div class="target-control">
                       <label for="target">Target</label>
                       <select id="target" [value]="targetId()" (change)="selectTarget($event)">
                         @for (target of encounter().targets; track target.id) {
                           <option [value]="target.id">{{ target.name }}</option>
                         }
                       </select>
-                    </div>
-                  </header>
-
-                  <aui-hotbar [slots]="hotbarSlots()" (slotSelected)="chooseAction($event)" />
-
-                  <div class="action-catalog">
-                    @for (action of encounter().actions; track action.id) {
-                      <div class="action-note">
-                        <strong>{{ action.label }}</strong>
-                        <span>
-                          {{ action.ability }} vs {{ action.defense }} ·
-                          {{ action.damage }}
-                          @if (action.effect !== null) {
-                            · {{ action.effect }}
-                          }
-                        </span>
                       </div>
                     }
-                  </div>
+                  </header>
+
+                  @if (encounter().turnOwner === 'player') {
+                    <aui-hotbar [slots]="hotbarSlots()" (slotSelected)="chooseAction($event)" />
+
+                    <div class="action-catalog">
+                      @for (action of encounter().actions; track action.id) {
+                        <div class="action-note">
+                          <strong>{{ action.label }}</strong>
+                          <span>
+                            {{ action.ability }} vs {{ action.defense }} ·
+                            {{ action.damage }}
+                            @if (action.effect !== null) {
+                              · {{ action.effect }}
+                            }
+                          </span>
+                        </div>
+                      }
+                    </div>
+                  } @else if (encounter().pendingAction === null) {
+                    <p class="lede">
+                      Begin the explicit opposition phase to let Rust choose the Iron Warden's
+                      action from admitted definitions. You can inspect and answer its preview
+                      before the roll.
+                    </p>
+                    <button
+                      class="primary resolve"
+                      type="button"
+                      [disabled]="store.busy()"
+                      (click)="beginOppositionTurn()"
+                    >
+                      Begin Iron Warden turn
+                    </button>
+                  }
                 </section>
 
                 @if (encounter().pendingAction; as pending) {
@@ -742,7 +862,10 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                     class="rusty-engine-panel preview"
                     aria-label="Authoritative action preview"
                   >
-                    <p class="meta-label">Rust preview · {{ pending.actionLabel }}</p>
+                    <p class="meta-label">
+                      Rust preview · {{ pendingActorName(pending.actorId) }} ·
+                      {{ pending.actionLabel }}
+                    </p>
                     <p class="preview__math">
                       Ability {{ pending.abilityScore }} ({{ signed(pending.abilityModifier) }})
                       against defense {{ pending.defense }}
@@ -800,6 +923,7 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                 }
               </aside>
             </section>
+            }
           }
         }
       }
@@ -1002,8 +1126,12 @@ export class MainMenuScreenComponent implements OnInit {
     void this.store.applyAction(token);
   }
 
-  protected advanceTurn(): void {
-    void this.store.advanceTurn();
+  protected beginOppositionTurn(): void {
+    void this.store.beginOppositionTurn();
+  }
+
+  protected returnToCamp(): void {
+    void this.store.returnToCamp();
   }
 
   protected save(): void {
@@ -1020,6 +1148,13 @@ export class MainMenuScreenComponent implements OnInit {
 
   protected signed(value: number): string {
     return value >= 0 ? `+${value}` : String(value);
+  }
+
+  protected pendingActorName(actorId: number): string {
+    return (
+      this.encounter().characters.find((character) => character.id === actorId)?.name ??
+      `Entity ${actorId}`
+    );
   }
 
   private inventoryItem(item: LoadoutItemDto): InventoryItemView {

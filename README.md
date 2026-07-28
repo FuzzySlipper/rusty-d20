@@ -13,8 +13,11 @@ continue **The Warden's Gate**, save in camp, enter the Steel Guard encounter,
 manage Mara's Engine-backed inventory/equipment and camp stash, inspect
 attributed armor defense, choose an authored action and target, apply an
 optional reaction, resolve deterministic source-attributed damage/effects,
-advance the caller-owned turn, and save. A fresh Rust process continues the
-exact campaign phase, loadout, and authoritative state without replay. The
+face an explicit deterministic opposition turn, and play through victory or
+defeat. Victory transfers one canonical reward into the camp stash; defeat
+applies bounded recovery when Mara returns to camp. A fresh Rust process
+continues the exact campaign phase, turn owner, outcome, loadout, and
+authoritative state without replay. The
 checked starter catalog also includes the separate ember/resolve composition
 for headless and authoring proof. Fake transport remains available only from
 `libs/testing-fixtures`.
@@ -53,9 +56,10 @@ start at [docs/design.md](docs/design.md) and
 ## Current phase boundary
 
 The GM7 reference slice is connected end to end and the D20G1 campaign shell is
-underway. It is not yet a broad d20 product: initiative/opposition, movement,
-spellcasting, advancement, content publication, broader item/content catalogs,
-and additional encounters remain later milestones. See
+underway. It is not yet a broad d20 product: initiative order beyond the
+bounded two-combatant loop, movement, spellcasting, advancement, content
+publication, broader item/content catalogs, and additional encounters remain
+later milestones. See
 [docs/known-limitations.md](docs/known-limitations.md).
 
 ## Provenance

@@ -14,7 +14,8 @@ use gameplay_mechanics::{
     ItemTransferReceipt, ItemTransferRequest, MechanicsComponentKind, MechanicsError,
     MechanicsScalar, MechanicsSnapshotError, ObservedComponentRevision, OperationId,
     SourceInstanceId, SourceInstanceIdentity, StatEvaluation, StatService, StatValue,
-    StatsComponent, TrackValue, TracksComponent,
+    StatsComponent, TrackMutationReceipt, TrackMutationRequest, TrackService, TrackValue,
+    TracksComponent,
 };
 use serde::{Deserialize, Serialize};
 use svc_rng::{RngSeed, ScopedRng};
@@ -397,6 +398,39 @@ impl D20Session {
 
     pub const fn next_roll_index(&self) -> u64 {
         self.next_roll
+    }
+
+    pub fn deterministic_choice_index(&self, scope: &str, upper: u32) -> Option<u32> {
+        let mut rng = ScopedRng::new(
+            self.seed,
+            &format!(
+                "d20-choice/{scope}/turn-{}/roll-{}",
+                self.current_turn, self.next_roll
+            ),
+        );
+        rng.next_bounded_u32(upper)
+    }
+
+    pub fn restore_vitality(
+        &mut self,
+        entity: EntityId,
+        amount: u32,
+        operation: OperationId,
+    ) -> Result<TrackMutationReceipt, D20SessionError> {
+        let source = request_source(&operation, "restore-vitality");
+        Ok(TrackService::restore(
+            &mut self.entities,
+            self.rules.mechanics(),
+            TrackMutationRequest {
+                operation,
+                source,
+                entity,
+                track: vitality_track_id(),
+                amount: scalar(i64::from(amount)),
+                kind: gameplay_mechanics::TrackAdjustmentKind::Restore,
+                expected_revision: None,
+            },
+        )?)
     }
 
     pub fn equip_armor(

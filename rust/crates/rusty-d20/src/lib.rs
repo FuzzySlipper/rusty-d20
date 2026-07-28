@@ -40,12 +40,12 @@ pub use component::{
 };
 pub use game::{
     ActionDto, ApiErrorDto, ApiErrorKindDto, ApplyActionRequestDto, ApplyReactionRequestDto,
-    CampaignDto, CampaignPhaseDto, CharacterDto, EncounterChoiceDto, EncounterDto,
-    EnterEncounterRequestDto, EquipItemRequestDto, EquipmentSlotDto, ExpectedRevisionDto,
-    GameLogEntryDto, GameLogKindDto, GameRuntime, GameRuntimeError, GameSnapshotDto,
-    LoadoutCapacityDto, LoadoutDto, LoadoutItemDto, LoadoutRarityDto, PendingActionDto,
-    PreviewActionRequestDto, ReactionDto, ResourceDto, TransferItemRequestDto,
-    UnequipItemRequestDto,
+    CampaignDto, CampaignOutcomeDto, CampaignPhaseDto, CharacterDto, EncounterChoiceDto,
+    EncounterDto, EncounterOutcomeKindDto, EncounterTurnOwnerDto, EnterEncounterRequestDto,
+    EquipItemRequestDto, EquipmentSlotDto, ExpectedRevisionDto, GameLogEntryDto, GameLogKindDto,
+    GameRuntime, GameRuntimeError, GameSnapshotDto, LoadoutCapacityDto, LoadoutDto, LoadoutItemDto,
+    LoadoutRarityDto, PendingActionDto, PreviewActionRequestDto, ReactionDto, ResourceDto,
+    TransferItemRequestDto, UnequipItemRequestDto,
 };
 pub use identity::{D20Id, D20IdentityError, D20_ID_PATTERN, MAX_D20_ID_BYTES};
 pub use session::{
@@ -108,8 +108,11 @@ pub fn generated_typescript() -> String {
         ActionDto::decl(),
         ReactionDto::decl(),
         PendingActionDto::decl(),
+        EncounterTurnOwnerDto::decl(),
         EncounterDto::decl(),
         CampaignPhaseDto::decl(),
+        EncounterOutcomeKindDto::decl(),
+        CampaignOutcomeDto::decl(),
         EncounterChoiceDto::decl(),
         LoadoutRarityDto::decl(),
         LoadoutItemDto::decl(),

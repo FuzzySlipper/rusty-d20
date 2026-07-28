@@ -61,8 +61,8 @@ describe('decodeGameSnapshot', () => {
       name: 'Mara Venn',
       title: 'Steel Adept',
       level: 1,
-      healthCurrent: 100,
-      healthMaximum: 100,
+      healthCurrent: 24,
+      healthMaximum: 24,
       resources: [],
       effects: [],
     };
@@ -109,6 +109,7 @@ describe('decodeGameSnapshot', () => {
         armorDefenseSources: ['Equipped item 202: +4 defense (applied)'],
       },
       activeEncounterId: null,
+      latestOutcome: null,
       availableEncounters: [
         {
           id: 'iron-warden',
@@ -174,6 +175,7 @@ describe('decodeGameSnapshot', () => {
           turn: 0,
           nextRoll: 0,
           playerId: 101,
+          turnOwner: 'player',
           characters: [hero, target],
           actions: [],
           pendingAction: null,
@@ -181,5 +183,56 @@ describe('decodeGameSnapshot', () => {
         },
       }),
     ).toMatchObject({ ok: true });
+
+    const victory = {
+      kind: 'victory',
+      encounterId: 'iron-warden',
+      title: 'The Iron Warden defeated',
+      summary: 'Mara prevailed.',
+      rewardItemId: 201,
+      reward: 'Warden chain armor',
+    };
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          phase: 'outcome',
+          activeEncounterId: 'iron-warden',
+          latestOutcome: victory,
+        },
+        encounter: {
+          turn: 4,
+          nextRoll: 8,
+          playerId: 101,
+          turnOwner: null,
+          characters: [hero, target],
+          actions: [],
+          pendingAction: null,
+          log: [],
+        },
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          phase: 'outcome',
+          activeEncounterId: 'iron-warden',
+          latestOutcome: victory,
+        },
+        encounter: {
+          turn: 4,
+          nextRoll: 8,
+          playerId: 101,
+          turnOwner: 'player',
+          characters: [hero, target],
+          actions: [],
+          pendingAction: null,
+          log: [],
+        },
+      }),
+    ).toMatchObject({ ok: false });
   });
 });

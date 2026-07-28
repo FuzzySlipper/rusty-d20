@@ -124,10 +124,12 @@ test('pending saves reject atomically and completed state survives a fresh Rust 
       'Deterministic roll index 0',
     );
 
+    await page.getByRole('button', { name: 'Begin Iron Warden turn' }).first().click();
+    await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
     await page.getByRole('button', { name: 'Precise Shot' }).click();
     await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
     await expect(page.getByLabel('Latest outcome explanation')).toContainText(
-      'Deterministic roll index 1',
+      'Deterministic roll index 2',
     );
   } finally {
     if (host !== undefined) {

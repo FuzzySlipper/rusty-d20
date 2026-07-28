@@ -47,7 +47,8 @@ export function createFakeRustyD20Transport(
     previewAction: async () => sessionResult,
     applyReaction: async () => sessionResult,
     applyAction: async () => sessionResult,
-    advanceTurn: async () => sessionResult,
+    beginOppositionTurn: async () => sessionResult,
+    returnToCamp: async () => sessionResult,
     save: async () => sessionResult,
   };
 }

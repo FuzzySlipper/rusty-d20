@@ -20,9 +20,15 @@ export type ReactionDto = { id: string, label: string, resource: string, cost: n
 
 export type PendingActionDto = { token: string, actorId: number, targetId: number, actionId: string, actionLabel: string, abilityScore: number, abilityModifier: number, defense: number, defenseSources: Array<string>, reactions: Array<ReactionDto>, };
 
-export type EncounterDto = { turn: number, nextRoll: number, playerId: number, characters: Array<CharacterDto>, actions: Array<ActionDto>, pendingAction: PendingActionDto | null, log: Array<GameLogEntryDto>, };
+export type EncounterTurnOwnerDto = "player" | "opposition";
 
-export type CampaignPhaseDto = "camp" | "encounter";
+export type EncounterDto = { turn: number, nextRoll: number, playerId: number, turnOwner: EncounterTurnOwnerDto | null, characters: Array<CharacterDto>, actions: Array<ActionDto>, pendingAction: PendingActionDto | null, log: Array<GameLogEntryDto>, };
+
+export type CampaignPhaseDto = "camp" | "encounter" | "outcome";
+
+export type EncounterOutcomeKindDto = "victory" | "defeat";
+
+export type CampaignOutcomeDto = { kind: EncounterOutcomeKindDto, encounterId: string, title: string, summary: string, rewardItemId: number | null, reward: string | null, };
 
 export type EncounterChoiceDto = { id: string, title: string, summary: string, };
 
@@ -36,7 +42,7 @@ export type LoadoutCapacityDto = { metric: string, used: number, maximum: number
 
 export type LoadoutDto = { ownerId: number, stashOwnerId: number, inventorySlots: Array<LoadoutItemDto | null>, equipmentSlots: Array<EquipmentSlotDto>, stashItems: Array<LoadoutItemDto>, capacity: LoadoutCapacityDto, armorDefense: number, armorDefenseSources: Array<string>, };
 
-export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, hero: CharacterDto, loadout: LoadoutDto, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, };
+export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, hero: CharacterDto, loadout: LoadoutDto, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, latestOutcome: CampaignOutcomeDto | null, };
 
 export type GameSnapshotDto = { product: string, version: string, engineRevision: string, rulesetFingerprint: string, revision: number, saved: boolean, campaign: CampaignDto | null, encounter: EncounterDto | null, };
 

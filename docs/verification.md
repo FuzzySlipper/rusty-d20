@@ -68,10 +68,10 @@ BASE_URL=http://127.0.0.1:PORT LIVE_RUN=1 pnpm run e2e:live
 ```
 
 Inspect milestone screenshots, visible text, console output, page errors, and
-the evidence packet under `test-results/`. The live scenario covers empty/new
-adventure, the durable camp, encounter entry, authored preview attribution,
-optional reaction, deterministic action receipt, turn advancement, save, and
-desktop/mobile presentation.
+the evidence packet under `test-results/`. The opt-in live scenario covers
+empty/new adventure, the durable camp, encounter entry, authored preview
+attribution, optional reactions, one deterministic player/opposition round,
+save, and desktop/mobile presentation.
 
 The ordinary browser gate also launches an isolated Rust host, saves through
 normal loadout controls, stops that process, starts a fresh process against the
@@ -81,7 +81,11 @@ click activation plus visible capacity rejection without mutation. The
 fresh-process case also proves preview-only and reacted-pending saves reject
 without changing either authoritative in-memory state or the last durable save.
 A two-page scenario proves a stale optimistic revision is rejected through a
-normal action control.
+normal action control. Dedicated real-host scenarios complete a victory and a
+defeat through ordinary controls, reopen the terminal outcome, return to camp,
+and reopen the exact reward or recovery consequence. Those terminal scenarios
+are part of `verify:browser`, not a non-idempotent requirement on an arbitrary
+already-running live save.
 
 ## Standalone clone
 

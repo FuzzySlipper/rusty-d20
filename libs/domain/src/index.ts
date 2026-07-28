@@ -40,12 +40,14 @@ export interface CampaignView {
   readonly loadout: LoadoutDto;
   readonly activeEncounterId: string | null;
   readonly availableEncounters: CampaignDto['availableEncounters'];
+  readonly latestOutcome: CampaignDto['latestOutcome'];
 }
 
 export interface EncounterView {
   readonly turn: number;
   readonly nextRoll: number;
   readonly playerId: number;
+  readonly turnOwner: EncounterDto['turnOwner'];
   readonly player: CharacterDto;
   readonly targets: readonly CharacterDto[];
   readonly characters: readonly CharacterDto[];
@@ -89,6 +91,7 @@ function projectCampaign(campaign: CampaignDto): CampaignView {
     loadout: campaign.loadout,
     activeEncounterId: campaign.activeEncounterId,
     availableEncounters: campaign.availableEncounters,
+    latestOutcome: campaign.latestOutcome,
   };
 }
 
@@ -101,6 +104,7 @@ function projectEncounter(encounter: EncounterDto): EncounterView {
     turn: encounter.turn,
     nextRoll: encounter.nextRoll,
     playerId: encounter.playerId,
+    turnOwner: encounter.turnOwner,
     player,
     targets: encounter.characters.filter((character) => character.id !== encounter.playerId),
     characters: encounter.characters,

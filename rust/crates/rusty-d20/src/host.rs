@@ -44,7 +44,8 @@ pub fn router(
         .route("/api/v1/session/preview", post(preview))
         .route("/api/v1/session/reaction", post(reaction))
         .route("/api/v1/session/action", post(action))
-        .route("/api/v1/session/turn", post(advance_turn))
+        .route("/api/v1/session/opposition", post(begin_opposition_turn))
+        .route("/api/v1/session/camp", post(return_to_camp))
         .route("/api/v1/session/save", post(save))
         .with_state(HostState {
             runtime,
@@ -176,12 +177,21 @@ async fn action(
     mutate(&state, |runtime| runtime.apply_action(request))
 }
 
-async fn advance_turn(
+async fn begin_opposition_turn(
     State(state): State<HostState>,
     Json(request): Json<ExpectedRevisionDto>,
 ) -> ApiResult {
     mutate(&state, |runtime| {
-        runtime.advance_turn(request.expected_revision)
+        runtime.begin_opposition_turn(request.expected_revision)
+    })
+}
+
+async fn return_to_camp(
+    State(state): State<HostState>,
+    Json(request): Json<ExpectedRevisionDto>,
+) -> ApiResult {
+    mutate(&state, |runtime| {
+        runtime.return_to_camp(request.expected_revision)
     })
 }
 
@@ -344,7 +354,7 @@ mod tests {
         let stale = app
             .clone()
             .oneshot(
-                Request::post("/api/v1/session/turn")
+                Request::post("/api/v1/session/opposition")
                     .header("content-type", "application/json")
                     .body(Body::from(r#"{"expectedRevision":0}"#))
                     .unwrap(),

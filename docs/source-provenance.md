@@ -98,3 +98,10 @@ facts stay authoritative. Compass and minimap remain excluded until Rusty D20
 owns real navigation facts, and settings remain deferred until the product has
 meaningful settings to expose. No fixture-driven donor screen or second UI
 authority was reintroduced.
+
+D20G1C keeps both reviewed pins unchanged. It adapts the retained status,
+hotbar, and combat-log surfaces for explicit player/opposition turns and a
+terminal outcome without importing donor gameplay authority. Rusty D20 owns
+the deterministic opponent choice, outcome, reward, recovery, and save policy;
+the reward transfer and recovery use the already pinned Engine equipment,
+inventory, and track services. No reusable gap or pin change was required.

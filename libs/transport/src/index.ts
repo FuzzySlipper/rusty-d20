@@ -27,7 +27,8 @@ export interface RustyD20Transport {
   readonly previewAction: (request: PreviewActionRequestDto) => Promise<Result<GameSnapshotDto>>;
   readonly applyReaction: (request: ApplyReactionRequestDto) => Promise<Result<GameSnapshotDto>>;
   readonly applyAction: (request: ApplyActionRequestDto) => Promise<Result<GameSnapshotDto>>;
-  readonly advanceTurn: (expectedRevision: number) => Promise<Result<GameSnapshotDto>>;
+  readonly beginOppositionTurn: (expectedRevision: number) => Promise<Result<GameSnapshotDto>>;
+  readonly returnToCamp: (expectedRevision: number) => Promise<Result<GameSnapshotDto>>;
   readonly save: (expectedRevision: number) => Promise<Result<GameSnapshotDto>>;
 }
 
@@ -52,8 +53,10 @@ export function createHttpRustyD20Transport(http: HttpPort): RustyD20Transport {
     previewAction: (body) => post('/api/v1/session/preview', body, decodeGameSnapshot),
     applyReaction: (body) => post('/api/v1/session/reaction', body, decodeGameSnapshot),
     applyAction: (body) => post('/api/v1/session/action', body, decodeGameSnapshot),
-    advanceTurn: (expectedRevision) =>
-      post('/api/v1/session/turn', { expectedRevision }, decodeGameSnapshot),
+    beginOppositionTurn: (expectedRevision) =>
+      post('/api/v1/session/opposition', { expectedRevision }, decodeGameSnapshot),
+    returnToCamp: (expectedRevision) =>
+      post('/api/v1/session/camp', { expectedRevision }, decodeGameSnapshot),
     save: (expectedRevision) =>
       post('/api/v1/session/save', { expectedRevision }, decodeGameSnapshot),
   };

@@ -4,7 +4,7 @@ liveScenario(
   'Rust-owned authored encounter live evidence @live',
   async ({ page, collector, liveBaseUrl }) => {
     collector.addNonClaim(
-      'This certifies the D20G1B landing, Engine-backed camp loadout, and bounded encounter path, not later opposition, rewards, alternate content, or navigation.',
+      'This certifies the D20G1C landing, Engine-backed camp loadout, and one complete player/opposition round. The aggregate real-host gate separately proves terminal victory and defeat; alternate content and navigation remain later work.',
     );
 
     await page.goto(liveBaseUrl);
@@ -55,10 +55,23 @@ liveScenario(
         latest: await page.getByLabel('Latest outcome explanation').innerText(),
       },
     });
-    await page.getByRole('button', { name: 'Advance turn' }).click();
+    await page.getByRole('button', { name: 'Begin Iron Warden turn' }).first().click();
+    await expect(page.getByLabel('Authoritative action preview')).toContainText('Iron Warden');
+    await expect(page.getByLabel('Latest outcome explanation')).toContainText(
+      'Deterministic enemy policy selected',
+    );
+    await collector.milestone('deterministic opposition preview', {
+      screenshot: true,
+      layerSnapshot: {
+        preview: await page.getByLabel('Authoritative action preview').innerText(),
+      },
+    });
+    await page.getByRole('button', { name: /Parry · 1 Guard/ }).click();
+    await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
+    await expect(page.getByLabel('Encounter identity')).toContainText('Mara acting');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
-    await collector.milestone('resolved receipt advanced turn and saved state', {
+    await collector.milestone('opposition receipt advanced round and saved state', {
       screenshot: true,
       layerSnapshot: {
         route: page.url(),
@@ -68,7 +81,7 @@ liveScenario(
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.getByRole('button', { name: 'Advance turn' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Longsword Strike' })).toBeVisible();
     await collector.milestone('mobile encounter shell', { screenshot: true });
   },
 );

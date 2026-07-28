@@ -20,7 +20,7 @@ use crate::{
     ScheduledEffectsComponent, SessionSaveError, StorageSeed, ENGINE_REVISION,
 };
 
-const GAME_SAVE_SCHEMA_VERSION: u32 = 3;
+const GAME_SAVE_SCHEMA_VERSION: u32 = 4;
 const ADVENTURE_ID: &str = "wardens-gate";
 const ADVENTURE_TITLE: &str = "The Warden's Gate";
 const ENCOUNTER_ID: &str = "iron-warden";
@@ -38,6 +38,8 @@ const MAX_LOG_SOURCE_BYTES: usize = 128;
 const MAX_LOG_TEXT_BYTES: usize = 512;
 const MAX_LOG_DETAIL_BYTES: usize = 512;
 const MAX_GAME_SAVE_BYTES: usize = 1_000_000;
+const STARTING_VITALITY: u32 = 24;
+const DEFEAT_RECOVERY_VITALITY: u32 = 12;
 const STARTER_CORE: &str = include_str!("../../../../rules/artifacts/starter/starter-core.json");
 const STEEL_GUARD: &str = include_str!("../../../../rules/artifacts/starter/steel-guard.json");
 
@@ -147,6 +149,7 @@ pub struct EncounterDto {
     pub next_roll: u64,
     #[ts(type = "number")]
     pub player_id: u64,
+    pub turn_owner: Option<EncounterTurnOwnerDto>,
     pub characters: Vec<CharacterDto>,
     pub actions: Vec<ActionDto>,
     pub pending_action: Option<PendingActionDto>,
@@ -156,9 +159,39 @@ pub struct EncounterDto {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 #[ts(rename_all = "kebab-case")]
+pub enum EncounterTurnOwnerDto {
+    Player,
+    Opposition,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
 pub enum CampaignPhaseDto {
     Camp,
     Encounter,
+    Outcome,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum EncounterOutcomeKindDto {
+    Victory,
+    Defeat,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct CampaignOutcomeDto {
+    pub kind: EncounterOutcomeKindDto,
+    pub encounter_id: String,
+    pub title: String,
+    pub summary: String,
+    #[ts(type = "number | null")]
+    pub reward_item_id: Option<u64>,
+    pub reward: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -244,6 +277,7 @@ pub struct CampaignDto {
     pub loadout: LoadoutDto,
     pub active_encounter_id: Option<String>,
     pub available_encounters: Vec<EncounterChoiceDto>,
+    pub latest_outcome: Option<CampaignOutcomeDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -391,15 +425,32 @@ struct RestoreData {
 enum CampaignPhase {
     Camp,
     Encounter,
+    Outcome,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum EncounterTurnOwner {
+    Player,
+    Opposition,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum EncounterOutcome {
+    Victory,
+    Defeat,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CampaignState {
     phase: CampaignPhase,
     active_encounter_id: Option<String>,
+    turn_owner: Option<EncounterTurnOwner>,
+    outcome: Option<EncounterOutcome>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GameRuntime {
     rules: D20Ruleset,
     campaign: Option<CampaignState>,
@@ -452,13 +503,15 @@ impl GameRuntime {
                     CampaignState {
                         phase: CampaignPhase::Encounter,
                         active_encounter_id: Some(ENCOUNTER_ID.to_owned()),
+                        turn_owner: Some(EncounterTurnOwner::Player),
+                        outcome: None,
                     },
                     true,
                 )
             }
-            2 => {
-                let save: GameSave = serde_json::from_value(value)?;
-                let campaign = validate_campaign_save(save.campaign)?;
+            2 | 3 => {
+                let save: LegacyCampaignGameSave = serde_json::from_value(value)?;
+                let campaign = validate_legacy_campaign_save(save.campaign)?;
                 Self::restore(
                     rules,
                     RestoreData {
@@ -508,7 +561,7 @@ impl GameRuntime {
         {
             install_product_loadout(&mut session)?;
         }
-        validate_product_state(&session)?;
+        validate_product_state(&session, &campaign)?;
         if data.next_operation == 0 || data.next_log_id == 0 || data.log.len() > MAX_LOG_ENTRIES {
             return Err(GameRuntimeError::InvalidSave(
                 "operation/log counters or bounded log are invalid".to_owned(),
@@ -572,6 +625,8 @@ impl GameRuntime {
                 adventure_id: ADVENTURE_ID.to_owned(),
                 phase: campaign.phase,
                 active_encounter_id: campaign.active_encounter_id.clone(),
+                turn_owner: campaign.turn_owner,
+                outcome: campaign.outcome,
             },
             session,
         })?)
@@ -606,8 +661,13 @@ impl GameRuntime {
             }
         };
         let encounter = match (&self.campaign, session) {
-            (Some(campaign), Some(session)) if campaign.phase == CampaignPhase::Encounter => {
-                Some(self.project_encounter(session)?)
+            (Some(campaign), Some(session))
+                if matches!(
+                    campaign.phase,
+                    CampaignPhase::Encounter | CampaignPhase::Outcome
+                ) =>
+            {
+                Some(self.project_encounter(campaign, session)?)
             }
             _ => None,
         };
@@ -677,6 +737,8 @@ impl GameRuntime {
         self.campaign = Some(CampaignState {
             phase: CampaignPhase::Camp,
             active_encounter_id: None,
+            turn_owner: None,
+            outcome: None,
         });
         self.session = Some(session);
         self.pending = None;
@@ -718,12 +780,19 @@ impl GameRuntime {
                 "an encounter can only be entered from camp".to_owned(),
             ));
         }
+        if campaign.outcome.is_some() {
+            return Err(GameRuntimeError::InvalidCommand(
+                "the Iron Warden encounter has already been resolved".to_owned(),
+            ));
+        }
         let campaign = self
             .campaign
             .as_mut()
             .expect("campaign was validated before mutation");
         campaign.phase = CampaignPhase::Encounter;
         campaign.active_encounter_id = Some(ENCOUNTER_ID.to_owned());
+        campaign.turn_owner = Some(EncounterTurnOwner::Player);
+        campaign.outcome = None;
         self.bump_revision()?;
         self.saved_revision = None;
         self.push_log(
@@ -859,7 +928,13 @@ impl GameRuntime {
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
         self.ensure_revision(request.expected_revision)?;
         self.ensure_encounter_phase()?;
+        self.ensure_turn_owner(EncounterTurnOwner::Player)?;
         self.ensure_mutation_capacity(true, false)?;
+        if self.pending.is_some() {
+            return Err(GameRuntimeError::InvalidCommand(
+                "resolve the current action preview before choosing another action".to_owned(),
+            ));
+        }
         let actor = entity(request.actor_id)?;
         let target = entity(request.target_id)?;
         if actor != PLAYER || target != OPPONENT {
@@ -888,6 +963,16 @@ impl GameRuntime {
     }
 
     pub fn apply_reaction(
+        &mut self,
+        request: ApplyReactionRequestDto,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        let mut staged = self.clone();
+        let snapshot = staged.apply_reaction_inner(request)?;
+        *self = staged;
+        Ok(snapshot)
+    }
+
+    fn apply_reaction_inner(
         &mut self,
         request: ApplyReactionRequestDto,
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
@@ -921,10 +1006,38 @@ impl GameRuntime {
         &mut self,
         request: ApplyActionRequestDto,
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        let mut staged = self.clone();
+        let snapshot = staged.apply_action_inner(request)?;
+        *self = staged;
+        Ok(snapshot)
+    }
+
+    fn apply_action_inner(
+        &mut self,
+        request: ApplyActionRequestDto,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
         self.ensure_revision(request.expected_revision)?;
         self.ensure_encounter_phase()?;
         self.ensure_mutation_capacity(false, true)?;
         let pending = self.require_pending(&request.preview_token)?.clone();
+        let turn_owner = self
+            .campaign
+            .as_ref()
+            .and_then(|campaign| campaign.turn_owner)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(
+                    "active encounter is missing its turn owner".to_owned(),
+                )
+            })?;
+        let expected_actor = match turn_owner {
+            EncounterTurnOwner::Player => PLAYER,
+            EncounterTurnOwner::Opposition => OPPONENT,
+        };
+        if pending.preview.actor() != expected_actor {
+            return Err(GameRuntimeError::InvalidCommand(
+                "the pending action does not belong to the current turn owner".to_owned(),
+            ));
+        }
         let action_definition = self
             .rules
             .action(pending.preview.action())
@@ -940,8 +1053,6 @@ impl GameRuntime {
             effect_instance,
         })?;
         self.pending = None;
-        self.bump_revision()?;
-        self.saved_revision = None;
 
         let mut details = vec![
             format!(
@@ -985,49 +1096,196 @@ impl GameRuntime {
             GameLogKindDto::Miss
         };
         let outcome = if receipt.hit { "hit" } else { "missed" };
+        let actor_name = self.character_name(receipt.actor)?;
+        let target_name = self.character_name(receipt.target)?;
         self.push_log(
             kind,
             &humanize(receipt.action.as_str()),
-            &format!("Mara Venn {outcome} the Iron Warden."),
+            &format!("{actor_name} {outcome} {target_name}."),
             details,
         )?;
+
+        if self.vitality(receipt.target)? == 0 {
+            let encounter_outcome = if receipt.target == OPPONENT {
+                EncounterOutcome::Victory
+            } else {
+                EncounterOutcome::Defeat
+            };
+            self.complete_encounter(encounter_outcome)?;
+        } else {
+            match turn_owner {
+                EncounterTurnOwner::Player => {
+                    self.campaign_mut()?.turn_owner = Some(EncounterTurnOwner::Opposition);
+                }
+                EncounterTurnOwner::Opposition => {
+                    let serial = self.next_operation;
+                    let next_turn = self
+                        .session()?
+                        .current_turn()
+                        .checked_add(1)
+                        .ok_or(GameRuntimeError::CounterOverflow)?;
+                    let turn_receipt = self
+                        .session_mut()?
+                        .advance_turn(next_turn, operation(&format!("advance-round-{serial}"))?)?;
+                    self.next_operation = self
+                        .next_operation
+                        .checked_add(1)
+                        .ok_or(GameRuntimeError::CounterOverflow)?;
+                    self.campaign_mut()?.turn_owner = Some(EncounterTurnOwner::Player);
+                    self.push_log(
+                        GameLogKindDto::Turn,
+                        "Round",
+                        &format!(
+                            "The encounter advanced from round {} to {}.",
+                            turn_receipt.before, turn_receipt.after
+                        ),
+                        vec![format!(
+                            "{} scheduled effect(s) expired before Mara's next turn.",
+                            turn_receipt.expired.len()
+                        )],
+                    )?;
+                }
+            }
+        }
+        self.bump_revision()?;
+        self.saved_revision = None;
         self.snapshot()
     }
 
-    pub fn advance_turn(
+    pub fn begin_opposition_turn(
+        &mut self,
+        expected_revision: u64,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        let mut staged = self.clone();
+        let snapshot = staged.begin_opposition_turn_inner(expected_revision)?;
+        *self = staged;
+        Ok(snapshot)
+    }
+
+    fn begin_opposition_turn_inner(
         &mut self,
         expected_revision: u64,
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
         self.ensure_revision(expected_revision)?;
         self.ensure_encounter_phase()?;
+        self.ensure_turn_owner(EncounterTurnOwner::Opposition)?;
         self.ensure_mutation_capacity(true, true)?;
-        let serial = self.next_operation;
-        let next_turn = self
+        if self.pending.is_some() {
+            return Err(GameRuntimeError::InvalidCommand(
+                "the opposition action is already pending".to_owned(),
+            ));
+        }
+        let actions = self
+            .rules
+            .actions()
+            .map(|action| action.id.clone())
+            .collect::<Vec<_>>();
+        let upper = u32::try_from(actions.len()).map_err(|_| {
+            GameRuntimeError::InvalidState(
+                "the opposition action catalog does not fit deterministic choice".to_owned(),
+            )
+        })?;
+        let index = self
             .session()?
-            .current_turn()
-            .checked_add(1)
-            .ok_or(GameRuntimeError::CounterOverflow)?;
-        let receipt = self
-            .session_mut()?
-            .advance_turn(next_turn, operation(&format!("advance-turn-{serial}"))?)?;
+            .deterministic_choice_index("iron-warden-action", upper)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(
+                    "the opposition has no admitted action choices".to_owned(),
+                )
+            })?;
+        let index = usize::try_from(index).expect("u32 choice index fits usize");
+        let action = actions[index].clone();
+        let serial = self.next_operation;
+        let operation = operation(&format!("opposition-action-{serial}"))?;
+        let preview = self
+            .session()?
+            .preview_action(OPPONENT, PLAYER, &action, operation)?;
         self.next_operation = self
             .next_operation
             .checked_add(1)
             .ok_or(GameRuntimeError::CounterOverflow)?;
-        self.pending = None;
+        self.pending = Some(PendingAction {
+            serial,
+            token: format!("preview-{serial}"),
+            preview,
+        });
         self.bump_revision()?;
         self.saved_revision = None;
         self.push_log(
             GameLogKindDto::Turn,
-            "Turn",
+            "Opposition",
             &format!(
-                "Advanced from turn {} to {}.",
-                receipt.before, receipt.after
+                "Iron Warden prepares {}.",
+                humanize(action.as_str())
             ),
             vec![format!(
-                "{} scheduled effect(s) expired.",
-                receipt.expired.len()
+                "Deterministic enemy policy selected catalog choice {} of {} from Rust-owned session state.",
+                index + 1,
+                actions.len()
             )],
+        )?;
+        self.snapshot()
+    }
+
+    pub fn return_to_camp(
+        &mut self,
+        expected_revision: u64,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        let mut staged = self.clone();
+        let snapshot = staged.return_to_camp_inner(expected_revision)?;
+        *self = staged;
+        Ok(snapshot)
+    }
+
+    fn return_to_camp_inner(
+        &mut self,
+        expected_revision: u64,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        self.ensure_revision(expected_revision)?;
+        self.ensure_outcome_phase()?;
+        self.ensure_mutation_capacity(true, true)?;
+        let outcome = self
+            .campaign
+            .as_ref()
+            .and_then(|campaign| campaign.outcome)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState("outcome phase is missing its result".to_owned())
+            })?;
+        let mut details = Vec::new();
+        if outcome == EncounterOutcome::Defeat {
+            let serial = self.next_operation;
+            let receipt = self.session_mut()?.restore_vitality(
+                PLAYER,
+                DEFEAT_RECOVERY_VITALITY,
+                operation(&format!("camp-recovery-{serial}"))?,
+            )?;
+            self.next_operation = self
+                .next_operation
+                .checked_add(1)
+                .ok_or(GameRuntimeError::CounterOverflow)?;
+            details.push(format!(
+                "Camp recovery restored {} vitality; Mara returns with {}/{} vitality.",
+                receipt.applied_amount.get(),
+                receipt.after.get(),
+                STARTING_VITALITY
+            ));
+        } else {
+            details.push("Mara keeps her remaining vitality and resources.".to_owned());
+            details.push("Warden chain armor remains in canonical camp storage.".to_owned());
+        }
+        {
+            let campaign = self.campaign_mut()?;
+            campaign.phase = CampaignPhase::Camp;
+            campaign.active_encounter_id = None;
+            campaign.turn_owner = None;
+        }
+        self.bump_revision()?;
+        self.saved_revision = None;
+        self.push_log(
+            GameLogKindDto::System,
+            "Camp",
+            "The encounter consequence is now part of the durable camp state.",
+            details,
         )?;
         self.snapshot()
     }
@@ -1043,15 +1301,41 @@ impl GameRuntime {
             phase: match campaign.phase {
                 CampaignPhase::Camp => CampaignPhaseDto::Camp,
                 CampaignPhase::Encounter => CampaignPhaseDto::Encounter,
+                CampaignPhase::Outcome => CampaignPhaseDto::Outcome,
             },
             hero: self.project_character(session, PLAYER, "Steel Adept")?,
             loadout: self.project_loadout(session)?,
             active_encounter_id: campaign.active_encounter_id.clone(),
-            available_encounters: vec![EncounterChoiceDto {
-                id: ENCOUNTER_ID.to_owned(),
-                title: ENCOUNTER_TITLE.to_owned(),
-                summary: "Challenge the armored sentinel guarding the mountain pass.".to_owned(),
-            }],
+            available_encounters: if campaign.outcome.is_none() {
+                vec![EncounterChoiceDto {
+                    id: ENCOUNTER_ID.to_owned(),
+                    title: ENCOUNTER_TITLE.to_owned(),
+                    summary: "Challenge the armored sentinel guarding the mountain pass."
+                        .to_owned(),
+                }]
+            } else {
+                Vec::new()
+            },
+            latest_outcome: campaign.outcome.map(|outcome| match outcome {
+                EncounterOutcome::Victory => CampaignOutcomeDto {
+                    kind: EncounterOutcomeKindDto::Victory,
+                    encounter_id: ENCOUNTER_ID.to_owned(),
+                    title: "The Iron Warden defeated".to_owned(),
+                    summary: "Mara prevailed; her remaining vitality and resources carry forward."
+                        .to_owned(),
+                    reward_item_id: Some(OPPONENT_ARMOR.raw()),
+                    reward: Some("Warden chain armor".to_owned()),
+                },
+                EncounterOutcome::Defeat => CampaignOutcomeDto {
+                    kind: EncounterOutcomeKindDto::Defeat,
+                    encounter_id: ENCOUNTER_ID.to_owned(),
+                    title: "Mara was defeated".to_owned(),
+                    summary: "No reward was granted; returning to camp applies bounded recovery."
+                        .to_owned(),
+                    reward_item_id: None,
+                    reward: None,
+                },
+            }),
         })
     }
 
@@ -1234,11 +1518,19 @@ impl GameRuntime {
         })
     }
 
-    fn project_encounter(&self, session: &D20Session) -> Result<EncounterDto, GameRuntimeError> {
+    fn project_encounter(
+        &self,
+        campaign: &CampaignState,
+        session: &D20Session,
+    ) -> Result<EncounterDto, GameRuntimeError> {
         Ok(EncounterDto {
             turn: session.current_turn(),
             next_roll: session.next_roll_index(),
             player_id: PLAYER.raw(),
+            turn_owner: campaign.turn_owner.map(|owner| match owner {
+                EncounterTurnOwner::Player => EncounterTurnOwnerDto::Player,
+                EncounterTurnOwner::Opposition => EncounterTurnOwnerDto::Opposition,
+            }),
             characters: vec![
                 self.project_character(session, PLAYER, "Steel Adept")?,
                 self.project_character(session, OPPONENT, "Armored Sentinel")?,
@@ -1353,7 +1645,7 @@ impl GameRuntime {
             title: title.to_owned(),
             level: 1,
             health_current: vitality.current().get(),
-            health_maximum: 100,
+            health_maximum: i64::from(STARTING_VITALITY),
             resources,
             effects,
         })
@@ -1401,10 +1693,11 @@ impl GameRuntime {
     }
 
     fn log_reaction(&mut self, receipt: &ReactionReceipt) -> Result<(), GameRuntimeError> {
+        let defender = self.character_name(receipt.target)?;
         self.push_log(
             GameLogKindDto::Reaction,
             &humanize(receipt.reaction.as_str()),
-            "Iron Warden raised a reaction before the roll.",
+            &format!("{defender} raised a reaction before the roll."),
             vec![
                 format!(
                     "{} {} → {}.",
@@ -1422,6 +1715,69 @@ impl GameRuntime {
                 ),
             ],
         )
+    }
+
+    fn complete_encounter(&mut self, outcome: EncounterOutcome) -> Result<(), GameRuntimeError> {
+        let mut details = Vec::new();
+        match outcome {
+            EncounterOutcome::Victory => {
+                let unequip_serial = self.next_operation;
+                self.session_mut()?.unequip_armor(
+                    OPPONENT,
+                    OPPONENT_ARMOR,
+                    operation(&format!("reward-unequip-{unequip_serial}"))?,
+                )?;
+                self.next_operation = self
+                    .next_operation
+                    .checked_add(1)
+                    .ok_or(GameRuntimeError::CounterOverflow)?;
+                let transfer_serial = self.next_operation;
+                self.session_mut()?.transfer_armor(
+                    OPPONENT_ARMOR,
+                    OPPONENT,
+                    CAMP_STASH,
+                    operation(&format!("reward-transfer-{transfer_serial}"))?,
+                )?;
+                self.next_operation = self
+                    .next_operation
+                    .checked_add(1)
+                    .ok_or(GameRuntimeError::CounterOverflow)?;
+                details.push(
+                    "Warden chain armor was unequipped and transferred into canonical camp storage."
+                        .to_owned(),
+                );
+                details.push(format!(
+                    "Reward item entity {} can be inspected after returning to camp.",
+                    OPPONENT_ARMOR.raw()
+                ));
+            }
+            EncounterOutcome::Defeat => {
+                details.push(
+                    "Mara reached zero vitality; no reward or inventory mutation occurred."
+                        .to_owned(),
+                );
+                details.push(
+                    "Return to camp applies the explicit bounded recovery consequence.".to_owned(),
+                );
+            }
+        }
+        {
+            let campaign = self.campaign_mut()?;
+            campaign.phase = CampaignPhase::Outcome;
+            campaign.turn_owner = None;
+            campaign.outcome = Some(outcome);
+        }
+        let (source, text) = match outcome {
+            EncounterOutcome::Victory => (
+                "Victory",
+                "The Iron Warden falls and yields the Warden chain armor.",
+            ),
+            EncounterOutcome::Defeat => (
+                "Defeat",
+                "Mara Venn falls and must recover before continuing.",
+            ),
+        };
+        self.push_log(GameLogKindDto::System, source, text, details)
     }
 
     fn push_log(
@@ -1464,6 +1820,42 @@ impl GameRuntime {
         self.session.as_mut().ok_or(GameRuntimeError::NoEncounter)
     }
 
+    fn campaign_mut(&mut self) -> Result<&mut CampaignState, GameRuntimeError> {
+        self.campaign.as_mut().ok_or(GameRuntimeError::NoEncounter)
+    }
+
+    fn character_name(&self, entity: EntityId) -> Result<String, GameRuntimeError> {
+        self.session()?
+            .entities()
+            .core(entity)
+            .map(|core| core.name.clone())
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(format!(
+                    "character entity {} is missing",
+                    entity.raw()
+                ))
+            })
+    }
+
+    fn vitality(&self, entity: EntityId) -> Result<i64, GameRuntimeError> {
+        self.session()?
+            .entities()
+            .component::<TracksComponent>(entity)?
+            .and_then(|tracks| {
+                tracks
+                    .values()
+                    .iter()
+                    .find(|value| value.track().as_str() == "vitality")
+                    .map(|value| value.current().get())
+            })
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(format!(
+                    "entity {} vitality is missing",
+                    entity.raw()
+                ))
+            })
+    }
+
     fn require_pending(&self, token: &str) -> Result<&PendingAction, GameRuntimeError> {
         self.pending
             .as_ref()
@@ -1478,9 +1870,11 @@ impl GameRuntime {
     fn ensure_encounter_phase(&self) -> Result<(), GameRuntimeError> {
         match self.campaign.as_ref().map(|campaign| campaign.phase) {
             Some(CampaignPhase::Encounter) => Ok(()),
-            Some(CampaignPhase::Camp) => Err(GameRuntimeError::InvalidCommand(
-                "this command is only available during an active encounter".to_owned(),
-            )),
+            Some(CampaignPhase::Camp | CampaignPhase::Outcome) => {
+                Err(GameRuntimeError::WrongPhase(
+                    "this command is only available during an active encounter".to_owned(),
+                ))
+            }
             None => Err(GameRuntimeError::NoEncounter),
         }
     }
@@ -1488,11 +1882,47 @@ impl GameRuntime {
     fn ensure_camp_phase(&self) -> Result<(), GameRuntimeError> {
         match self.campaign.as_ref().map(|campaign| campaign.phase) {
             Some(CampaignPhase::Camp) => Ok(()),
-            Some(CampaignPhase::Encounter) => Err(GameRuntimeError::WrongPhase(
-                "loadout changes are only available at camp".to_owned(),
-            )),
+            Some(CampaignPhase::Encounter | CampaignPhase::Outcome) => {
+                Err(GameRuntimeError::WrongPhase(
+                    "loadout changes are only available at camp".to_owned(),
+                ))
+            }
             None => Err(GameRuntimeError::NoEncounter),
         }
+    }
+
+    fn ensure_outcome_phase(&self) -> Result<(), GameRuntimeError> {
+        match self.campaign.as_ref().map(|campaign| campaign.phase) {
+            Some(CampaignPhase::Outcome) => Ok(()),
+            Some(CampaignPhase::Camp | CampaignPhase::Encounter) => {
+                Err(GameRuntimeError::WrongPhase(
+                    "return to camp is only available after an encounter outcome".to_owned(),
+                ))
+            }
+            None => Err(GameRuntimeError::NoEncounter),
+        }
+    }
+
+    fn ensure_turn_owner(&self, expected: EncounterTurnOwner) -> Result<(), GameRuntimeError> {
+        let actual = self
+            .campaign
+            .as_ref()
+            .and_then(|campaign| campaign.turn_owner)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(
+                    "active encounter is missing its turn owner".to_owned(),
+                )
+            })?;
+        if actual != expected {
+            let owner = match actual {
+                EncounterTurnOwner::Player => "player",
+                EncounterTurnOwner::Opposition => "opposition",
+            };
+            return Err(GameRuntimeError::WrongPhase(format!(
+                "this command is not legal during the {owner} turn"
+            )));
+        }
+        Ok(())
     }
 
     fn ensure_revision(&self, expected: u64) -> Result<(), GameRuntimeError> {
@@ -1552,6 +1982,36 @@ struct CampaignSave {
     adventure_id: String,
     phase: CampaignPhase,
     active_encounter_id: Option<String>,
+    turn_owner: Option<EncounterTurnOwner>,
+    outcome: Option<EncounterOutcome>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct LegacyCampaignSave {
+    adventure_id: String,
+    phase: LegacyCampaignPhase,
+    active_encounter_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum LegacyCampaignPhase {
+    Camp,
+    Encounter,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct LegacyCampaignGameSave {
+    #[serde(rename = "schemaVersion")]
+    _schema_version: u32,
+    revision: u64,
+    next_operation: u64,
+    next_log_id: u64,
+    log: Vec<GameLogEntryDto>,
+    campaign: LegacyCampaignSave,
+    session: serde_json::Value,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1574,8 +2034,17 @@ fn validate_campaign_save(save: CampaignSave) -> Result<CampaignState, GameRunti
         )));
     }
     let valid_phase = match save.phase {
-        CampaignPhase::Camp => save.active_encounter_id.is_none(),
-        CampaignPhase::Encounter => save.active_encounter_id.as_deref() == Some(ENCOUNTER_ID),
+        CampaignPhase::Camp => save.active_encounter_id.is_none() && save.turn_owner.is_none(),
+        CampaignPhase::Encounter => {
+            save.active_encounter_id.as_deref() == Some(ENCOUNTER_ID)
+                && save.turn_owner.is_some()
+                && save.outcome.is_none()
+        }
+        CampaignPhase::Outcome => {
+            save.active_encounter_id.as_deref() == Some(ENCOUNTER_ID)
+                && save.turn_owner.is_none()
+                && save.outcome.is_some()
+        }
     };
     if !valid_phase {
         return Err(GameRuntimeError::InvalidSave(
@@ -1585,6 +2054,24 @@ fn validate_campaign_save(save: CampaignSave) -> Result<CampaignState, GameRunti
     Ok(CampaignState {
         phase: save.phase,
         active_encounter_id: save.active_encounter_id,
+        turn_owner: save.turn_owner,
+        outcome: save.outcome,
+    })
+}
+
+fn validate_legacy_campaign_save(
+    save: LegacyCampaignSave,
+) -> Result<CampaignState, GameRuntimeError> {
+    let phase = match save.phase {
+        LegacyCampaignPhase::Camp => CampaignPhase::Camp,
+        LegacyCampaignPhase::Encounter => CampaignPhase::Encounter,
+    };
+    validate_campaign_save(CampaignSave {
+        adventure_id: save.adventure_id,
+        phase,
+        active_encounter_id: save.active_encounter_id,
+        turn_owner: (phase == CampaignPhase::Encounter).then_some(EncounterTurnOwner::Player),
+        outcome: None,
     })
 }
 
@@ -1743,7 +2230,7 @@ fn character_seed(
     CharacterSeed {
         entity,
         name: name.to_owned(),
-        vitality: 100,
+        vitality: STARTING_VITALITY,
         abilities: vec![
             AbilityScore::new(D20Id::parse("constitution").expect("fixed id"), 14),
             AbilityScore::new(D20Id::parse("dexterity").expect("fixed id"), dexterity),
@@ -1813,7 +2300,10 @@ fn install_product_loadout(session: &mut D20Session) -> Result<(), GameRuntimeEr
     equip_initial_player_loadout(session)
 }
 
-fn validate_product_state(session: &D20Session) -> Result<(), GameRuntimeError> {
+fn validate_product_state(
+    session: &D20Session,
+    campaign: &CampaignState,
+) -> Result<(), GameRuntimeError> {
     if session.entities().total_count() != 7 {
         return Err(GameRuntimeError::InvalidSave(
             "the Warden's Gate entity set is inconsistent".to_owned(),
@@ -1850,15 +2340,15 @@ fn validate_product_state(session: &D20Session) -> Result<(), GameRuntimeError> 
     validate_inventory(session, PLAYER, 2)?;
     validate_inventory(session, OPPONENT, 1)?;
     validate_inventory(session, CAMP_STASH, 8)?;
-    if session.entities().contained_in(OPPONENT_ARMOR) != Some(OPPONENT) {
-        return Err(GameRuntimeError::InvalidSave(
-            "the Warden's armor containment is inconsistent".to_owned(),
-        ));
-    }
-    for item in [PLAYER_CHAIN_ARMOR, PLAYER_BUCKLER, STASH_BUCKLER] {
+    for item in [
+        OPPONENT_ARMOR,
+        PLAYER_CHAIN_ARMOR,
+        PLAYER_BUCKLER,
+        STASH_BUCKLER,
+    ] {
         if !matches!(
             session.entities().contained_in(item),
-            Some(PLAYER) | Some(CAMP_STASH)
+            Some(OPPONENT) | Some(PLAYER) | Some(CAMP_STASH)
         ) {
             return Err(GameRuntimeError::InvalidSave(format!(
                 "loadout item {} containment is inconsistent",
@@ -1881,12 +2371,18 @@ fn validate_product_state(session: &D20Session) -> Result<(), GameRuntimeError> 
         .entities()
         .component::<EquipmentComponent>(OPPONENT)?
         .ok_or_else(|| GameRuntimeError::InvalidSave("opponent equipment is missing".to_owned()))?;
-    if opponent_equipment.assignments().len() != 1
-        || opponent_equipment.assignments()[0].item != OPPONENT_ARMOR
-        || opponent_equipment.assignments()[0].slot.as_str() != "body"
-    {
+    let victory = campaign.outcome == Some(EncounterOutcome::Victory);
+    let opponent_armor_owner = session.entities().contained_in(OPPONENT_ARMOR);
+    let opponent_loadout_is_intact = opponent_armor_owner == Some(OPPONENT)
+        && opponent_equipment.assignments().len() == 1
+        && opponent_equipment.assignments()[0].item == OPPONENT_ARMOR
+        && opponent_equipment.assignments()[0].slot.as_str() == "body";
+    let reward_is_claimed = matches!(opponent_armor_owner, Some(PLAYER) | Some(CAMP_STASH))
+        && opponent_equipment.assignments().is_empty();
+    if (victory && !reward_is_claimed) || (!victory && !opponent_loadout_is_intact) {
         return Err(GameRuntimeError::InvalidSave(
-            "the Warden's equipment is inconsistent".to_owned(),
+            "the Warden's equipment/reward state is inconsistent with the campaign outcome"
+                .to_owned(),
         ));
     }
     Ok(())
@@ -1935,7 +2431,7 @@ fn equip_initial_player_loadout(session: &mut D20Session) -> Result<(), GameRunt
 
 fn product_loadout_armor(item: EntityId) -> Result<D20Id, GameRuntimeError> {
     match item {
-        PLAYER_CHAIN_ARMOR => id("chain-armor"),
+        OPPONENT_ARMOR | PLAYER_CHAIN_ARMOR => id("chain-armor"),
         PLAYER_BUCKLER | STASH_BUCKLER => id("buckler"),
         _ => Err(GameRuntimeError::InvalidCommand(format!(
             "entity {} is not a player loadout item",
@@ -2340,15 +2836,292 @@ mod tests {
 
         let encoded = runtime.encode_save().unwrap();
         let mut reopened = GameRuntime::decode_save(&encoded).unwrap();
+        let mut same_reopened = GameRuntime::decode_save(&encoded).unwrap();
         assert_eq!(reopened.encode_save().unwrap(), encoded);
         let reopened_snapshot = reopened.snapshot().unwrap();
         assert!(reopened_snapshot
             .encounter
+            .as_ref()
             .unwrap()
             .pending_action
             .is_none());
-        let advanced = reopened.advance_turn(reopened_snapshot.revision).unwrap();
-        assert_eq!(advanced.encounter.unwrap().turn, 1);
+        assert_eq!(
+            reopened_snapshot.encounter.as_ref().unwrap().turn_owner,
+            Some(EncounterTurnOwnerDto::Opposition)
+        );
+        let opposition = reopened
+            .begin_opposition_turn(reopened_snapshot.revision)
+            .unwrap();
+        let same_opposition = same_reopened
+            .begin_opposition_turn(reopened_snapshot.revision)
+            .unwrap();
+        assert_eq!(
+            opposition.encounter.as_ref().unwrap().pending_action,
+            same_opposition.encounter.as_ref().unwrap().pending_action,
+            "the exact save and Rust-owned RNG position select the same opposition action"
+        );
+        let pending = opposition
+            .encounter
+            .as_ref()
+            .unwrap()
+            .pending_action
+            .as_ref()
+            .unwrap();
+        assert_eq!(pending.actor_id, OPPONENT.raw());
+        assert_eq!(pending.target_id, PLAYER.raw());
+        assert!(matches!(
+            pending.action_id.as_str(),
+            "longsword-strike" | "precise-shot"
+        ));
+        let token = pending.token.clone();
+        let advanced = reopened
+            .apply_action(ApplyActionRequestDto {
+                expected_revision: opposition.revision,
+                preview_token: token,
+            })
+            .unwrap();
+        let advanced_encounter = advanced.encounter.as_ref().unwrap();
+        assert_eq!(advanced_encounter.turn, 1);
+        assert_eq!(
+            advanced_encounter.turn_owner,
+            Some(EncounterTurnOwnerDto::Player)
+        );
+        assert!(advanced_encounter
+            .log
+            .last()
+            .is_some_and(|entry| entry.source == "Round"
+                && entry.text.contains("round 0 to 1")
+                && entry
+                    .details
+                    .iter()
+                    .any(|detail| detail.contains("1 scheduled effect(s) expired"))));
+    }
+
+    #[test]
+    fn complete_encounter_victory_grants_reward_once_and_reopens_exactly() {
+        let mut runtime = GameRuntime::empty().unwrap();
+        start_test_encounter(&mut runtime);
+        let outcome = play_to_outcome(&mut runtime, "precise-shot", false, true);
+        let campaign = outcome.campaign.as_ref().unwrap();
+        assert_eq!(campaign.phase, CampaignPhaseDto::Outcome);
+        assert_eq!(
+            campaign.latest_outcome.as_ref().unwrap().kind,
+            EncounterOutcomeKindDto::Victory
+        );
+        assert_eq!(
+            campaign.latest_outcome.as_ref().unwrap().reward_item_id,
+            Some(OPPONENT_ARMOR.raw())
+        );
+        assert!(campaign
+            .loadout
+            .stash_items
+            .iter()
+            .any(|item| item.entity_id == OPPONENT_ARMOR.raw()));
+        assert_eq!(outcome.encounter.as_ref().unwrap().turn_owner, None);
+        assert!(outcome
+            .encounter
+            .as_ref()
+            .unwrap()
+            .log
+            .iter()
+            .any(|entry| entry.text.contains("yields the Warden chain armor")));
+
+        let encoded_outcome = runtime.encode_save().unwrap();
+        let mut reopened = GameRuntime::decode_save(&encoded_outcome).unwrap();
+        assert_eq!(reopened.encode_save().unwrap(), encoded_outcome);
+        let before_late = reopened.snapshot().unwrap();
+        let late = reopened
+            .begin_opposition_turn(before_late.revision)
+            .unwrap_err();
+        assert_eq!(late.api_error().kind, ApiErrorKindDto::Phase);
+        assert_eq!(reopened.snapshot().unwrap(), before_late);
+
+        let camp = reopened.return_to_camp(before_late.revision).unwrap();
+        let campaign = camp.campaign.as_ref().unwrap();
+        assert_eq!(campaign.phase, CampaignPhaseDto::Camp);
+        assert!(campaign.available_encounters.is_empty());
+        assert_eq!(
+            campaign
+                .loadout
+                .stash_items
+                .iter()
+                .filter(|item| item.entity_id == OPPONENT_ARMOR.raw())
+                .count(),
+            1
+        );
+        let before_duplicate = reopened.snapshot().unwrap();
+        assert!(matches!(
+            reopened.return_to_camp(before_duplicate.revision),
+            Err(GameRuntimeError::WrongPhase(_))
+        ));
+        assert_eq!(reopened.snapshot().unwrap(), before_duplicate);
+        let camp_save = reopened.encode_save().unwrap();
+        assert_eq!(
+            GameRuntime::decode_save(&camp_save)
+                .unwrap()
+                .encode_save()
+                .unwrap(),
+            camp_save
+        );
+    }
+
+    #[test]
+    fn complete_encounter_defeat_has_no_reward_and_applies_bounded_recovery() {
+        let mut runtime = GameRuntime::empty().unwrap();
+        let camp = runtime.new_adventure(0).unwrap();
+        let without_chain = runtime
+            .unequip_item(UnequipItemRequestDto {
+                expected_revision: camp.revision,
+                item_id: PLAYER_CHAIN_ARMOR.raw(),
+            })
+            .unwrap();
+        let without_armor = runtime
+            .unequip_item(UnequipItemRequestDto {
+                expected_revision: without_chain.revision,
+                item_id: PLAYER_BUCKLER.raw(),
+            })
+            .unwrap();
+        runtime
+            .enter_encounter(EnterEncounterRequestDto {
+                expected_revision: without_armor.revision,
+                encounter_id: ENCOUNTER_ID.to_owned(),
+            })
+            .unwrap();
+        let outcome = play_to_outcome(&mut runtime, "longsword-strike", true, false);
+        let campaign = outcome.campaign.as_ref().unwrap();
+        assert_eq!(campaign.phase, CampaignPhaseDto::Outcome);
+        assert_eq!(
+            campaign.latest_outcome.as_ref().unwrap().kind,
+            EncounterOutcomeKindDto::Defeat
+        );
+        assert_eq!(
+            campaign.latest_outcome.as_ref().unwrap().reward_item_id,
+            None
+        );
+        assert!(!campaign
+            .loadout
+            .stash_items
+            .iter()
+            .any(|item| item.entity_id == OPPONENT_ARMOR.raw()));
+        assert_eq!(
+            campaign.hero.health_current, 0,
+            "defeat is derived from authoritative vitality"
+        );
+
+        let outcome_save = runtime.encode_save().unwrap();
+        let mut reopened = GameRuntime::decode_save(&outcome_save).unwrap();
+        let camp = reopened
+            .return_to_camp(reopened.snapshot().unwrap().revision)
+            .unwrap();
+        assert_eq!(
+            camp.campaign.as_ref().unwrap().hero.health_current,
+            i64::from(DEFEAT_RECOVERY_VITALITY)
+        );
+        assert!(camp
+            .campaign
+            .as_ref()
+            .unwrap()
+            .latest_outcome
+            .as_ref()
+            .is_some_and(|outcome| outcome.kind == EncounterOutcomeKindDto::Defeat));
+        let recovered_save = reopened.encode_save().unwrap();
+        assert_eq!(
+            GameRuntime::decode_save(&recovered_save)
+                .unwrap()
+                .encode_save()
+                .unwrap(),
+            recovered_save
+        );
+    }
+
+    fn play_to_outcome(
+        runtime: &mut GameRuntime,
+        player_action: &str,
+        opponent_reacts: bool,
+        player_reacts: bool,
+    ) -> GameSnapshotDto {
+        for _ in 0..64 {
+            let before_player = runtime.snapshot().unwrap();
+            let previewed = runtime
+                .preview_action(PreviewActionRequestDto {
+                    expected_revision: before_player.revision,
+                    actor_id: PLAYER.raw(),
+                    target_id: OPPONENT.raw(),
+                    action_id: player_action.to_owned(),
+                })
+                .unwrap();
+            let mut pending = previewed
+                .encounter
+                .as_ref()
+                .unwrap()
+                .pending_action
+                .clone()
+                .unwrap();
+            let mut current = previewed;
+            if opponent_reacts && !pending.reactions.is_empty() {
+                current = runtime
+                    .apply_reaction(ApplyReactionRequestDto {
+                        expected_revision: current.revision,
+                        preview_token: pending.token.clone(),
+                        reaction_id: pending.reactions[0].id.clone(),
+                    })
+                    .unwrap();
+                pending = current
+                    .encounter
+                    .as_ref()
+                    .unwrap()
+                    .pending_action
+                    .clone()
+                    .unwrap();
+            }
+            let player_result = runtime
+                .apply_action(ApplyActionRequestDto {
+                    expected_revision: current.revision,
+                    preview_token: pending.token,
+                })
+                .unwrap();
+            if player_result.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
+                return player_result;
+            }
+
+            let opposition = runtime
+                .begin_opposition_turn(player_result.revision)
+                .unwrap();
+            let mut pending = opposition
+                .encounter
+                .as_ref()
+                .unwrap()
+                .pending_action
+                .clone()
+                .unwrap();
+            let mut current = opposition;
+            if player_reacts && !pending.reactions.is_empty() {
+                current = runtime
+                    .apply_reaction(ApplyReactionRequestDto {
+                        expected_revision: current.revision,
+                        preview_token: pending.token.clone(),
+                        reaction_id: pending.reactions[0].id.clone(),
+                    })
+                    .unwrap();
+                pending = current
+                    .encounter
+                    .as_ref()
+                    .unwrap()
+                    .pending_action
+                    .clone()
+                    .unwrap();
+            }
+            let opposition_result = runtime
+                .apply_action(ApplyActionRequestDto {
+                    expected_revision: current.revision,
+                    preview_token: pending.token,
+                })
+                .unwrap();
+            if opposition_result.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
+                return opposition_result;
+            }
+        }
+        panic!("deterministic encounter did not reach an outcome within 64 rounds");
     }
 
     #[test]
@@ -2396,7 +3169,7 @@ mod tests {
                 target_id: OPPONENT.raw(),
                 action_id: "longsword-strike".to_owned(),
             }),
-            Err(GameRuntimeError::InvalidCommand(_))
+            Err(GameRuntimeError::WrongPhase(_))
         ));
         assert_eq!(runtime.snapshot().unwrap(), before_invalid);
 
@@ -2487,6 +3260,11 @@ mod tests {
     fn downgrade_to_pre_loadout_v2(input: &str) -> String {
         let mut save: serde_json::Value = serde_json::from_str(input).unwrap();
         save["schemaVersion"] = json!(2);
+        save["campaign"]
+            .as_object_mut()
+            .unwrap()
+            .remove("turnOwner");
+        save["campaign"].as_object_mut().unwrap().remove("outcome");
         save["session"]["schemaVersion"] = json!(1);
         let state = save["session"]["entityState"].as_object_mut().unwrap();
         state

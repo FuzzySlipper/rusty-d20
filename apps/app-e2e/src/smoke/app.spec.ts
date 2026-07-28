@@ -75,8 +75,13 @@ test.describe.serial('real Rust encounter shell', () => {
     await expect(explanation).toContainText('Deterministic roll index 0');
     await expect(explanation).toContainText(/Intrinsic|Equipped item|missed/);
 
-    await page.getByRole('button', { name: 'Advance turn' }).click();
+    await page.getByRole('button', { name: 'Begin Iron Warden turn' }).first().click();
+    await expect(preview).toContainText('Iron Warden');
+    await page.getByRole('button', { name: /Parry · 1 Guard/ }).click();
+    await expect(page.getByLabel('Combat log')).toContainText('Mara Venn raised a reaction');
+    await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
     await expect(page.getByLabel('Encounter identity')).toContainText('Turn 1');
+    await expect(page.getByLabel('Encounter identity')).toContainText('Mara acting');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
   });
@@ -91,8 +96,9 @@ test.describe.serial('real Rust encounter shell', () => {
     await continueIfNeeded(page);
     await continueIfNeeded(second);
 
-    await second.getByRole('button', { name: 'Advance turn' }).click();
-    await expect(second.getByLabel('Encounter identity')).toContainText('Turn 2');
+    await second.getByRole('button', { name: 'Precise Shot' }).click();
+    await second.getByRole('button', { name: 'Resolve deterministic roll' }).click();
+    await expect(second.getByLabel('Encounter identity')).toContainText('Iron Warden acting');
 
     await page.getByRole('button', { name: 'Longsword Strike' }).click();
     const alert = page.getByRole('alert');
@@ -106,7 +112,7 @@ test.describe.serial('real Rust encounter shell', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
     await continueIfNeeded(page);
-    await expect(page.getByRole('button', { name: 'Advance turn' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Begin Iron Warden turn' }).first()).toBeVisible();
     await expect(page.locator('aui-character-status')).toHaveCount(2);
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),

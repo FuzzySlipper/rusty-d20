@@ -7,7 +7,7 @@
 | `rust/crates/rusty-d20/src/compiler.rs` | Downstream semantic validation, correlated diagnostics, immutable definitions, mechanics catalog compilation | `cargo test -p rusty-d20 --test d20r0 compiler --locked` |
 | `rust/crates/rusty-d20/src/component.rs` | Durable d20 ability, resource, and caller-owned effect-schedule components | `cargo test -p rusty-d20 --test d20r0 --locked` |
 | `rust/crates/rusty-d20/src/session.rs` | Atomic preview/reaction/apply, Engine inventory/equipment service adapter, deterministic rolls, explicit turn expiry, complete saves | `cargo test -p rusty-d20 --test d20r0 --locked` |
-| `rust/crates/rusty-d20/src/game.rs` | Product campaign phases, fixed camp loadout policy, encounter lifecycle, opaque preview custody, projection, optimistic revisions, strict schema migration, bounded explanations, product save/reopen | `cargo test -p rusty-d20 --lib --locked` |
+| `rust/crates/rusty-d20/src/game.rs` | Product campaign phases, deterministic opposition/turn policy, outcome and reward transitions, fixed camp loadout policy, opaque preview custody, projection, optimistic revisions, strict schema migration, bounded explanations, product save/reopen | `cargo test -p rusty-d20 --lib --locked` |
 | `rust/crates/rusty-d20/src/identity.rs` | Bounded stable downstream definition identities | Rust tests and strict candidate decode |
 | `rust/crates/rusty-d20/tests/d20r0.rs` | Headless semantic, failure-atomicity, persistence, provenance, and composition evidence | `cargo test -p rusty-d20 --test d20r0 --locked` |
 | `rust/crates/rusty-d20/tests/d20a0.rs` | Node-free strict decode, starter composition, generated contract, fingerprint, and diagnostic-correlation proof | `cargo test -p rusty-d20 --test d20a0 --locked` |
@@ -18,7 +18,7 @@
 | `libs/transport/` | Typed HTTP operations and failure classification | `http-transport.spec.ts` |
 | `libs/domain/` | Pure Rust DTO-to-product-view projection | Domain Vitest |
 | `libs/store/` | Angular async state, command orchestration, and stale-response guards | Store Vitest; boundary audit |
-| `libs/feature-main-menu/` | Permanent landing, Engine-backed camp loadout/stash, encounter entry, action, status, and receipt feature | Playwright smoke/live evidence |
+| `libs/feature-main-menu/` | Permanent landing, Engine-backed camp loadout/stash, encounter entry, player/opposition turns, outcome, status, and receipt feature | Playwright smoke/live evidence |
 | `libs/ui-inventory`, `libs/ui-equipment` | Product-neutral accessible inventory/equipment widgets connected by the camp feature | Typecheck, lint, Playwright |
 | `libs/components`, `libs/renderer`, remaining `libs/ui-*` | Retained product-neutral presentation building blocks | Typecheck, lint, later live consumers |
 | `libs/shell/`, `apps/app/` | Routes and application composition | Build and Playwright |

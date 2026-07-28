@@ -119,8 +119,12 @@ export class SessionStore {
     );
   }
 
-  async advanceTurn(): Promise<void> {
-    await this.mutate((revision) => this.transport.advanceTurn(revision));
+  async beginOppositionTurn(): Promise<void> {
+    await this.mutate((revision) => this.transport.beginOppositionTurn(revision));
+  }
+
+  async returnToCamp(): Promise<void> {
+    await this.mutate((revision) => this.transport.returnToCamp(revision));
   }
 
   async save(): Promise<void> {

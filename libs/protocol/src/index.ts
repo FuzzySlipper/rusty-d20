@@ -5,9 +5,12 @@ import type {
   ApiErrorDto,
   ApiErrorKindDto,
   CampaignDto,
+  CampaignOutcomeDto,
   CharacterDto,
   EncounterChoiceDto,
   EncounterDto,
+  EncounterOutcomeKindDto,
+  EncounterTurnOwnerDto,
   EquipmentSlotDto,
   GameLogEntryDto,
   GameLogKindDto,
@@ -131,7 +134,11 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
     encounter === undefined ||
     (campaign === null && encounter !== null) ||
     (campaign?.phase === 'camp' && encounter !== null) ||
-    (campaign?.phase === 'encounter' && encounter === null)
+    ((campaign?.phase === 'encounter' || campaign?.phase === 'outcome') && encounter === null) ||
+    (campaign?.phase === 'encounter' &&
+      (encounter?.turnOwner === null || campaign.latestOutcome !== null)) ||
+    (campaign?.phase === 'outcome' &&
+      (encounter?.turnOwner !== null || campaign.latestOutcome === null))
   ) {
     return undefined;
   }
@@ -155,6 +162,7 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
       'hero',
       'id',
       'loadout',
+      'latestOutcome',
       'phase',
       'title',
     ])
@@ -166,16 +174,22 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
   const encounters = decodeArray(value['availableEncounters'], 16, decodeEncounterChoice);
   const activeEncounterId = value['activeEncounterId'];
   const phase = value['phase'];
+  const latestOutcomeValue = value['latestOutcome'];
+  const latestOutcome =
+    latestOutcomeValue === null ? null : decodeCampaignOutcome(latestOutcomeValue);
   if (
     typeof value['id'] !== 'string' ||
     typeof value['title'] !== 'string' ||
-    (phase !== 'camp' && phase !== 'encounter') ||
+    (phase !== 'camp' && phase !== 'encounter' && phase !== 'outcome') ||
     (activeEncounterId !== null && typeof activeEncounterId !== 'string') ||
     hero === undefined ||
     loadout === undefined ||
     encounters === undefined ||
+    latestOutcome === undefined ||
     (phase === 'camp' && activeEncounterId !== null) ||
-    (phase === 'encounter' && activeEncounterId === null)
+    ((phase === 'encounter' || phase === 'outcome') && activeEncounterId === null) ||
+    (phase === 'encounter' && latestOutcome !== null) ||
+    (phase === 'outcome' && latestOutcome === null)
   ) {
     return undefined;
   }
@@ -187,7 +201,43 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
     loadout,
     activeEncounterId,
     availableEncounters: encounters,
+    latestOutcome,
   };
+}
+
+function decodeCampaignOutcome(value: unknown): CampaignOutcomeDto | undefined {
+  if (
+    !hasExactKeys(value, [
+      'encounterId',
+      'kind',
+      'reward',
+      'rewardItemId',
+      'summary',
+      'title',
+    ])
+  ) {
+    return undefined;
+  }
+  const rewardItemId = value['rewardItemId'];
+  const reward = value['reward'];
+  return isEncounterOutcomeKind(value['kind']) &&
+    typeof value['encounterId'] === 'string' &&
+    value['encounterId'].length > 0 &&
+    typeof value['title'] === 'string' &&
+    typeof value['summary'] === 'string' &&
+    (rewardItemId === null || isSafePositiveInteger(rewardItemId)) &&
+    (reward === null || typeof reward === 'string') &&
+    ((value['kind'] === 'victory' && rewardItemId !== null && reward !== null) ||
+      (value['kind'] === 'defeat' && rewardItemId === null && reward === null))
+    ? {
+        kind: value['kind'],
+        encounterId: value['encounterId'],
+        title: value['title'],
+        summary: value['summary'],
+        rewardItemId,
+        reward,
+      }
+    : undefined;
 }
 
 function decodeLoadout(value: unknown): LoadoutDto | undefined {
@@ -355,6 +405,7 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
       'pendingAction',
       'playerId',
       'turn',
+      'turnOwner',
     ])
   ) {
     return undefined;
@@ -364,10 +415,12 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
   const log = decodeArray(value['log'], 64, decodeLogEntry);
   const pendingValue = value['pendingAction'];
   const pendingAction = pendingValue === null ? null : decodePending(pendingValue);
+  const turnOwner = value['turnOwner'];
   if (
     !isSafeNonNegativeInteger(value['turn']) ||
     !isSafeNonNegativeInteger(value['nextRoll']) ||
     !isSafePositiveInteger(value['playerId']) ||
+    (turnOwner !== null && !isEncounterTurnOwner(turnOwner)) ||
     characters === undefined ||
     actions === undefined ||
     pendingAction === undefined ||
@@ -375,15 +428,39 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
   ) {
     return undefined;
   }
+  const characterIds = new Set(characters.map((character) => character.id));
+  if (
+    characterIds.size !== characters.length ||
+    !characterIds.has(value['playerId']) ||
+    (pendingAction !== null &&
+      (!characterIds.has(pendingAction.actorId) ||
+        !characterIds.has(pendingAction.targetId) ||
+        pendingAction.actorId === pendingAction.targetId ||
+        turnOwner === null ||
+        (turnOwner === 'player' && pendingAction.actorId !== value['playerId']) ||
+        (turnOwner === 'opposition' && pendingAction.actorId === value['playerId']))) ||
+    (turnOwner === null && pendingAction !== null)
+  ) {
+    return undefined;
+  }
   return {
     turn: value['turn'],
     nextRoll: value['nextRoll'],
     playerId: value['playerId'],
+    turnOwner,
     characters,
     actions,
     pendingAction,
     log,
   };
+}
+
+function isEncounterTurnOwner(value: unknown): value is EncounterTurnOwnerDto {
+  return value === 'player' || value === 'opposition';
+}
+
+function isEncounterOutcomeKind(value: unknown): value is EncounterOutcomeKindDto {
+  return value === 'victory' || value === 'defeat';
 }
 
 function decodeCharacter(value: unknown): CharacterDto | undefined {

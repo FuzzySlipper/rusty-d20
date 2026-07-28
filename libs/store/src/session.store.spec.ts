@@ -35,7 +35,8 @@ function transport(overrides: Partial<RustyD20Transport> = {}): RustyD20Transpor
     previewAction: async () => sessionResult,
     applyReaction: async () => sessionResult,
     applyAction: async () => sessionResult,
-    advanceTurn: async () => sessionResult,
+    beginOppositionTurn: async () => sessionResult,
+    returnToCamp: async () => sessionResult,
     save: async () => sessionResult,
     ...overrides,
   };
@@ -48,8 +49,8 @@ describe('SessionStore', () => {
       name: 'Mara Venn',
       title: 'Steel Adept',
       level: 1,
-      healthCurrent: 100,
-      healthMaximum: 100,
+      healthCurrent: 24,
+      healthMaximum: 24,
       resources: [],
       effects: [],
     };
@@ -69,6 +70,7 @@ describe('SessionStore', () => {
         armorDefenseSources: [],
       },
       activeEncounterId: null,
+      latestOutcome: null,
       availableEncounters: [
         {
           id: 'iron-warden',
@@ -94,6 +96,7 @@ describe('SessionStore', () => {
         turn: 0,
         nextRoll: 0,
         playerId: 101,
+        turnOwner: 'player',
         characters: [hero, { ...hero, id: 102, name: 'Iron Warden', title: 'Armored Sentinel' }],
         actions: [],
         pendingAction: null,
@@ -169,7 +172,7 @@ describe('SessionStore', () => {
   it('projects the authoritative session and preserves typed command rejection', async () => {
     const store = new SessionStore(
       transport({
-        advanceTurn: async () => ({
+        beginOppositionTurn: async () => ({
           ok: false,
           error: {
             kind: 'stale',
@@ -184,7 +187,7 @@ describe('SessionStore', () => {
       kind: 'data',
       value: { revision: 1, engineRevisionShort: 'fb608e323a8b' },
     });
-    await store.advanceTurn();
+    await store.beginOppositionTurn();
     expect(store.session()).toMatchObject({
       kind: 'data',
       value: { revision: 1 },
