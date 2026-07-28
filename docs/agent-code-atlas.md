@@ -2,7 +2,13 @@
 
 | Path | Owner and purpose | Focused proof |
 |---|---|---|
-| `rust/crates/rusty-d20/src/lib.rs` | Rust-owned game runtime, DTOs, Engine pin readout | `cargo test -p rusty-d20 --locked` |
+| `rust/crates/rusty-d20/src/lib.rs` | Public Rust surface, bootstrap runtime, DTOs, Engine pin readout | `cargo test -p rusty-d20 --locked` |
+| `rust/crates/rusty-d20/src/candidate.rs` | Strict versioned d20 candidate types and neutral gameplay-rules envelope admission | `cargo test -p rusty-d20 --test d20r0 candidate --locked` |
+| `rust/crates/rusty-d20/src/compiler.rs` | Downstream semantic validation, correlated diagnostics, immutable definitions, mechanics catalog compilation | `cargo test -p rusty-d20 --test d20r0 compiler --locked` |
+| `rust/crates/rusty-d20/src/component.rs` | Durable d20 ability, resource, and caller-owned effect-schedule components | `cargo test -p rusty-d20 --test d20r0 --locked` |
+| `rust/crates/rusty-d20/src/session.rs` | Atomic preview/reaction/apply, deterministic rolls, explicit turn expiry, complete saves | `cargo test -p rusty-d20 --test d20r0 --locked` |
+| `rust/crates/rusty-d20/src/identity.rs` | Bounded stable downstream definition identities | Rust tests and strict candidate decode |
+| `rust/crates/rusty-d20/tests/d20r0.rs` | Headless semantic, failure-atomicity, persistence, provenance, and composition evidence | `cargo test -p rusty-d20 --test d20r0 --locked` |
 | `rust/crates/rusty-d20/src/host.rs` | Same-origin HTTP/static host | Rust host tests and browser smoke |
 | `rust/crates/rusty-d20/src/bin/` | Product host and protocol generator entrypoints | `pnpm run verify:rust` |
 | `libs/protocol/` | Generated DTOs and strict unknown-JSON decode | `pnpm run protocol:check`; Vitest |

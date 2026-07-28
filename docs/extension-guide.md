@@ -30,3 +30,8 @@ TypeScript authoring may use functions, loops, tables, and helpers to emit a
 bounded immutable candidate. Rust owns schema admission and semantics. The
 checked artifact must remain usable by a Node-free Rust process; no callback or
 TypeScript evaluator may enter runtime state.
+
+Use the versioned fields and provenance subjects in
+[the d20 rules kernel](d20-rules-kernel.md). Add new fixed semantic vocabulary
+to the Rust candidate and compiler together. Do not encode new behavior as an
+opaque expression tree just to avoid changing the owning Rust contract.

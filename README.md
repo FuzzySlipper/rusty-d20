@@ -6,10 +6,12 @@ game orchestration, complete saves, transport, and presentation. Rusty Engine
 remains optional reusable infrastructure; other games never need to import this
 repository.
 
-The current bootstrap is deliberately small but real: an Angular/Nx shell is
-served by a Rust process, calls a same-origin typed endpoint, strictly decodes a
-Rust-generated contract, and renders a readout derived from canonical
-`entity-state` state. Fake transport is available only from
+The current product bootstrap is deliberately small but real: an Angular/Nx
+shell is served by a Rust process, calls a same-origin typed endpoint, strictly
+decodes a Rust-generated contract, and renders a readout derived from canonical
+`entity-state` state. Separately, the headless Rust kernel compiles bounded d20
+candidates and runs deterministic, source-attributed action/reaction/effect
+lifecycles with complete saves. Fake transport is available only from
 `libs/testing-fixtures`.
 
 ## Start the product
@@ -35,9 +37,10 @@ start at [docs/design.md](docs/design.md) and
 
 ## Current phase boundary
 
-This repository does not yet claim d20 semantic compilation, authored rules,
-encounter play, or persistence. Those are downstream milestones built on this
-permanent shell. See [docs/known-limitations.md](docs/known-limitations.md).
+The semantic kernel is implemented, but it is not yet connected to the product
+host or Angular UI and no TypeScript authoring SDK exists. Encounter play and
+substantial d20 content remain later milestones. See
+[docs/known-limitations.md](docs/known-limitations.md).
 
 ## Provenance
 

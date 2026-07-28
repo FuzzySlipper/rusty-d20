@@ -1,0 +1,1221 @@
+use core_ids::EntityId;
+use entity_state::{
+    encode_snapshot, ComponentAccessError, ComponentRegistrationError, ComponentRevision,
+    EntityAuthoringError, EntityAuthoringService, EntityComponent, EntityDefinition,
+    EntityDefinitionError, EntityState,
+};
+use gameplay_mechanics::{
+    decode_snapshot_with_catalog_and_registry, ActiveEffectsComponent, DamagePart, DamageReceipt,
+    DamageRequest, DamageService, EffectApplyRequest, EffectInstanceId, EffectMutationReceipt,
+    EffectRemovalRequest, EffectService, EquipmentComponent, EquipmentEquipRequest,
+    EquipmentMutationReceipt, EquipmentService, IntrinsicSourceBinding, IntrinsicSourcesComponent,
+    ItemComponent, MechanicsComponentKind, MechanicsError, MechanicsScalar, MechanicsSnapshotError,
+    ObservedComponentRevision, OperationId, SourceInstanceId, SourceInstanceIdentity,
+    StatEvaluation, StatService, StatValue, StatsComponent, TrackValue, TracksComponent,
+};
+use serde::{Deserialize, Serialize};
+use svc_rng::{RngSeed, ScopedRng};
+
+use crate::compiler::{
+    armor_item_id, damage_kind_id, defense_stat_id, equipment_slot_id, mechanics_effect_id,
+    resistance_source_id, vitality_track_id, vulnerability_source_id,
+};
+use crate::{
+    d20_component_registry, AbilityScore, AbilityScoresComponent, ActionResource,
+    ActionResourcesComponent, D20ComponentDataError, D20Id, D20Ruleset, ScheduledEffect,
+    ScheduledEffectsComponent, ENGINE_REVISION,
+};
+
+const D20_SAVE_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DamageAffinity {
+    Resistant,
+    Vulnerable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AffinitySeed {
+    pub damage_type: D20Id,
+    pub affinity: DamageAffinity,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CharacterSeed {
+    pub entity: EntityId,
+    pub name: String,
+    pub vitality: u32,
+    pub abilities: Vec<AbilityScore>,
+    pub resources: Vec<ActionResource>,
+    pub affinities: Vec<AffinitySeed>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArmorItemSeed {
+    pub entity: EntityId,
+    pub owner: EntityId,
+    pub name: String,
+    pub armor: D20Id,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReactionOption {
+    pub reaction: D20Id,
+    pub resource: D20Id,
+    pub cost: u16,
+    pub available: u16,
+    pub bonus: i16,
+    pub effect: D20Id,
+}
+
+#[derive(Debug, Clone)]
+pub struct ActionPreview {
+    pub actor: EntityId,
+    pub target: EntityId,
+    pub action: D20Id,
+    pub operation: OperationId,
+    pub ability_score: i16,
+    pub ability_modifier: i16,
+    pub defense: StatEvaluation,
+    pub reactions: Vec<ReactionOption>,
+    actor_abilities_revision: ComponentRevision,
+    target_resources_revision: ComponentRevision,
+    target_tracks_revision: ComponentRevision,
+    target_scheduled_effects_revision: ComponentRevision,
+    turn: u64,
+    roll_index: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ApplyActionRequest {
+    pub preview: ActionPreview,
+    pub effect_instance: Option<EffectInstanceId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionReceipt {
+    pub actor: EntityId,
+    pub target: EntityId,
+    pub action: D20Id,
+    pub operation: OperationId,
+    pub roll_index: u64,
+    pub d20: u8,
+    pub ability_modifier: i16,
+    pub total: i32,
+    pub defense: i64,
+    pub hit: bool,
+    pub rolled_damage: u32,
+    pub damage: Option<DamageReceipt>,
+    pub effect: Option<EffectMutationReceipt>,
+    pub expires_at_turn: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReactionReceipt {
+    pub reaction: D20Id,
+    pub target: EntityId,
+    pub resource: D20Id,
+    pub before: u16,
+    pub after: u16,
+    pub effect: EffectMutationReceipt,
+    pub expires_at_turn: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdvanceTurnReceipt {
+    pub before: u64,
+    pub after: u64,
+    pub expired: Vec<EffectMutationReceipt>,
+}
+
+#[derive(Debug, Clone)]
+pub struct D20Session {
+    rules: D20Ruleset,
+    entities: EntityState,
+    seed: RngSeed,
+    next_roll: u64,
+    current_turn: u64,
+}
+
+impl D20Session {
+    pub fn new(
+        rules: D20Ruleset,
+        seed: RngSeed,
+        characters: Vec<CharacterSeed>,
+        armor_items: Vec<ArmorItemSeed>,
+    ) -> Result<Self, D20SessionError> {
+        let mut definitions = characters
+            .iter()
+            .map(|character| EntityDefinition::new(character.entity, character.name.clone()))
+            .collect::<Vec<_>>();
+        definitions.extend(armor_items.iter().map(|item| {
+            EntityDefinition::new(item.entity, item.name.clone()).with_containment(item.owner)
+        }));
+        let registry = d20_component_registry()?;
+        let mut entities = EntityState::from_definitions_with_registry(registry, definitions)?;
+
+        for character in &characters {
+            validate_character_seed(&rules, character)?;
+            attach(
+                &mut entities,
+                character.entity,
+                AbilityScoresComponent::new(character.abilities.clone())?,
+            )?;
+            attach(
+                &mut entities,
+                character.entity,
+                ActionResourcesComponent::new(character.resources.clone())?,
+            )?;
+            attach(
+                &mut entities,
+                character.entity,
+                ScheduledEffectsComponent::new(vec![])?,
+            )?;
+
+            let stats = rules
+                .defenses()
+                .map(|defense| {
+                    let score = character
+                        .abilities
+                        .iter()
+                        .find(|score| score.id() == &defense.ability)
+                        .expect("character seed validation requires every defense ability")
+                        .score();
+                    StatValue::new(
+                        defense_stat_id(&defense.id),
+                        scalar(i64::from(defense.base + ability_modifier(score))),
+                    )
+                })
+                .collect();
+            attach(
+                &mut entities,
+                character.entity,
+                StatsComponent::new(rules.mechanics().version().clone(), stats)?,
+            )?;
+            attach(
+                &mut entities,
+                character.entity,
+                TracksComponent::new(
+                    rules.mechanics().version().clone(),
+                    vec![TrackValue::new(
+                        vitality_track_id(),
+                        scalar(i64::from(character.vitality)),
+                    )],
+                )?,
+            )?;
+            attach(
+                &mut entities,
+                character.entity,
+                IntrinsicSourcesComponent::new(
+                    rules.mechanics().version().clone(),
+                    affinity_bindings(&rules, character.entity, &character.affinities)?,
+                )?,
+            )?;
+            attach(
+                &mut entities,
+                character.entity,
+                ActiveEffectsComponent::new(rules.mechanics().version().clone(), vec![])?,
+            )?;
+            attach(
+                &mut entities,
+                character.entity,
+                EquipmentComponent::new(rules.mechanics().version().clone(), vec![])?,
+            )?;
+        }
+        for item in &armor_items {
+            let armor = rules
+                .armor(&item.armor)
+                .ok_or_else(|| D20SessionError::UnknownArmor(item.armor.clone()))?;
+            attach(
+                &mut entities,
+                item.entity,
+                ItemComponent::new(
+                    rules.mechanics().version().clone(),
+                    armor_item_id(&armor.id),
+                ),
+            )?;
+        }
+        gameplay_mechanics::validate_state_against_catalog(&entities, rules.mechanics())?;
+        Ok(Self {
+            rules,
+            entities,
+            seed,
+            next_roll: 0,
+            current_turn: 0,
+        })
+    }
+
+    pub fn rules(&self) -> &D20Ruleset {
+        &self.rules
+    }
+
+    pub fn entities(&self) -> &EntityState {
+        &self.entities
+    }
+
+    pub const fn current_turn(&self) -> u64 {
+        self.current_turn
+    }
+
+    pub const fn next_roll_index(&self) -> u64 {
+        self.next_roll
+    }
+
+    pub fn equip_armor(
+        &mut self,
+        owner: EntityId,
+        item: EntityId,
+        armor: &D20Id,
+        operation: OperationId,
+    ) -> Result<EquipmentMutationReceipt, D20SessionError> {
+        let definition = self
+            .rules
+            .armor(armor)
+            .ok_or_else(|| D20SessionError::UnknownArmor(armor.clone()))?;
+        let expected_item = armor_item_id(armor);
+        let actual_item = self.entities.component::<ItemComponent>(item)?.ok_or(
+            D20SessionError::MissingComponent {
+                entity: item,
+                component: ItemComponent::LABEL,
+            },
+        )?;
+        if actual_item.definition() != &expected_item {
+            return Err(D20SessionError::ArmorItemMismatch {
+                item,
+                expected: armor.clone(),
+            });
+        }
+        let source = request_source(&operation, "equip-armor");
+        let expected_state_revision = self.entities.revision();
+        Ok(EquipmentService::equip(
+            &mut self.entities,
+            self.rules.mechanics(),
+            EquipmentEquipRequest {
+                operation,
+                source,
+                owner,
+                item,
+                slots: vec![equipment_slot_id(&definition.slot)],
+                expected_equipment_revision: None,
+                expected_state_revision,
+            },
+        )?)
+    }
+
+    pub fn preview_action(
+        &self,
+        actor: EntityId,
+        target: EntityId,
+        action: &D20Id,
+        operation: OperationId,
+    ) -> Result<ActionPreview, D20SessionError> {
+        let action_definition = self
+            .rules
+            .action(action)
+            .ok_or_else(|| D20SessionError::UnknownAction(action.clone()))?;
+        let abilities = self
+            .entities
+            .component::<AbilityScoresComponent>(actor)?
+            .ok_or(D20SessionError::MissingComponent {
+                entity: actor,
+                component: AbilityScoresComponent::LABEL,
+            })?;
+        let ability_score = abilities.score(&action_definition.ability).ok_or_else(|| {
+            D20SessionError::MissingAbility {
+                entity: actor,
+                ability: action_definition.ability.clone(),
+            }
+        })?;
+        let defense = StatService::evaluate(
+            &self.entities,
+            self.rules.mechanics(),
+            target,
+            &defense_stat_id(&action_definition.defense),
+            &operation,
+            &[],
+        )?;
+        let resources = self
+            .entities
+            .component::<ActionResourcesComponent>(target)?
+            .ok_or(D20SessionError::MissingComponent {
+                entity: target,
+                component: ActionResourcesComponent::LABEL,
+            })?;
+        let reactions = self
+            .rules
+            .reactions()
+            .filter(|reaction| reaction.defense == action_definition.defense)
+            .filter_map(|reaction| {
+                let available = resources.current(&reaction.resource)?;
+                (available >= reaction.cost).then(|| ReactionOption {
+                    reaction: reaction.id.clone(),
+                    resource: reaction.resource.clone(),
+                    cost: reaction.cost,
+                    available,
+                    bonus: reaction.bonus,
+                    effect: reaction.effect.clone(),
+                })
+            })
+            .collect();
+        Ok(ActionPreview {
+            actor,
+            target,
+            action: action.clone(),
+            operation,
+            ability_score,
+            ability_modifier: ability_modifier(ability_score),
+            defense,
+            reactions,
+            actor_abilities_revision: self
+                .entities
+                .component_revision::<AbilityScoresComponent>(actor)?,
+            target_resources_revision: self
+                .entities
+                .component_revision::<ActionResourcesComponent>(target)?,
+            target_tracks_revision: self
+                .entities
+                .component_revision::<TracksComponent>(target)?,
+            target_scheduled_effects_revision: self
+                .entities
+                .component_revision::<ScheduledEffectsComponent>(target)?,
+            turn: self.current_turn,
+            roll_index: self.next_roll,
+        })
+    }
+
+    pub fn apply_reaction(
+        &mut self,
+        preview: &ActionPreview,
+        reaction: &D20Id,
+        effect_instance: EffectInstanceId,
+    ) -> Result<ReactionReceipt, D20SessionError> {
+        self.ensure_fresh(preview)?;
+        let option = preview
+            .reactions
+            .iter()
+            .find(|option| &option.reaction == reaction)
+            .ok_or_else(|| D20SessionError::ReactionUnavailable(reaction.clone()))?;
+        let definition = self
+            .rules
+            .reaction(reaction)
+            .ok_or_else(|| D20SessionError::ReactionUnavailable(reaction.clone()))?;
+        let effect = self
+            .rules
+            .effect(&definition.effect)
+            .expect("compiled reaction references a known effect");
+        let before_component = self
+            .entities
+            .component::<ActionResourcesComponent>(preview.target)?
+            .expect("preview requires target resources");
+        let before = before_component
+            .current(&definition.resource)
+            .expect("compiled and admitted character resource exists");
+        let after_component = before_component
+            .spend(&definition.resource, definition.cost)
+            .ok_or_else(|| D20SessionError::ReactionUnavailable(reaction.clone()))?;
+
+        let mut staged = self.entities.clone();
+        EntityAuthoringService.replace_component(
+            &mut staged,
+            preview.target_resources_revision.clone(),
+            preview.target,
+            after_component,
+        )?;
+        let effect_receipt = EffectService::apply(
+            &mut staged,
+            self.rules.mechanics(),
+            EffectApplyRequest {
+                operation: preview.operation.clone(),
+                entity: preview.target,
+                instance: effect_instance.clone(),
+                definition: mechanics_effect_id(&definition.effect),
+                provenance: request_source(&preview.operation, "reaction"),
+                stacks: 1,
+                expected_revision: None,
+            },
+        )?;
+        let expires_at_turn = self
+            .current_turn
+            .checked_add(u64::from(effect.duration_turns))
+            .ok_or(D20SessionError::TurnOverflow)?;
+        add_schedule(
+            &mut staged,
+            preview.target,
+            &preview.target_scheduled_effects_revision,
+            ScheduledEffect::new(effect_instance, definition.effect.clone(), expires_at_turn),
+        )?;
+        self.entities = staged;
+        Ok(ReactionReceipt {
+            reaction: reaction.clone(),
+            target: preview.target,
+            resource: option.resource.clone(),
+            before,
+            after: before - option.cost,
+            effect: effect_receipt,
+            expires_at_turn,
+        })
+    }
+
+    pub fn apply_action(
+        &mut self,
+        request: ApplyActionRequest,
+    ) -> Result<ActionReceipt, D20SessionError> {
+        self.ensure_fresh(&request.preview)?;
+        let next_roll = self
+            .next_roll
+            .checked_add(1)
+            .ok_or(D20SessionError::RollIndexOverflow)?;
+        let action = self
+            .rules
+            .action(&request.preview.action)
+            .expect("preview references a compiled action");
+        let mut rng = ScopedRng::new(self.seed, &format!("d20-action-roll/{}", self.next_roll));
+        let d20 = u8::try_from(rng.next_bounded_u32(20).expect("fixed nonzero d20 bound") + 1)
+            .expect("d20 roll fits u8");
+        let total = i32::from(d20) + i32::from(request.preview.ability_modifier);
+        let hit = i64::from(total) >= request.preview.defense.value.get();
+
+        let mut rolled_damage = 0_u32;
+        if hit {
+            for _ in 0..action.damage.dice {
+                rolled_damage = rolled_damage
+                    .checked_add(
+                        rng.next_bounded_u32(u32::from(action.damage.sides))
+                            .expect("compiled damage die has a nonzero bound")
+                            + 1,
+                    )
+                    .ok_or(D20SessionError::DamageOverflow)?;
+            }
+        }
+        let adjusted_damage = i64::from(rolled_damage) + i64::from(action.damage.bonus);
+        let applied_damage = adjusted_damage.max(0);
+
+        let mut staged = self.entities.clone();
+        let damage = if hit {
+            Some(DamageService::apply(
+                &mut staged,
+                self.rules.mechanics(),
+                DamageRequest {
+                    operation: request.preview.operation.clone(),
+                    source: request_source(&request.preview.operation, "action"),
+                    actor: Some(request.preview.actor),
+                    target: request.preview.target,
+                    target_track: vitality_track_id(),
+                    parts: vec![DamagePart {
+                        amount: scalar(applied_damage),
+                        kind: damage_kind_id(&action.damage.kind),
+                    }],
+                    request_sources: vec![],
+                    expected_tracks_revision: Some(request.preview.target_tracks_revision.clone()),
+                },
+            )?)
+        } else {
+            None
+        };
+
+        let (effect_receipt, expires_at_turn) = if hit {
+            if let Some(effect_id) = &action.effect {
+                let instance = request
+                    .effect_instance
+                    .ok_or_else(|| D20SessionError::MissingEffectInstance(effect_id.clone()))?;
+                let effect = self
+                    .rules
+                    .effect(effect_id)
+                    .expect("compiled action effect exists");
+                let receipt = EffectService::apply(
+                    &mut staged,
+                    self.rules.mechanics(),
+                    EffectApplyRequest {
+                        operation: request.preview.operation.clone(),
+                        entity: request.preview.target,
+                        instance: instance.clone(),
+                        definition: mechanics_effect_id(effect_id),
+                        provenance: request_source(&request.preview.operation, "action-effect"),
+                        stacks: 1,
+                        expected_revision: None,
+                    },
+                )?;
+                let expires_at = self
+                    .current_turn
+                    .checked_add(u64::from(effect.duration_turns))
+                    .ok_or(D20SessionError::TurnOverflow)?;
+                add_schedule(
+                    &mut staged,
+                    request.preview.target,
+                    &request.preview.target_scheduled_effects_revision,
+                    ScheduledEffect::new(instance, effect_id.clone(), expires_at),
+                )?;
+                (Some(receipt), Some(expires_at))
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
+        self.entities = staged;
+        let roll_index = self.next_roll;
+        self.next_roll = next_roll;
+        Ok(ActionReceipt {
+            actor: request.preview.actor,
+            target: request.preview.target,
+            action: request.preview.action,
+            operation: request.preview.operation,
+            roll_index,
+            d20,
+            ability_modifier: request.preview.ability_modifier,
+            total,
+            defense: request.preview.defense.value.get(),
+            hit,
+            rolled_damage,
+            damage,
+            effect: effect_receipt,
+            expires_at_turn,
+        })
+    }
+
+    pub fn advance_turn(
+        &mut self,
+        next_turn: u64,
+        operation: OperationId,
+    ) -> Result<AdvanceTurnReceipt, D20SessionError> {
+        if next_turn <= self.current_turn {
+            return Err(D20SessionError::TurnMustAdvance {
+                current: self.current_turn,
+                requested: next_turn,
+            });
+        }
+        let scheduled = self
+            .entities
+            .components::<ScheduledEffectsComponent>()?
+            .map(|(entity, component)| (entity, component.clone()))
+            .collect::<Vec<_>>();
+        let mut staged = self.entities.clone();
+        let mut expired_receipts = Vec::new();
+        for (entity, schedule) in scheduled {
+            let due = schedule
+                .effects()
+                .iter()
+                .filter(|effect| effect.expires_at_turn() <= next_turn)
+                .map(|effect| effect.instance().clone())
+                .collect::<Vec<_>>();
+            if due.is_empty() {
+                continue;
+            }
+            for instance in &due {
+                expired_receipts.push(EffectService::expire(
+                    &mut staged,
+                    self.rules.mechanics(),
+                    EffectRemovalRequest {
+                        operation: operation.clone(),
+                        entity,
+                        instance: instance.clone(),
+                        expected_revision: None,
+                    },
+                )?);
+            }
+            let revision = staged.component_revision::<ScheduledEffectsComponent>(entity)?;
+            EntityAuthoringService.replace_component(
+                &mut staged,
+                revision,
+                entity,
+                schedule.without_instances(&due)?,
+            )?;
+        }
+        let before = self.current_turn;
+        self.entities = staged;
+        self.current_turn = next_turn;
+        Ok(AdvanceTurnReceipt {
+            before,
+            after: next_turn,
+            expired: expired_receipts,
+        })
+    }
+
+    pub fn encode_save(&self) -> Result<String, SessionSaveError> {
+        let entity_state = serde_json::from_str(&encode_snapshot(&self.entities)?)?;
+        Ok(serde_json::to_string_pretty(&D20SessionSave {
+            schema_version: D20_SAVE_SCHEMA_VERSION,
+            engine_revision: ENGINE_REVISION.to_owned(),
+            ruleset_fingerprint: self.rules.fingerprint().to_owned(),
+            seed: self.seed.raw(),
+            next_roll: self.next_roll,
+            current_turn: self.current_turn,
+            entity_state,
+        })?)
+    }
+
+    pub fn decode_save(rules: D20Ruleset, input: &str) -> Result<Self, SessionSaveError> {
+        let save: D20SessionSave = serde_json::from_str(input)?;
+        if save.schema_version != D20_SAVE_SCHEMA_VERSION {
+            return Err(SessionSaveError::UnsupportedSchema {
+                actual: save.schema_version,
+            });
+        }
+        if save.engine_revision != ENGINE_REVISION {
+            return Err(SessionSaveError::EngineRevisionMismatch {
+                expected: ENGINE_REVISION.to_owned(),
+                actual: save.engine_revision,
+            });
+        }
+        if save.ruleset_fingerprint != rules.fingerprint() {
+            return Err(SessionSaveError::RulesetMismatch {
+                expected: rules.fingerprint().to_owned(),
+                actual: save.ruleset_fingerprint,
+            });
+        }
+        let entity_state = serde_json::to_string(&save.entity_state)?;
+        let registry = d20_component_registry()?;
+        let entities =
+            decode_snapshot_with_catalog_and_registry(&entity_state, registry, rules.mechanics())?;
+        validate_restored_d20_state(&entities, &rules)?;
+        Ok(Self {
+            rules,
+            entities,
+            seed: RngSeed::new(save.seed),
+            next_roll: save.next_roll,
+            current_turn: save.current_turn,
+        })
+    }
+
+    fn ensure_fresh(&self, preview: &ActionPreview) -> Result<(), D20SessionError> {
+        if preview.turn != self.current_turn || preview.roll_index != self.next_roll {
+            return Err(D20SessionError::StalePreview {
+                reason: "turn or deterministic roll position changed",
+            });
+        }
+        ensure_component_revision(
+            &self.entities,
+            &preview.actor_abilities_revision,
+            self.entities
+                .component_revision::<AbilityScoresComponent>(preview.actor)?,
+        )?;
+        ensure_component_revision(
+            &self.entities,
+            &preview.target_resources_revision,
+            self.entities
+                .component_revision::<ActionResourcesComponent>(preview.target)?,
+        )?;
+        ensure_component_revision(
+            &self.entities,
+            &preview.target_tracks_revision,
+            self.entities
+                .component_revision::<TracksComponent>(preview.target)?,
+        )?;
+        ensure_component_revision(
+            &self.entities,
+            &preview.target_scheduled_effects_revision,
+            self.entities
+                .component_revision::<ScheduledEffectsComponent>(preview.target)?,
+        )?;
+        for observed in &preview.defense.observed_revisions {
+            let actual = mechanics_revision(&self.entities, observed)?;
+            if actual != observed.revision {
+                return Err(D20SessionError::StalePreview {
+                    reason: "an observed mechanics component changed",
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+pub const fn ability_modifier(score: i16) -> i16 {
+    ((score as i32 - 10).div_euclid(2)) as i16
+}
+
+#[derive(Debug)]
+pub enum D20SessionError {
+    UnknownAction(D20Id),
+    UnknownArmor(D20Id),
+    UnknownDamageType(D20Id),
+    MissingAbility {
+        entity: EntityId,
+        ability: D20Id,
+    },
+    MissingResource {
+        entity: EntityId,
+        resource: D20Id,
+    },
+    InvalidAbilityScore {
+        entity: EntityId,
+        ability: D20Id,
+        score: i16,
+        minimum: i16,
+        maximum: i16,
+    },
+    InvalidResourceValue {
+        entity: EntityId,
+        resource: D20Id,
+        current: u16,
+        maximum: u16,
+    },
+    DuplicateAffinity {
+        entity: EntityId,
+        damage_type: D20Id,
+    },
+    MissingComponent {
+        entity: EntityId,
+        component: &'static str,
+    },
+    ArmorItemMismatch {
+        item: EntityId,
+        expected: D20Id,
+    },
+    ReactionUnavailable(D20Id),
+    MissingEffectInstance(D20Id),
+    UnscheduledActiveEffect {
+        entity: EntityId,
+        instance: String,
+    },
+    StalePreview {
+        reason: &'static str,
+    },
+    TurnMustAdvance {
+        current: u64,
+        requested: u64,
+    },
+    TurnOverflow,
+    RollIndexOverflow,
+    DamageOverflow,
+    EntityDefinition(EntityDefinitionError),
+    ComponentRegistration(ComponentRegistrationError),
+    ComponentAccess(ComponentAccessError),
+    ComponentMutation(EntityAuthoringError),
+    ComponentData(D20ComponentDataError),
+    Mechanics(MechanicsError),
+    MechanicsComponentData(gameplay_mechanics::MechanicsComponentDataError),
+}
+
+impl std::fmt::Display for D20SessionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "d20 session operation failed: {self:?}")
+    }
+}
+
+impl std::error::Error for D20SessionError {}
+
+impl From<EntityDefinitionError> for D20SessionError {
+    fn from(value: EntityDefinitionError) -> Self {
+        Self::EntityDefinition(value)
+    }
+}
+
+impl From<ComponentRegistrationError> for D20SessionError {
+    fn from(value: ComponentRegistrationError) -> Self {
+        Self::ComponentRegistration(value)
+    }
+}
+
+impl From<ComponentAccessError> for D20SessionError {
+    fn from(value: ComponentAccessError) -> Self {
+        Self::ComponentAccess(value)
+    }
+}
+
+impl From<EntityAuthoringError> for D20SessionError {
+    fn from(value: EntityAuthoringError) -> Self {
+        Self::ComponentMutation(value)
+    }
+}
+
+impl From<D20ComponentDataError> for D20SessionError {
+    fn from(value: D20ComponentDataError) -> Self {
+        Self::ComponentData(value)
+    }
+}
+
+impl From<MechanicsError> for D20SessionError {
+    fn from(value: MechanicsError) -> Self {
+        Self::Mechanics(value)
+    }
+}
+
+impl From<gameplay_mechanics::MechanicsComponentDataError> for D20SessionError {
+    fn from(value: gameplay_mechanics::MechanicsComponentDataError) -> Self {
+        Self::MechanicsComponentData(value)
+    }
+}
+
+#[derive(Debug)]
+pub enum SessionSaveError {
+    Json(serde_json::Error),
+    Snapshot(entity_state::EntityStateSnapshotError),
+    MechanicsSnapshot(MechanicsSnapshotError),
+    ComponentRegistration(ComponentRegistrationError),
+    UnsupportedSchema { actual: u32 },
+    EngineRevisionMismatch { expected: String, actual: String },
+    RulesetMismatch { expected: String, actual: String },
+    InvalidState(D20SessionError),
+}
+
+impl std::fmt::Display for SessionSaveError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "d20 session save rejected: {self:?}")
+    }
+}
+
+impl std::error::Error for SessionSaveError {}
+
+impl From<serde_json::Error> for SessionSaveError {
+    fn from(value: serde_json::Error) -> Self {
+        Self::Json(value)
+    }
+}
+
+impl From<entity_state::EntityStateSnapshotError> for SessionSaveError {
+    fn from(value: entity_state::EntityStateSnapshotError) -> Self {
+        Self::Snapshot(value)
+    }
+}
+
+impl From<MechanicsSnapshotError> for SessionSaveError {
+    fn from(value: MechanicsSnapshotError) -> Self {
+        Self::MechanicsSnapshot(value)
+    }
+}
+
+impl From<ComponentRegistrationError> for SessionSaveError {
+    fn from(value: ComponentRegistrationError) -> Self {
+        Self::ComponentRegistration(value)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct D20SessionSave {
+    schema_version: u32,
+    engine_revision: String,
+    ruleset_fingerprint: String,
+    seed: u64,
+    next_roll: u64,
+    current_turn: u64,
+    entity_state: serde_json::Value,
+}
+
+fn validate_character_seed(
+    rules: &D20Ruleset,
+    character: &CharacterSeed,
+) -> Result<(), D20SessionError> {
+    for ability in rules.abilities() {
+        let score = character
+            .abilities
+            .iter()
+            .find(|score| score.id() == &ability.id)
+            .ok_or_else(|| D20SessionError::MissingAbility {
+                entity: character.entity,
+                ability: ability.id.clone(),
+            })?;
+        if score.score() < ability.minimum || score.score() > ability.maximum {
+            return Err(D20SessionError::InvalidAbilityScore {
+                entity: character.entity,
+                ability: ability.id.clone(),
+                score: score.score(),
+                minimum: ability.minimum,
+                maximum: ability.maximum,
+            });
+        }
+    }
+    for score in &character.abilities {
+        if rules.ability(score.id()).is_none() {
+            return Err(D20SessionError::MissingAbility {
+                entity: character.entity,
+                ability: score.id().clone(),
+            });
+        }
+    }
+    for resource in rules.resources() {
+        let current = character
+            .resources
+            .iter()
+            .find(|value| value.id() == &resource.id)
+            .ok_or_else(|| D20SessionError::MissingResource {
+                entity: character.entity,
+                resource: resource.id.clone(),
+            })?
+            .current();
+        if current > resource.maximum {
+            return Err(D20SessionError::InvalidResourceValue {
+                entity: character.entity,
+                resource: resource.id.clone(),
+                current,
+                maximum: resource.maximum,
+            });
+        }
+    }
+    for resource in &character.resources {
+        if rules.resource(resource.id()).is_none() {
+            return Err(D20SessionError::MissingResource {
+                entity: character.entity,
+                resource: resource.id().clone(),
+            });
+        }
+    }
+    if character.vitality > 1_000_000 {
+        return Err(D20SessionError::Mechanics(
+            MechanicsError::TrackOutOfBounds {
+                entity: character.entity,
+                track: vitality_track_id(),
+                attempted: i64::from(character.vitality),
+                minimum: 0,
+                maximum: 1_000_000,
+            },
+        ));
+    }
+    Ok(())
+}
+
+fn affinity_bindings(
+    rules: &D20Ruleset,
+    entity: EntityId,
+    affinities: &[AffinitySeed],
+) -> Result<Vec<IntrinsicSourceBinding>, D20SessionError> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut bindings = Vec::new();
+    for affinity in affinities {
+        if !rules
+            .damage_types()
+            .any(|kind| kind == &affinity.damage_type)
+        {
+            return Err(D20SessionError::UnknownDamageType(
+                affinity.damage_type.clone(),
+            ));
+        }
+        if !seen.insert(affinity.damage_type.clone()) {
+            return Err(D20SessionError::DuplicateAffinity {
+                entity,
+                damage_type: affinity.damage_type.clone(),
+            });
+        }
+        let definition = match affinity.affinity {
+            DamageAffinity::Resistant => resistance_source_id(&affinity.damage_type),
+            DamageAffinity::Vulnerable => vulnerability_source_id(&affinity.damage_type),
+        };
+        bindings.push(IntrinsicSourceBinding::new(
+            SourceInstanceId::parse(format!("affinity.{}", affinity.damage_type))
+                .expect("validated d20 identity fits mechanics identity"),
+            definition,
+        ));
+    }
+    Ok(bindings)
+}
+
+fn attach<T: EntityComponent>(
+    state: &mut EntityState,
+    entity: EntityId,
+    component: T,
+) -> Result<(), D20SessionError> {
+    let revision = state.component_revision::<T>(entity)?;
+    EntityAuthoringService.attach_component(state, revision, entity, component)?;
+    Ok(())
+}
+
+fn request_source(operation: &OperationId, label: &str) -> SourceInstanceIdentity {
+    SourceInstanceIdentity::Request {
+        operation: operation.clone(),
+        instance: SourceInstanceId::parse(label).expect("fixed request source identity is valid"),
+    }
+}
+
+fn add_schedule(
+    state: &mut EntityState,
+    entity: EntityId,
+    expected: &ComponentRevision,
+    effect: ScheduledEffect,
+) -> Result<(), D20SessionError> {
+    let schedule = state
+        .component::<ScheduledEffectsComponent>(entity)?
+        .ok_or(D20SessionError::MissingComponent {
+            entity,
+            component: ScheduledEffectsComponent::LABEL,
+        })?
+        .with_added(effect)?;
+    EntityAuthoringService.replace_component(state, expected.clone(), entity, schedule)?;
+    Ok(())
+}
+
+fn ensure_component_revision(
+    _state: &EntityState,
+    expected: &ComponentRevision,
+    actual: ComponentRevision,
+) -> Result<(), D20SessionError> {
+    if expected.revision() != actual.revision()
+        || expected.entity() != actual.entity()
+        || expected.component() != actual.component()
+    {
+        return Err(D20SessionError::StalePreview {
+            reason: "an observed d20 component changed",
+        });
+    }
+    Ok(())
+}
+
+fn mechanics_revision(
+    state: &EntityState,
+    observed: &ObservedComponentRevision,
+) -> Result<u64, ComponentAccessError> {
+    let revision = match observed.component {
+        MechanicsComponentKind::Stats => state
+            .component_revision::<StatsComponent>(observed.entity)?
+            .revision(),
+        MechanicsComponentKind::Tracks => state
+            .component_revision::<TracksComponent>(observed.entity)?
+            .revision(),
+        MechanicsComponentKind::IntrinsicSources => state
+            .component_revision::<IntrinsicSourcesComponent>(observed.entity)?
+            .revision(),
+        MechanicsComponentKind::ActiveEffects => state
+            .component_revision::<ActiveEffectsComponent>(observed.entity)?
+            .revision(),
+        MechanicsComponentKind::Inventory => state
+            .component_revision::<gameplay_mechanics::InventoryComponent>(observed.entity)?
+            .revision(),
+        MechanicsComponentKind::Item => state
+            .component_revision::<ItemComponent>(observed.entity)?
+            .revision(),
+        MechanicsComponentKind::Equipment => state
+            .component_revision::<EquipmentComponent>(observed.entity)?
+            .revision(),
+    };
+    Ok(revision)
+}
+
+fn validate_restored_d20_state(
+    state: &EntityState,
+    rules: &D20Ruleset,
+) -> Result<(), SessionSaveError> {
+    for (entity, abilities) in state
+        .components::<AbilityScoresComponent>()
+        .map_err(D20SessionError::from)
+        .map_err(SessionSaveError::InvalidState)?
+    {
+        let resources = state
+            .component::<ActionResourcesComponent>(entity)
+            .map_err(D20SessionError::from)
+            .map_err(SessionSaveError::InvalidState)?
+            .ok_or({
+                SessionSaveError::InvalidState(D20SessionError::MissingComponent {
+                    entity,
+                    component: ActionResourcesComponent::LABEL,
+                })
+            })?;
+        state
+            .component::<ScheduledEffectsComponent>(entity)
+            .map_err(D20SessionError::from)
+            .map_err(SessionSaveError::InvalidState)?
+            .ok_or({
+                SessionSaveError::InvalidState(D20SessionError::MissingComponent {
+                    entity,
+                    component: ScheduledEffectsComponent::LABEL,
+                })
+            })?;
+        state
+            .component::<ActiveEffectsComponent>(entity)
+            .map_err(D20SessionError::from)
+            .map_err(SessionSaveError::InvalidState)?
+            .ok_or({
+                SessionSaveError::InvalidState(D20SessionError::MissingComponent {
+                    entity,
+                    component: ActiveEffectsComponent::LABEL,
+                })
+            })?;
+        validate_character_seed(
+            rules,
+            &CharacterSeed {
+                entity,
+                name: String::new(),
+                vitality: 0,
+                abilities: abilities.scores().to_vec(),
+                resources: resources.resources().to_vec(),
+                affinities: vec![],
+            },
+        )
+        .map_err(SessionSaveError::InvalidState)?;
+    }
+    for (entity, _) in state
+        .components::<ActionResourcesComponent>()
+        .map_err(D20SessionError::from)
+        .map_err(SessionSaveError::InvalidState)?
+    {
+        if !state
+            .has_component::<AbilityScoresComponent>(entity)
+            .map_err(D20SessionError::from)
+            .map_err(SessionSaveError::InvalidState)?
+        {
+            return Err(SessionSaveError::InvalidState(
+                D20SessionError::MissingComponent {
+                    entity,
+                    component: AbilityScoresComponent::LABEL,
+                },
+            ));
+        }
+    }
+    for (entity, schedule) in state
+        .components::<ScheduledEffectsComponent>()
+        .map_err(D20SessionError::from)
+        .map_err(SessionSaveError::InvalidState)?
+    {
+        if !state
+            .has_component::<AbilityScoresComponent>(entity)
+            .map_err(D20SessionError::from)
+            .map_err(SessionSaveError::InvalidState)?
+        {
+            return Err(SessionSaveError::InvalidState(
+                D20SessionError::MissingComponent {
+                    entity,
+                    component: AbilityScoresComponent::LABEL,
+                },
+            ));
+        }
+        let active = state
+            .component::<ActiveEffectsComponent>(entity)
+            .map_err(D20SessionError::from)
+            .map_err(SessionSaveError::InvalidState)?
+            .ok_or({
+                SessionSaveError::InvalidState(D20SessionError::MissingComponent {
+                    entity,
+                    component: ActiveEffectsComponent::LABEL,
+                })
+            })?;
+        for scheduled in schedule.effects() {
+            if rules.effect(scheduled.definition()).is_none()
+                || !active
+                    .effects()
+                    .iter()
+                    .any(|effect| effect.instance() == scheduled.instance())
+            {
+                return Err(SessionSaveError::InvalidState(
+                    D20SessionError::MissingEffectInstance(scheduled.definition().clone()),
+                ));
+            }
+        }
+        for effect in active.effects() {
+            let Some(scheduled) = schedule
+                .effects()
+                .iter()
+                .find(|scheduled| scheduled.instance() == effect.instance())
+            else {
+                return Err(SessionSaveError::InvalidState(
+                    D20SessionError::UnscheduledActiveEffect {
+                        entity,
+                        instance: effect.instance().to_string(),
+                    },
+                ));
+            };
+            if mechanics_effect_id(scheduled.definition()) != *effect.definition() {
+                return Err(SessionSaveError::InvalidState(
+                    D20SessionError::UnscheduledActiveEffect {
+                        entity,
+                        instance: effect.instance().to_string(),
+                    },
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn scalar(value: i64) -> MechanicsScalar {
+    MechanicsScalar::new(value).expect("validated d20 values fit mechanics scalar")
+}

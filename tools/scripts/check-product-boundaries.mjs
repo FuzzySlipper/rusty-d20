@@ -33,7 +33,13 @@ for (const relativeRoot of productionRoots) {
 
 const manifest = readFileSync(join(root, 'rust/crates/rusty-d20/Cargo.toml'), 'utf8');
 const engineRevision = 'fb608e323a8b44a55195f5720101224ff37fd5db';
-for (const crateName of ['core-ids', 'entity-state', 'gameplay-mechanics', 'gameplay-rules']) {
+for (const crateName of [
+  'core-ids',
+  'entity-state',
+  'gameplay-mechanics',
+  'gameplay-rules',
+  'svc-rng',
+]) {
   const expected = `${crateName} = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "${engineRevision}" }`;
   if (!manifest.includes(expected)) {
     failures.push(`Rusty Engine dependency is not exactly pinned: ${crateName}`);

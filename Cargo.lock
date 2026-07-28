@@ -473,6 +473,7 @@ dependencies = [
  "http-body-util",
  "serde",
  "serde_json",
+ "svc-rng",
  "tokio",
  "tower",
  "tower-http",
@@ -604,6 +605,11 @@ dependencies = [
  "libc",
  "windows-sys",
 ]
+
+[[package]]
+name = "svc-rng"
+version = "0.1.0"
+source = "git+https://github.com/FuzzySlipper/rusty-engine?rev=fb608e323a8b44a55195f5720101224ff37fd5db#fb608e323a8b44a55195f5720101224ff37fd5db"
 
 [[package]]
 name = "syn"

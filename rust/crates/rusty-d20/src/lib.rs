@@ -1,9 +1,15 @@
 //! Concrete downstream state and protocol for the Rusty D20 reference game.
 //!
 //! Rusty Engine supplies reusable mechanisms. This crate owns Rusty D20's
-//! product state, transport projection, and—once added—d20 semantics.
+//! product state, transport projection, and d20 semantics.
 
 #![forbid(unsafe_code)]
+
+mod candidate;
+mod compiler;
+mod component;
+mod identity;
+mod session;
 
 pub mod host;
 
@@ -11,6 +17,31 @@ use core_ids::EntityId;
 use entity_state::{EntityDefinition, EntityState};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+
+pub use candidate::{
+    admit_d20_candidate, AbilityCandidate, ActionCandidate, ArmorCandidate, D20PackageEnvelope,
+    D20RulesCandidate, DamageCandidate, DamageTypeCandidate, DefenseCandidate, EffectCandidate,
+    ReactionCandidate, ResourceCandidate, D20_CANDIDATE_SCHEMA_VERSION,
+};
+pub use compiler::{
+    AbilityDefinition, ActionDefinition, ArmorDefinition, D20CompileError, D20Ruleset,
+    DamageDefinition, DefenseDefinition, EffectDefinition, ReactionDefinition, ResourceDefinition,
+};
+pub use component::{
+    d20_component_registry, register_d20_components, AbilityScore, AbilityScoresComponent,
+    ActionResource, ActionResourcesComponent, D20ComponentDataError, ScheduledEffect,
+    ScheduledEffectsComponent, ABILITY_SCORES_COMPONENT_CODEC_ID,
+    ABILITY_SCORES_COMPONENT_CODEC_VERSION, ABILITY_SCORES_COMPONENT_TYPE_ID,
+    ACTION_RESOURCES_COMPONENT_CODEC_ID, ACTION_RESOURCES_COMPONENT_CODEC_VERSION,
+    ACTION_RESOURCES_COMPONENT_TYPE_ID, SCHEDULED_EFFECTS_COMPONENT_CODEC_ID,
+    SCHEDULED_EFFECTS_COMPONENT_CODEC_VERSION, SCHEDULED_EFFECTS_COMPONENT_TYPE_ID,
+};
+pub use identity::{D20Id, D20IdentityError};
+pub use session::{
+    ability_modifier, ActionPreview, ActionReceipt, AdvanceTurnReceipt, AffinitySeed,
+    ApplyActionRequest, ArmorItemSeed, CharacterSeed, D20Session, D20SessionError, DamageAffinity,
+    ReactionOption, ReactionReceipt, SessionSaveError,
+};
 
 /// Exact reviewed Rusty Engine revision used by this repository.
 pub const ENGINE_REVISION: &str = "fb608e323a8b44a55195f5720101224ff37fd5db";
@@ -111,6 +142,7 @@ mod tests {
     fn engine_support_crates_are_linked_from_the_reviewed_revision() {
         let _mechanics_limit = gameplay_mechanics::MAX_TRACKS_PER_ENTITY;
         let _rules_limit = gameplay_rules::MAX_RULE_PACKAGES_PER_SET;
+        let _rng_seed = svc_rng::RngSeed::new(1);
         assert_eq!(ENGINE_REVISION.len(), 40);
     }
 }

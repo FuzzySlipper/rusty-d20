@@ -18,19 +18,36 @@ TypeScript authoring source
   -> Angular store, features, and presentation
 ```
 
-Only the final transport/UI portion exists in the bootstrap milestone. That
-path is permanent rather than a GM7-only alternative.
+The semantic kernel and headless session now implement this path through
+compiled definitions, components, named services, and complete saves. The
+product host still exposes only its bootstrap readout; connecting gameplay
+operations and projections is a later UI milestone.
 
 ## Runtime state
 
-Rust owns authoritative state. `GameRuntime` currently contains canonical
-Engine `EntityState`; future d20 facts attach as downstream registered
-components. Mechanics such as stats, tracks, effects, inventory, equipment,
-damage, and restoration are applied through direct Rusty Engine services.
+Rust owns authoritative state. `D20Session` contains canonical Engine
+`EntityState`, one immutable `D20Ruleset`, explicit turn and deterministic roll
+positions, and no ambient scheduler or registry. Rusty D20 registers durable
+ability-score, action-resource, and scheduled-effect components beside Engine
+mechanics components. `GameRuntime` remains the smaller host bootstrap owner
+until product operations are connected.
+
+`D20Session` stages heterogeneous action work in an `EntityState` clone and
+publishes only after every d20 and Engine service succeeds. Damage, equipment,
+effects, stats, tracks, and attributed sources remain Engine mechanisms.
+Ability modifiers, candidate meaning, attack checks, reactions, effect
+deadlines, turn advancement, and save policy remain Rusty D20 meaning.
+
+Preview records exact relevant component revisions. Applying a reaction changes
+resource and effect components, so callers must acquire a fresh action preview.
+Unrelated entity changes do not invalidate a preview.
 
 TypeScript does not host live rules, callbacks, runtime sessions, or gameplay
 state. Authored TypeScript will emit immutable candidates that Rust validates
 and compiles before publication.
+
+The candidate and compiled-definition contract is documented in
+[the d20 rules kernel](d20-rules-kernel.md).
 
 ## Transport and protocol
 
@@ -50,6 +67,12 @@ graph in `boundaries.json`; production code cannot import testing fixtures.
 
 ## Persistence and execution
 
-Complete-save ownership, authored definition persistence, action execution,
-turn progression, and effect expiry remain Rusty D20 concerns. They will be
-added without moving game meaning into Engine or browser code.
+`D20Session` saves the exact Engine revision, ruleset fingerprint, explicit RNG
+seed/roll position, caller-owned turn, and canonical entity snapshot. Compiled
+definitions are not copied into live saves. Reopen requires the matching
+immutable ruleset, reconstructs registered components, validates mechanics and
+d20 references, and reacquires non-durable component revisions.
+
+`advance_turn` is an explicit downstream command that expires recorded effect
+instances atomically. There is no clock callback, tick subscription, event bus,
+or persisted closure.

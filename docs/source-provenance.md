@@ -9,6 +9,7 @@ All Engine packages are public Git dependencies pinned to reviewed revision
 - `entity-state`
 - `gameplay-mechanics`
 - `gameplay-rules`
+- `svc-rng`
 
 `Cargo.lock` records the resolved Git source. There is no sibling path fallback.
 

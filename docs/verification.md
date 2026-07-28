@@ -19,6 +19,13 @@ pnpm run verify:build
 pnpm run verify:browser
 ```
 
+The headless d20 semantic slice can be iterated without Node:
+
+```bash
+cargo test -p rusty-d20 --test d20r0 --locked
+cargo clippy -p rusty-d20 --all-targets --locked -- -D warnings
+```
+
 Regenerate the Rust-owned TypeScript DTOs with:
 
 ```bash
