@@ -11,6 +11,12 @@ component-storage, mechanics, and deterministic-randomness mechanisms.
 No candidate field contains a callback, expression tree, scheduler command,
 event subscription, or executable TypeScript.
 
+The checked TypeScript contract in
+`rules/packages/d20-authoring/src/generated.ts` is emitted by the Rust
+`rusty-d20-rules-contract` binary. The authoring SDK is therefore a typed
+composition surface over the Rust-owned schema rather than a hand-maintained
+twin.
+
 ## Package and candidate
 
 `D20RulesCandidate` is the strict `schemaVersion: 1` payload of a
@@ -37,6 +43,20 @@ definitions, unknown references, incompatible reaction/effect pairs, invalid
 dice or bounds, exact dependency failures, and package cycles. Direct Rust
 candidate admission and canonical artifact decode converge on the same compiled
 ruleset and mechanics catalog fingerprints.
+
+The starter catalog demonstrates exact package dependencies with three
+canonical packages:
+
+- `starter-core` contributes four abilities, three defenses, four damage
+  types, and three reaction resources;
+- `steel-guard` contributes armor, a defensive reaction, ongoing bleeding,
+  and two physical actions;
+- `ember-ward` contributes resolve equipment, a focus reaction, a temporary
+  ward, and two fire/psychic actions.
+
+Module and definition order are normalized before canonical emission. Moving
+definitions between TypeScript helpers or reordering source modules therefore
+does not silently change artifact identity; content changes still do.
 
 ## Definitions and live state
 

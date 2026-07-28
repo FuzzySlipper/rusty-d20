@@ -1,10 +1,12 @@
 use std::fmt;
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use ts_rs::TS;
 
 pub const MAX_D20_ID_BYTES: usize = 64;
+pub const D20_ID_PATTERN: &str = "^[a-z0-9._-]+$";
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, TS)]
 pub struct D20Id(String);
 
 impl D20Id {

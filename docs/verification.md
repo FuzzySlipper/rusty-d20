@@ -7,12 +7,13 @@
 ```
 
 This runs strict Rust, protocol/boundary, TypeScript, production build, and
-real-Rust-host browser checks.
+real-Rust-host browser checks, including the isolated authored-rules gate.
 
 ## Focused gates
 
 ```bash
 pnpm run verify:rust
+pnpm run verify:rules
 pnpm run verify:boundaries
 pnpm run verify:ui
 pnpm run verify:build
@@ -25,6 +26,25 @@ The headless d20 semantic slice can be iterated without Node:
 cargo test -p rusty-d20 --test d20r0 --locked
 cargo clippy -p rusty-d20 --all-targets --locked -- -D warnings
 ```
+
+The isolated authoring workspace can be checked directly:
+
+```bash
+./scripts/verify-rules.sh
+pnpm --dir rules run generate:check
+cargo test -p rusty-d20 --test d20a0 --locked
+```
+
+Regenerate the Rust-owned d20 TypeScript contract and canonical starter
+artifacts with:
+
+```bash
+pnpm --dir rules run generate
+```
+
+The checked artifacts remain usable by
+`cargo test -p rusty-d20 --test d20a0 --locked` without installing or running
+Node.
 
 Regenerate the Rust-owned TypeScript DTOs with:
 
@@ -62,3 +82,6 @@ cd rusty-d20
 pnpm install --frozen-lockfile
 ./scripts/verify.sh
 ```
+
+`verify.sh` installs the separately locked `rules/` workspace before its
+focused gate. No sibling Engine checkout is consulted.

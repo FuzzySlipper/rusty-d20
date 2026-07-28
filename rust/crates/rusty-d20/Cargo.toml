@@ -32,3 +32,7 @@ path = "src/bin/host.rs"
 [[bin]]
 name = "rusty-d20-protocol"
 path = "src/bin/protocol.rs"
+
+[[bin]]
+name = "rusty-d20-rules-contract"
+path = "src/bin/rules_contract.rs"

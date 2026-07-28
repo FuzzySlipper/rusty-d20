@@ -19,13 +19,16 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub use candidate::{
-    admit_d20_candidate, AbilityCandidate, ActionCandidate, ArmorCandidate, D20PackageEnvelope,
-    D20RulesCandidate, DamageCandidate, DamageTypeCandidate, DefenseCandidate, EffectCandidate,
-    ReactionCandidate, ResourceCandidate, D20_CANDIDATE_SCHEMA_VERSION,
+    admit_d20_candidate, generated_d20_candidate_typescript, AbilityCandidate, ActionCandidate,
+    ArmorCandidate, D20PackageEnvelope, D20RulesCandidate, DamageCandidate, DamageTypeCandidate,
+    DefenseCandidate, EffectCandidate, ReactionCandidate, ResourceCandidate,
+    D20_CANDIDATE_SCHEMA_VERSION,
 };
 pub use compiler::{
     AbilityDefinition, ActionDefinition, ArmorDefinition, D20CompileError, D20Ruleset,
     DamageDefinition, DefenseDefinition, EffectDefinition, ReactionDefinition, ResourceDefinition,
+    MAX_D20_DAMAGE_DICE, MAX_D20_DAMAGE_DIE_SIDES, MAX_D20_DEFINITIONS_PER_KIND,
+    MAX_D20_EFFECT_DURATION_TURNS,
 };
 pub use component::{
     d20_component_registry, register_d20_components, AbilityScore, AbilityScoresComponent,
@@ -36,7 +39,7 @@ pub use component::{
     ACTION_RESOURCES_COMPONENT_TYPE_ID, SCHEDULED_EFFECTS_COMPONENT_CODEC_ID,
     SCHEDULED_EFFECTS_COMPONENT_CODEC_VERSION, SCHEDULED_EFFECTS_COMPONENT_TYPE_ID,
 };
-pub use identity::{D20Id, D20IdentityError};
+pub use identity::{D20Id, D20IdentityError, D20_ID_PATTERN, MAX_D20_ID_BYTES};
 pub use session::{
     ability_modifier, ActionPreview, ActionReceipt, AdvanceTurnReceipt, AffinitySeed,
     ApplyActionRequest, ArmorItemSeed, CharacterSeed, D20Session, D20SessionError, DamageAffinity,

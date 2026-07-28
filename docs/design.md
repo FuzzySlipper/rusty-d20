@@ -18,10 +18,12 @@ TypeScript authoring source
   -> Angular store, features, and presentation
 ```
 
-The semantic kernel and headless session now implement this path through
-compiled definitions, components, named services, and complete saves. The
-product host still exposes only its bootstrap readout; connecting gameplay
-operations and projections is a later UI milestone.
+The isolated `rules/` workspace and semantic kernel now implement the
+authoring-to-Rust portion of this path. TypeScript emits checked canonical
+packages from a Rust-generated d20 contract; committed artifacts are decoded
+and compiled by headless Rust without Node. The product host still exposes only
+its bootstrap readout; connecting gameplay operations and projections is a
+later UI milestone.
 
 ## Runtime state
 
@@ -43,11 +45,25 @@ resource and effect components, so callers must acquire a fresh action preview.
 Unrelated entity changes do not invalidate a preview.
 
 TypeScript does not host live rules, callbacks, runtime sessions, or gameplay
-state. Authored TypeScript will emit immutable candidates that Rust validates
-and compiles before publication.
+state. The authoring SDK runs ordinary functions, tables, and loops only at
+build time, produces immutable candidates, and delegates strict package
+admission and all d20 meaning to Rust.
 
 The candidate and compiled-definition contract is documented in
 [the d20 rules kernel](d20-rules-kernel.md).
+
+## Rules authoring
+
+`rules/packages/d20-authoring` consumes the two neutral Engine authoring
+packages from the exact reviewed Engine Git revision. Its d20 candidate types
+and limits are generated from Rust. It provides source-aware definition
+builders, module composition, deterministic definition ordering, exact package
+dependencies, and canonical artifact emission.
+
+`rules/packages/starter-ruleset` owns concrete content. The checked starter
+artifacts contain a shared core plus distinct steel/armor and ember/resolve
+compositions. These packages are build-time inputs, not UI or runtime
+dependencies. See [rules authoring](rules-authoring.md).
 
 ## Transport and protocol
 

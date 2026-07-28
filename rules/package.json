@@ -1,0 +1,24 @@
+{
+  "name": "rusty-d20-rules",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "build": "tsc --build packages/d20-authoring/tsconfig.json packages/starter-ruleset/tsconfig.json",
+    "boundary": "node scripts/check-boundaries.mjs",
+    "generate": "pnpm run generate:contract && pnpm run build && node scripts/generate-artifacts.mjs --write",
+    "generate:contract": "cargo run --manifest-path ../Cargo.toml -p rusty-d20 --bin rusty-d20-rules-contract -- packages/d20-authoring/src/generated.ts",
+    "generate:check": "cargo run --manifest-path ../Cargo.toml -p rusty-d20 --bin rusty-d20-rules-contract -- --check packages/d20-authoring/src/generated.ts && pnpm run build && node scripts/generate-artifacts.mjs --check",
+    "lint": "eslint packages --max-warnings=0",
+    "test": "pnpm -r test",
+    "typecheck": "tsc --build packages/d20-authoring/tsconfig.json packages/starter-ruleset/tsconfig.json",
+    "verify": "pnpm run generate:check && pnpm run boundary && pnpm run lint && pnpm run typecheck && pnpm run test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.61.1"
+  }
+}

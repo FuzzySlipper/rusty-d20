@@ -10,9 +10,10 @@ The current product bootstrap is deliberately small but real: an Angular/Nx
 shell is served by a Rust process, calls a same-origin typed endpoint, strictly
 decodes a Rust-generated contract, and renders a readout derived from canonical
 `entity-state` state. Separately, the headless Rust kernel compiles bounded d20
-candidates and runs deterministic, source-attributed action/reaction/effect
-lifecycles with complete saves. Fake transport is available only from
-`libs/testing-fixtures`.
+candidates authored through an isolated TypeScript SDK and runs deterministic,
+source-attributed action/reaction/effect lifecycles with complete saves. The
+checked starter catalog includes distinct steel/armor and ember/resolve
+compositions. Fake transport is available only from `libs/testing-fixtures`.
 
 ## Start the product
 
@@ -37,9 +38,9 @@ start at [docs/design.md](docs/design.md) and
 
 ## Current phase boundary
 
-The semantic kernel is implemented, but it is not yet connected to the product
-host or Angular UI and no TypeScript authoring SDK exists. Encounter play and
-substantial d20 content remain later milestones. See
+The semantic kernel and first authored starter ruleset are implemented, but
+they are not yet connected to the product host or Angular UI. Encounter play
+and broader d20 content remain later milestones. See
 [docs/known-limitations.md](docs/known-limitations.md).
 
 ## Provenance

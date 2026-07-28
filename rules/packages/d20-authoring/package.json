@@ -1,0 +1,27 @@
+{
+  "name": "@rusty-d20/rules-authoring",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --build",
+    "test": "tsc --build && node --test dist/*.test.js"
+  },
+  "dependencies": {
+    "@rusty-engine/gameplay-rules-authoring": "github:FuzzySlipper/rusty-engine#fb608e323a8b44a55195f5720101224ff37fd5db&path:rules/packages/gameplay-rules-authoring",
+    "@rusty-engine/gameplay-rules-contracts": "github:FuzzySlipper/rusty-engine#fb608e323a8b44a55195f5720101224ff37fd5db&path:rules/packages/gameplay-rules-contracts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}

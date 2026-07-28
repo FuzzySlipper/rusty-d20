@@ -9,6 +9,7 @@
 | `rust/crates/rusty-d20/src/session.rs` | Atomic preview/reaction/apply, deterministic rolls, explicit turn expiry, complete saves | `cargo test -p rusty-d20 --test d20r0 --locked` |
 | `rust/crates/rusty-d20/src/identity.rs` | Bounded stable downstream definition identities | Rust tests and strict candidate decode |
 | `rust/crates/rusty-d20/tests/d20r0.rs` | Headless semantic, failure-atomicity, persistence, provenance, and composition evidence | `cargo test -p rusty-d20 --test d20r0 --locked` |
+| `rust/crates/rusty-d20/tests/d20a0.rs` | Node-free strict decode, starter composition, generated contract, fingerprint, and diagnostic-correlation proof | `cargo test -p rusty-d20 --test d20a0 --locked` |
 | `rust/crates/rusty-d20/src/host.rs` | Same-origin HTTP/static host | Rust host tests and browser smoke |
 | `rust/crates/rusty-d20/src/bin/` | Product host and protocol generator entrypoints | `pnpm run verify:rust` |
 | `libs/protocol/` | Generated DTOs and strict unknown-JSON decode | `pnpm run protocol:check`; Vitest |
@@ -20,6 +21,10 @@
 | `libs/components`, `libs/renderer`, `libs/ui-*` | Retained product-neutral presentation building blocks | Typecheck, lint, later live consumers |
 | `libs/shell/`, `apps/app/` | Routes and application composition | Build and Playwright |
 | `libs/testing-fixtures/` | Explicit fake transport/readout helpers | Must never enter production graph |
+| `rules/packages/d20-authoring/` | Isolated build-time d20 builders over Rust-generated types and exact Engine authoring packages | `pnpm --dir rules run verify` |
+| `rules/packages/starter-ruleset/` | Multi-file Rusty D20 content and package compositions | Rules tests plus `d20a0` Rust test |
+| `rules/artifacts/starter/` | Checked canonical packages and fingerprint manifest consumed by Node-free Rust | `pnpm --dir rules run generate:check` |
+| `rules/scripts/` | Artifact generation and authoring/runtime/browser isolation audit | `pnpm --dir rules run boundary` |
 | `apps/app-e2e/` | Real-host browser smoke and opt-in evidence collector | `pnpm run verify:browser` |
 | `tools/scripts/` | Generated boundaries, product audit, live broker | `pnpm run verify:boundaries` |
 | `docs/` | Architecture, provenance, limitations, extension, verification | `pnpm run check:docs` |
@@ -28,3 +33,7 @@ Before adding a new library, update `boundaries.json`, regenerate
 `eslint.config.mjs`, expose one package-root barrel, and add the narrow owning
 test. Do not work from this atlas instead of the owning design or executable
 contract.
+
+The isolated `rules/` workspace is not an Angular/Nx library graph. Add its
+packages through `rules/pnpm-workspace.yaml`, keep package-root imports, and
+run `./scripts/verify-rules.sh`.

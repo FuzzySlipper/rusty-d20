@@ -13,6 +13,16 @@ All Engine packages are public Git dependencies pinned to reviewed revision
 
 `Cargo.lock` records the resolved Git source. There is no sibling path fallback.
 
+The isolated TypeScript authoring workspace pins these public Engine packages
+to the same revision and exact repository subpaths:
+
+- `@rusty-engine/gameplay-rules-contracts`
+- `@rusty-engine/gameplay-rules-authoring`
+
+`rules/pnpm-lock.yaml` records the codeload revision and subpath identities.
+Only those exact git package prepare scripts are allowed by
+`rules/pnpm-workspace.yaml`.
+
 ## Rusty Engine UI donor
 
 - Repository: `FuzzySlipper/rusty-engine-ui`

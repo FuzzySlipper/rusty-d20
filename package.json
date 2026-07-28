@@ -12,6 +12,7 @@
     "test": "vitest run --passWithNoTests",
     "verify": "./scripts/verify.sh",
     "verify:rust": "cargo fmt --check && cargo test --workspace --locked && cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "verify:rules": "./scripts/verify-rules.sh",
     "verify:ui": "pnpm run lint && pnpm run typecheck && pnpm run test",
     "verify:boundaries": "pnpm run check:pattern && pnpm run check:docs && node tools/scripts/check-product-boundaries.mjs && pnpm run protocol:check",
     "verify:build": "pnpm run build",

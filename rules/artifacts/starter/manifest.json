@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "artifacts": [
+    {
+      "path": "starter-core.json",
+      "domain": "rusty-d20",
+      "package": "starter-core",
+      "version": 1,
+      "fingerprint": "c5b4d44a9061168090abd2eef9a9e60b9d1413af815b850bdfc6ac7ace2c9bec"
+    },
+    {
+      "path": "steel-guard.json",
+      "domain": "rusty-d20",
+      "package": "steel-guard",
+      "version": 1,
+      "fingerprint": "389635ef0c3da480f4fcedd93fa54884eb7e3a0c60985c3e3fcee1522fd5e3bd"
+    },
+    {
+      "path": "ember-ward.json",
+      "domain": "rusty-d20",
+      "package": "ember-ward",
+      "version": 1,
+      "fingerprint": "d4399ed43dd70d3a82f4ffe0dd1333a08b1f913c07b2fe80605dc6a5adb18c2d"
+    },
+    {
+      "path": "invalid-semantics.json",
+      "domain": "rusty-d20",
+      "package": "invalid-semantics",
+      "version": 1,
+      "fingerprint": "fae0357c52f0aea984558c0677b831d3f9d30f55c9d0f6db93596533504a2cdf"
+    }
+  ]
+}

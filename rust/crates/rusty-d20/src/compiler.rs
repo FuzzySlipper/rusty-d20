@@ -20,10 +20,10 @@ use crate::{
     ReactionCandidate, D20_CANDIDATE_SCHEMA_VERSION,
 };
 
-const MAX_DEFINITIONS_PER_KIND: usize = 64;
-const MAX_DAMAGE_DICE: u8 = 32;
-const MAX_DAMAGE_DIE_SIDES: u16 = 1_000;
-const MAX_EFFECT_DURATION_TURNS: u16 = 10_000;
+pub const MAX_D20_DEFINITIONS_PER_KIND: usize = 64;
+pub const MAX_D20_DAMAGE_DICE: u8 = 32;
+pub const MAX_D20_DAMAGE_DIE_SIDES: u16 = 1_000;
+pub const MAX_D20_EFFECT_DURATION_TURNS: u16 = 10_000;
 const VITALITY_TRACK: &str = "vitality";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -363,13 +363,13 @@ impl DefinitionCollector {
         }
         for value in candidate.effects {
             let subject = subject("effect", &value.id);
-            if value.duration_turns == 0 || value.duration_turns > MAX_EFFECT_DURATION_TURNS {
+            if value.duration_turns == 0 || value.duration_turns > MAX_D20_EFFECT_DURATION_TURNS {
                 self.push_diagnostic(
                     package,
                     Some(&subject),
                     "D20_INVALID_EFFECT_DURATION",
                     format!("$/payload/effects/{}", value.id),
-                    format!("effect duration must be inside 1..={MAX_EFFECT_DURATION_TURNS}"),
+                    format!("effect duration must be inside 1..={MAX_D20_EFFECT_DURATION_TURNS}"),
                 );
             }
             if value.defense.is_none() && value.defense_bonus != 0 {
@@ -443,9 +443,9 @@ impl DefinitionCollector {
     ) {
         let subject = subject("action", action);
         if damage.dice == 0
-            || damage.dice > MAX_DAMAGE_DICE
+            || damage.dice > MAX_D20_DAMAGE_DICE
             || damage.sides < 2
-            || damage.sides > MAX_DAMAGE_DIE_SIDES
+            || damage.sides > MAX_D20_DAMAGE_DIE_SIDES
             || !(-1_000..=1_000).contains(&damage.bonus)
         {
             self.push_diagnostic(
@@ -454,21 +454,21 @@ impl DefinitionCollector {
                 "D20_INVALID_DAMAGE_DICE",
                 format!("$/payload/actions/{action}/damage"),
                 format!(
-                    "damage requires 1..={MAX_DAMAGE_DICE} dice, 2..={MAX_DAMAGE_DIE_SIDES} sides, and bonus inside -1000..=1000"
+                    "damage requires 1..={MAX_D20_DAMAGE_DICE} dice, 2..={MAX_D20_DAMAGE_DIE_SIDES} sides, and bonus inside -1000..=1000"
                 ),
             );
         }
     }
 
     fn enforce_quota(&mut self, package: &AdmittedRulePackage, field: &str, actual: usize) {
-        if actual > MAX_DEFINITIONS_PER_KIND {
+        if actual > MAX_D20_DEFINITIONS_PER_KIND {
             self.push_diagnostic(
                 package,
                 None,
                 "D20_DEFINITION_QUOTA",
                 format!("$/payload/{field}"),
                 format!(
-                    "{field} contains {actual} definitions; maximum is {MAX_DEFINITIONS_PER_KIND}"
+                    "{field} contains {actual} definitions; maximum is {MAX_D20_DEFINITIONS_PER_KIND}"
                 ),
             );
         }

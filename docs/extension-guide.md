@@ -26,12 +26,20 @@ identities.
 
 ## Add authored rules
 
-TypeScript authoring may use functions, loops, tables, and helpers to emit a
-bounded immutable candidate. Rust owns schema admission and semantics. The
-checked artifact must remain usable by a Node-free Rust process; no callback or
-TypeScript evaluator may enter runtime state.
+Add source modules under `rules/packages/starter-ruleset/src/content/` using the
+package-root `@rusty-d20/rules-authoring` builders. TypeScript may use
+functions, loops, tables, and helpers to emit a bounded immutable candidate.
+Run `pnpm --dir rules run generate`, inspect the artifact and fingerprint
+manifest, and add Rust assertions when the content proves a new composition.
+
+Rust owns schema admission and semantics. The checked artifact must remain
+usable by a Node-free Rust process; no callback or TypeScript evaluator may
+enter runtime state.
 
 Use the versioned fields and provenance subjects in
 [the d20 rules kernel](d20-rules-kernel.md). Add new fixed semantic vocabulary
 to the Rust candidate and compiler together. Do not encode new behavior as an
 opaque expression tree just to avoid changing the owning Rust contract.
+
+The full authoring contract and package layout are in
+[rules authoring](rules-authoring.md).
