@@ -12,6 +12,44 @@ impl GameRuntime {
             .character_template(&adventure.hero)
             .expect("compiled hero exists");
         let encounter = current_encounter_definition(&self.rules, adventure, campaign)?;
+        let available_encounters = if campaign.phase == CampaignPhase::Camp {
+            next_available_encounter_definition(&self.rules, adventure, campaign)?
+                .map(|encounter| {
+                    vec![EncounterChoiceDto {
+                        id: encounter.id.to_string(),
+                        title: encounter.title.clone(),
+                        summary: encounter.summary.clone(),
+                    }]
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let completed_encounters = campaign
+            .completed_encounters
+            .iter()
+            .map(|completed| {
+                let id = D20Id::parse(&completed.encounter_id).map_err(|error| {
+                    GameRuntimeError::InvalidState(format!(
+                        "completed encounter identity is invalid: {error}"
+                    ))
+                })?;
+                let encounter = self.rules.encounter(&id).ok_or_else(|| {
+                    GameRuntimeError::InvalidState(format!(
+                        "completed encounter {} is missing",
+                        completed.encounter_id
+                    ))
+                })?;
+                Ok(CompletedEncounterDto {
+                    encounter_id: completed.encounter_id.clone(),
+                    title: encounter.title.clone(),
+                    outcome: match completed.outcome {
+                        EncounterOutcome::Victory => EncounterOutcomeKindDto::Victory,
+                        EncounterOutcome::Defeat => EncounterOutcomeKindDto::Defeat,
+                    },
+                })
+            })
+            .collect::<Result<Vec<_>, GameRuntimeError>>()?;
         Ok(CampaignDto {
             id: adventure.id.to_string(),
             title: adventure.title.clone(),
@@ -23,21 +61,7 @@ impl GameRuntime {
             hero: self.project_character(session, hero)?,
             loadout: self.project_loadout(session)?,
             active_encounter_id: campaign.active_encounter_id.clone(),
-            available_encounters: if campaign.outcome.is_none() {
-                adventure
-                    .encounters
-                    .iter()
-                    .filter_map(|id| self.rules.encounter(id))
-                    .filter(|encounter| encounter.available_from_camp)
-                    .map(|encounter| EncounterChoiceDto {
-                        id: encounter.id.to_string(),
-                        title: encounter.title.clone(),
-                        summary: encounter.summary.clone(),
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            },
+            available_encounters,
             latest_outcome: campaign.outcome.map(|outcome| match outcome {
                 EncounterOutcome::Victory => CampaignOutcomeDto {
                     kind: EncounterOutcomeKindDto::Victory,
@@ -61,6 +85,7 @@ impl GameRuntime {
                     reward: None,
                 },
             }),
+            completed_encounters,
         })
     }
 

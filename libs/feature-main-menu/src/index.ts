@@ -118,6 +118,47 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
         max-width: 19rem;
       }
 
+      .identity-readout {
+        border: 1px solid var(--rusty-engine-border);
+        border-radius: var(--rusty-engine-radius-sm);
+        display: grid;
+        overflow-wrap: anywhere;
+        padding: 10px 12px;
+        text-align: left;
+      }
+
+      .danger {
+        border-color: var(--rusty-engine-danger);
+        color: var(--rusty-engine-danger);
+      }
+
+      .reset-dialog {
+        background: var(--rusty-engine-surface-solid);
+        border: 1px solid var(--rusty-engine-danger);
+        border-radius: var(--rusty-engine-radius);
+        color: var(--rusty-engine-text);
+        display: grid;
+        gap: 14px;
+        margin: auto;
+        max-width: min(92vw, 620px);
+        padding: 22px;
+        position: fixed;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 20;
+      }
+
+      .reset-dialog::backdrop {
+        background: rgba(3, 7, 12, 0.82);
+      }
+
+      .reset-dialog__actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
       .primary {
         background: var(--rusty-engine-accent-strong);
         border-color: var(--rusty-engine-accent);
@@ -478,6 +519,14 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
               >
                 Save
               </button>
+              <button
+                class="danger"
+                type="button"
+                [disabled]="store.busy() || saveStatus() === null"
+                (click)="openResetDialog()"
+              >
+                Reset / New Adventure
+              </button>
               @if (snapshot.encounter !== null && snapshot.encounter.pendingAction !== null) {
                 <span class="save-hint" role="status">
                   Resolve the pending action before saving.
@@ -502,6 +551,40 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
         }
       </header>
 
+      @if (resetDialogOpen()) {
+        <dialog
+          class="reset-dialog"
+          open
+          role="alertdialog"
+          aria-labelledby="reset-title"
+          aria-describedby="reset-description"
+          aria-modal="true"
+        >
+          <p class="eyebrow">Destructive save operation</p>
+          <h2 id="reset-title">Discard this adventure?</h2>
+          <p id="reset-description">
+            This removes the save at <strong>{{ saveStatus()?.saveIdentity }}</strong>
+            @if (game()?.campaign; as campaign) {
+              and discards {{ campaign.title }} at revision {{ game()?.revision }}
+            } @else {
+              and discards the unreadable persisted session
+            }
+            . Unsaved changes and any pending action cannot be recovered.
+          </p>
+          <div class="reset-dialog__actions">
+            <button type="button" [disabled]="store.busy()" (click)="cancelReset()">Cancel</button>
+            <button
+              class="danger"
+              type="button"
+              [disabled]="store.busy()"
+              (click)="confirmReset()"
+            >
+              Discard save and start over
+            </button>
+          </div>
+        </dialog>
+      }
+
       @switch (store.session().kind) {
         @case ('idle') {
           <section class="rusty-engine-panel empty" aria-live="polite">
@@ -516,10 +599,31 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
         @case ('error') {
           <section class="rusty-engine-panel fatal" role="alert">
             <p class="eyebrow">{{ sessionError().kind }} failure</p>
-            <h2>Could not reach the game runtime</h2>
-            <p>{{ sessionError().message }}</p>
-            @if (sessionError().retryable) {
-              <button class="primary" type="button" (click)="reload()">Retry connection</button>
+            @if (saveStatus()?.state === 'recovery-required') {
+              <h2>Saved adventure needs recovery</h2>
+              <p>The runtime rejected the persisted session without changing it.</p>
+              <div class="identity-readout">
+                <strong>Recovery required</strong>
+                <span>{{ saveStatus()?.saveIdentity }}</span>
+                <span>{{ saveStatus()?.persistenceError }}</span>
+              </div>
+              @if (store.commandError(); as resetError) {
+                <p class="command-error">{{ resetError.message }}</p>
+              }
+              <button
+                class="danger"
+                type="button"
+                [disabled]="store.busy()"
+                (click)="openResetDialog()"
+              >
+                Discard unreadable save
+              </button>
+            } @else {
+              <h2>Could not reach the game runtime</h2>
+              <p>{{ sessionError().message }}</p>
+              @if (sessionError().retryable) {
+                <button class="primary" type="button" (click)="reload()">Retry connection</button>
+              }
             }
           </section>
         }
@@ -569,6 +673,12 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                   </article>
                 }
               </div>
+              @if (saveStatus(); as status) {
+                <div class="muted identity-readout">
+                  <span>New adventures use save identity</span>
+                  <strong>{{ status.saveIdentity }}</strong>
+                </div>
+              }
               <p class="muted">Engine {{ game()?.engineRevisionShort }} · exact checked catalog</p>
             </section>
           } @else if (!campaignEntered()) {
@@ -580,8 +690,22 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                 {{ game()?.campaign?.phase === 'camp' ? 'camp' : 'the active encounter' }}
                 at state revision {{ game()?.revision }}.
               </p>
+              @if (saveStatus(); as status) {
+                <div class="identity-readout">
+                  <strong>{{ status.saveIdentity }}</strong>
+                  <span>Adventure {{ status.campaignId }} · revision {{ status.revision }}</span>
+                </div>
+              }
               <button class="primary" type="button" (click)="continueCampaign()">
                 Continue Adventure
+              </button>
+              <button
+                class="danger"
+                type="button"
+                [disabled]="store.busy() || saveStatus() === null"
+                (click)="openResetDialog()"
+              >
+                Reset / New Adventure
               </button>
             </section>
           } @else if (game()?.campaign?.phase === 'camp') {
@@ -742,6 +866,14 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                         </button>
                       </article>
                     }
+                    @if (campaign.completedEncounters.length > 0) {
+                      <section class="identity-readout" aria-label="Completed encounters">
+                        <strong>Campaign progress</strong>
+                        @for (completed of campaign.completedEncounters; track completed.encounterId) {
+                          <span>{{ completed.title }} · {{ completed.outcome }}</span>
+                        }
+                      </section>
+                    }
                   </aside>
                 </section>
               </section>
@@ -803,9 +935,13 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                         {{ outcome.reward }} · canonical entity
                         {{ outcome.rewardItemId }}
                       </p>
-                    } @else {
+                    } @else if (outcome.kind === 'defeat') {
                       <p class="muted">
                         Returning to camp applies bounded recovery without granting a reward.
+                      </p>
+                    } @else {
+                      <p class="muted">
+                        This victory advances the campaign without granting another item.
                       </p>
                     }
                     <button
@@ -981,9 +1117,15 @@ export class MainMenuScreenComponent implements OnInit {
   private readonly selectedTarget = signal<number | null>(null);
   private readonly selectedLoadoutItem = signal<number | null>(null);
   protected readonly campaignEntered = signal(false);
+  protected readonly resetDialogOpen = signal(false);
 
   protected readonly game = computed(() => {
     const state = this.store.session();
+    return state.kind === 'data' ? state.value : null;
+  });
+
+  protected readonly saveStatus = computed(() => {
+    const state = this.store.saveStatus();
     return state.kind === 'data' ? state.value : null;
   });
 
@@ -1182,6 +1324,24 @@ export class MainMenuScreenComponent implements OnInit {
 
   protected save(): void {
     void this.store.save();
+  }
+
+  protected openResetDialog(): void {
+    if (this.saveStatus() !== null) {
+      this.resetDialogOpen.set(true);
+    }
+  }
+
+  protected cancelReset(): void {
+    this.resetDialogOpen.set(false);
+  }
+
+  protected async confirmReset(): Promise<void> {
+    await this.store.resetSession();
+    if (this.game()?.campaign === null) {
+      this.campaignEntered.set(false);
+      this.resetDialogOpen.set(false);
+    }
   }
 
   protected reload(): void {

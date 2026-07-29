@@ -11,8 +11,9 @@ session projection and commands through a strict same-origin transport. Fake
 transport exists only in `libs/testing-fixtures`. The donor's fixture-driven
 HUD/inventory screens were excluded rather than establishing placeholder
 behavior that later gameplay work would need to remove. The retained
-character-status, hotbar, and combat-log widgets now present the first real
-authored encounter.
+character-status, hotbar, combat-log, inventory, and equipment widgets now
+present real authored campaign state. Compass and minimap remain deliberately
+unconnected because Rusty D20 does not yet own navigation facts.
 
 Consequences:
 

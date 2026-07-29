@@ -21,7 +21,7 @@ use crate::{
     StorageSeed, ENGINE_REVISION,
 };
 
-const GAME_SAVE_SCHEMA_VERSION: u32 = 5;
+const GAME_SAVE_SCHEMA_VERSION: u32 = 6;
 const MAX_LOG_ENTRIES: usize = 64;
 const MAX_LOG_DETAILS: usize = 32;
 const MAX_LOG_SOURCE_BYTES: usize = 128;
@@ -75,6 +75,13 @@ enum EncounterOutcome {
     Defeat,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CompletedEncounter {
+    encounter_id: String,
+    outcome: EncounterOutcome,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CampaignState {
     phase: CampaignPhase,
@@ -82,6 +89,7 @@ struct CampaignState {
     resolved_encounter_id: Option<String>,
     turn_owner: Option<EncounterTurnOwner>,
     outcome: Option<EncounterOutcome>,
+    completed_encounters: Vec<CompletedEncounter>,
 }
 
 #[derive(Debug, Clone)]
@@ -302,6 +310,7 @@ impl GameRuntime {
             resolved_encounter_id: None,
             turn_owner: None,
             outcome: None,
+            completed_encounters: Vec::new(),
         });
         self.session = Some(session);
         self.pending = None;
@@ -320,6 +329,16 @@ impl GameRuntime {
     }
 
     pub fn enter_encounter(
+        &mut self,
+        request: EnterEncounterRequestDto,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        let mut staged = self.clone();
+        let snapshot = staged.enter_encounter_inner(request)?;
+        *self = staged;
+        Ok(snapshot)
+    }
+
+    fn enter_encounter_inner(
         &mut self,
         request: EnterEncounterRequestDto,
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
@@ -353,9 +372,47 @@ impl GameRuntime {
                 "an encounter can only be entered from camp".to_owned(),
             ));
         }
-        if campaign.outcome.is_some() {
-            return Err(GameRuntimeError::InvalidCommand(
-                "the adventure encounter has already been resolved".to_owned(),
+        let next = next_available_encounter_definition(&self.rules, &adventure, campaign)?
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidCommand(
+                    "the authored adventure has no incomplete encounter".to_owned(),
+                )
+            })?;
+        if next.id != encounter.id {
+            return Err(GameRuntimeError::InvalidCommand(format!(
+                "encounter {} is not the next authored encounter; expected {}",
+                encounter.id, next.id
+            )));
+        }
+        let repeated_opponent = campaign.completed_encounters.iter().any(|completed| {
+            self.rules
+                .encounter(&id(&completed.encounter_id).expect("validated campaign identity"))
+                .is_some_and(|completed| completed.opponent == encounter.opponent)
+        });
+        let mut introduction_details = encounter.introduction_details.clone();
+        if repeated_opponent {
+            let opponent = self
+                .rules
+                .character_template(&encounter.opponent)
+                .expect("compiled encounter opponent exists")
+                .clone();
+            let serial = self.next_operation;
+            let receipt = self.session_mut()?.restore_vitality(
+                EntityId::new(opponent.entity_id),
+                opponent.vitality,
+                operation(&format!("encounter-recovery-{serial}"))?,
+            )?;
+            self.next_operation = self
+                .next_operation
+                .checked_add(1)
+                .ok_or(GameRuntimeError::CounterOverflow)?;
+            introduction_details.push(format!(
+                "{} begins the next authored encounter with {}/{} vitality after {} bounded \
+                 recovery; prior resources, effects, and loadout remain authoritative.",
+                opponent.name,
+                receipt.after.get(),
+                opponent.vitality,
+                receipt.applied_amount.get()
             ));
         }
         let campaign = self
@@ -373,7 +430,7 @@ impl GameRuntime {
             GameLogKindDto::System,
             &encounter.introduction_source,
             &encounter.introduction_text,
-            encounter.introduction_details.clone(),
+            introduction_details,
         )?;
         self.snapshot()
     }
@@ -1033,10 +1090,24 @@ impl GameRuntime {
         }
         {
             let campaign = self.campaign_mut()?;
+            if campaign
+                .completed_encounters
+                .iter()
+                .any(|completed| completed.encounter_id == encounter.id.as_str())
+            {
+                return Err(GameRuntimeError::InvalidState(format!(
+                    "encounter {} was already completed",
+                    encounter.id
+                )));
+            }
             campaign.phase = CampaignPhase::Outcome;
             campaign.resolved_encounter_id = campaign.active_encounter_id.clone();
             campaign.turn_owner = None;
             campaign.outcome = Some(outcome);
+            campaign.completed_encounters.push(CompletedEncounter {
+                encounter_id: encounter.id.to_string(),
+                outcome,
+            });
         }
         self.push_log(
             GameLogKindDto::System,

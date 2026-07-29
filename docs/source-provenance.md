@@ -85,7 +85,8 @@ representation.
 
 This composition continues to use Rusty Engine revision
 `fb608e323a8b44a55195f5720101224ff37fd5db` and the UI donor revision
-`68ddfa5430ec3bc2cf7ca96963982db9511e79ba`; D20G1D does not change either pin.
+`68ddfa5430ec3bc2cf7ca96963982db9511e79ba`; D20G1D and D20G1E do not change
+either pin.
 
 ## D20G1 campaign-shell disposition
 
@@ -115,3 +116,14 @@ Rust semantic compiler, campaign/session orchestration, Engine mechanics, host,
 and UI surfaces as Warden's Gate. The generic downstream additions are bounded
 adventure selection and multi-defense projection; no Engine change, sibling
 checkout, Node gameplay path, or alternate UI authority was introduced.
+
+D20G1E keeps the same boundaries while certifying a coherent playable slice.
+Warden's Gate now authors an ordered second encounter through the existing
+TypeScript content pipeline; Rusty D20 owns next-encounter admission,
+completed-prefix persistence, bounded returning-opponent recovery, and
+exactly-once reward consequences. Save identity, malformed-save recovery, and
+guarded reset are host/product policy. No Engine mechanism, generic campaign
+graph, fixture-driven production path, or second presentation authority was
+added. Character status, hotbar, combat log, inventory, and equipment are real
+consumers; compass and minimap remain explicitly unconnected until navigation
+facts exist.

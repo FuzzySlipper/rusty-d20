@@ -8,25 +8,25 @@
 | `rust/crates/rusty-d20/src/adventure.rs` | Strict embedded authored catalog, selectable projection, default identity, and exact dependency-closure compilation | `cargo test -p rusty-d20 --lib adventure --locked` |
 | `rust/crates/rusty-d20/src/component.rs` | Durable d20 ability, resource, and caller-owned effect-schedule components | `cargo test -p rusty-d20 --test d20r0 --locked` |
 | `rust/crates/rusty-d20/src/session.rs` | Atomic preview/reaction/apply, Engine inventory/equipment service adapter, deterministic rolls, explicit turn expiry, complete saves | `cargo test -p rusty-d20 --test d20r0 --locked` |
-| `rust/crates/rusty-d20/src/game.rs` | Product command orchestration: atomic adventure selection, campaign phases, deterministic opposition/turn policy, outcomes, opaque preview custody, and optimistic revisions | `cargo test -p rusty-d20 --lib --locked` |
+| `rust/crates/rusty-d20/src/game.rs` | Product command orchestration: atomic adventure selection, ordered encounter progression, campaign phases, deterministic opposition/turn policy, outcomes, opaque preview custody, and optimistic revisions | `cargo test -p rusty-d20 --lib --locked` |
 | `rust/crates/rusty-d20/src/game/dto.rs` | Generated-protocol DTO ownership | `pnpm run protocol:check` |
 | `rust/crates/rusty-d20/src/game/content.rs` | Admitted content-to-session seeds, loadout/reward adaptation, and product-state validation | `cargo test -p rusty-d20 --lib --locked` |
-| `rust/crates/rusty-d20/src/game/persistence.rs` | Strict schema-5 save/reopen, exact composition binding, and schemas 1–4 migration | `cargo test -p rusty-d20 --lib --locked` |
+| `rust/crates/rusty-d20/src/game/persistence.rs` | Strict schema-6 save/reopen, exact composition/history binding, and schemas 1–5 migration | `cargo test -p rusty-d20 --lib --locked` |
 | `rust/crates/rusty-d20/src/game/projection.rs` | Immutable campaign, encounter, character, loadout, and receipt projections | `cargo test -p rusty-d20 --lib --locked` |
 | `rust/crates/rusty-d20/src/game/tests.rs` | Product orchestration, persistence, atomicity, and catalog regressions | `cargo test -p rusty-d20 --lib --locked` |
 | `rust/crates/rusty-d20/src/identity.rs` | Bounded stable downstream definition identities | Rust tests and strict candidate decode |
 | `rust/crates/rusty-d20/tests/d20r0.rs` | Headless semantic, failure-atomicity, persistence, provenance, and composition evidence | `cargo test -p rusty-d20 --test d20r0 --locked` |
 | `rust/crates/rusty-d20/tests/d20a0.rs` | Node-free strict decode, starter composition, generated contract, fingerprint, and diagnostic-correlation proof | `cargo test -p rusty-d20 --test d20a0 --locked` |
-| `rust/crates/rusty-d20/src/host.rs` | Same-origin HTTP/static host | Rust host tests and browser smoke |
+| `rust/crates/rusty-d20/src/host.rs` | Same-origin HTTP/static host, save identity/status, malformed-save recovery, atomic persistence, and guarded reset | Rust host tests and browser smoke |
 | `rust/crates/rusty-d20/src/bin/` | Product host and protocol generator entrypoints | `pnpm run verify:rust` |
 | `libs/protocol/` | Generated DTOs and strict unknown-JSON decode | `pnpm run protocol:check`; Vitest |
 | `libs/platform/` | Browser/host ports and browser adapters | Typecheck and Vitest consumers |
 | `libs/transport/` | Typed HTTP operations and failure classification | `http-transport.spec.ts` |
 | `libs/domain/` | Pure Rust DTO-to-product-view projection | Domain Vitest |
 | `libs/store/` | Angular async state, command orchestration, and stale-response guards | Store Vitest; boundary audit |
-| `libs/feature-main-menu/` | Permanent landing, Engine-backed camp loadout/stash, encounter entry, player/opposition turns, outcome, status, and receipt feature | Playwright smoke/live evidence |
+| `libs/feature-main-menu/` | Permanent landing, save recovery/reset, Engine-backed camp loadout/stash, campaign progress, encounter entry, player/opposition turns, outcome, status, and receipt feature | Playwright smoke/live evidence |
 | `libs/ui-inventory`, `libs/ui-equipment` | Product-neutral accessible inventory/equipment widgets connected by the camp feature | Typecheck, lint, Playwright |
-| `libs/components`, `libs/renderer`, remaining `libs/ui-*` | Retained product-neutral presentation building blocks | Typecheck, lint, later live consumers |
+| `libs/components`, `libs/renderer`, `libs/ui-compass`, `libs/ui-minimap` | Retained product-neutral presentation building blocks; compass/minimap intentionally have no navigation-fact consumer yet | Typecheck, lint, later live consumers |
 | `libs/shell/`, `apps/app/` | Routes and application composition | Build and Playwright |
 | `libs/testing-fixtures/` | Explicit fake transport/readout helpers | Must never enter production graph |
 | `rules/packages/d20-authoring/` | Isolated build-time d20 builders over Rust-generated types and exact Engine authoring packages | `pnpm --dir rules run verify` |

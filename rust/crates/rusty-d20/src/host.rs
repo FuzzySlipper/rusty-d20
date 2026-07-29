@@ -16,26 +16,45 @@ use crate::{
     ApiErrorDto, ApiErrorKindDto, ApplyActionRequestDto, ApplyReactionRequestDto,
     EnterEncounterRequestDto, EquipItemRequestDto, ExpectedRevisionDto, GameRuntime,
     GameRuntimeError, GameSnapshotDto, HealthDto, NewAdventureRequestDto, PreviewActionRequestDto,
-    RuntimeReadoutDto, TransferItemRequestDto, UnequipItemRequestDto,
+    ResetSessionRequestDto, RuntimeReadoutDto, SaveStateDto, SaveStatusDto, TransferItemRequestDto,
+    UnequipItemRequestDto,
 };
 
 #[derive(Clone)]
 struct HostState {
     runtime: Arc<Mutex<GameRuntime>>,
     save_path: Arc<PathBuf>,
+    persistence_error: Arc<Mutex<Option<String>>>,
 }
 
 type ApiResult = Result<Json<GameSnapshotDto>, (StatusCode, Json<ApiErrorDto>)>;
+type SaveStatusResult = Result<Json<SaveStatusDto>, (StatusCode, Json<ApiErrorDto>)>;
+
+pub struct HostRuntime {
+    runtime: GameRuntime,
+    persistence_error: Option<String>,
+}
 
 pub fn router(
     runtime: Arc<Mutex<GameRuntime>>,
     save_path: PathBuf,
     web_root: Option<&Path>,
 ) -> Router {
+    router_with_recovery(runtime, save_path, None, web_root)
+}
+
+fn router_with_recovery(
+    runtime: Arc<Mutex<GameRuntime>>,
+    save_path: PathBuf,
+    persistence_error: Option<String>,
+    web_root: Option<&Path>,
+) -> Router {
     let api = Router::new()
         .route("/healthz", get(health))
         .route("/api/v1/readout", get(readout))
         .route("/api/v1/session", get(session))
+        .route("/api/v1/session/save-status", get(save_status))
+        .route("/api/v1/session/reset", post(reset_session))
         .route("/api/v1/session/new", post(new_adventure))
         .route("/api/v1/session/encounter", post(enter_encounter))
         .route("/api/v1/session/loadout/equip", post(equip_item))
@@ -50,6 +69,7 @@ pub fn router(
         .with_state(HostState {
             runtime,
             save_path: Arc::new(save_path),
+            persistence_error: Arc::new(Mutex::new(persistence_error)),
         });
 
     let app = if let Some(root) = web_root {
@@ -68,6 +88,24 @@ pub async fn serve(
     save_path: PathBuf,
     runtime: GameRuntime,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    serve_host(
+        address,
+        web_root,
+        save_path,
+        HostRuntime {
+            runtime,
+            persistence_error: None,
+        },
+    )
+    .await
+}
+
+pub async fn serve_host(
+    address: &str,
+    web_root: PathBuf,
+    save_path: PathBuf,
+    host_runtime: HostRuntime,
+) -> Result<(), Box<dyn std::error::Error>> {
     if !web_root.join("index.html").is_file() {
         return Err(format!(
             "web root does not contain index.html: {}",
@@ -81,9 +119,10 @@ pub async fn serve(
     println!("BASE_URL=http://{local_address}");
     axum::serve(
         listener,
-        router(
-            Arc::new(Mutex::new(runtime)),
+        router_with_recovery(
+            Arc::new(Mutex::new(host_runtime.runtime)),
             save_path,
+            host_runtime.persistence_error,
             Some(web_root.as_path()),
         ),
     )
@@ -96,6 +135,29 @@ pub fn load_runtime(save_path: &Path) -> Result<GameRuntime, Box<dyn std::error:
     match fs::read_to_string(save_path) {
         Ok(encoded) => Ok(GameRuntime::decode_save(&encoded)?),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(GameRuntime::empty()?),
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub fn load_host_runtime(save_path: &Path) -> Result<HostRuntime, Box<dyn std::error::Error>> {
+    match fs::read_to_string(save_path) {
+        Ok(encoded) => match GameRuntime::decode_save(&encoded) {
+            Ok(runtime) => Ok(HostRuntime {
+                runtime,
+                persistence_error: None,
+            }),
+            Err(error) => Ok(HostRuntime {
+                runtime: GameRuntime::empty()?,
+                persistence_error: Some(format!(
+                    "could not restore {}: {error}",
+                    save_path.display()
+                )),
+            }),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(HostRuntime {
+            runtime: GameRuntime::empty()?,
+            persistence_error: None,
+        }),
         Err(error) => Err(error.into()),
     }
 }
@@ -117,6 +179,52 @@ async fn readout(State(state): State<HostState>) -> Json<RuntimeReadoutDto> {
 
 async fn session(State(state): State<HostState>) -> ApiResult {
     snapshot(&state)
+}
+
+async fn save_status(State(state): State<HostState>) -> SaveStatusResult {
+    let persistence_error = lock_persistence_error(&state).map_err(api_error)?;
+    let runtime = lock_runtime(&state).map_err(api_error)?;
+    save_status_for(&state, &runtime, persistence_error.as_deref())
+        .map(Json)
+        .map_err(api_error)
+}
+
+async fn reset_session(
+    State(state): State<HostState>,
+    Json(request): Json<ResetSessionRequestDto>,
+) -> ApiResult {
+    let mut persistence_error = lock_persistence_error(&state).map_err(api_error)?;
+    let mut runtime = lock_runtime(&state).map_err(api_error)?;
+    let status =
+        save_status_for(&state, &runtime, persistence_error.as_deref()).map_err(api_error)?;
+    if request.expected_save_identity != status.save_identity {
+        return Err(api_error(GameRuntimeError::StaleCommand(format!(
+            "save identity changed: expected {}, current {}",
+            request.expected_save_identity, status.save_identity
+        ))));
+    }
+    if request.expected_revision != status.revision
+        || request.expected_adventure_id != status.campaign_id
+    {
+        return Err(api_error(GameRuntimeError::StaleCommand(
+            "saved campaign identity or revision changed; reload before resetting".to_owned(),
+        )));
+    }
+
+    let empty = GameRuntime::empty().map_err(api_error)?;
+    match fs::remove_file(state.save_path.as_path()) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(api_error(GameRuntimeError::InvalidSave(format!(
+                "could not remove {}: {error}",
+                state.save_path.display()
+            ))));
+        }
+    }
+    *runtime = empty;
+    *persistence_error = None;
+    runtime.snapshot().map(Json).map_err(api_error)
 }
 
 async fn new_adventure(
@@ -197,6 +305,7 @@ async fn save(
     State(state): State<HostState>,
     Json(request): Json<ExpectedRevisionDto>,
 ) -> ApiResult {
+    ensure_available(&state).map_err(api_error)?;
     let mut runtime = lock_runtime(&state).map_err(api_error)?;
     let encoded = runtime
         .encode_save_at(request.expected_revision)
@@ -212,6 +321,7 @@ async fn save(
 }
 
 fn snapshot(state: &HostState) -> ApiResult {
+    ensure_available(state).map_err(api_error)?;
     lock_runtime(state)
         .map_err(api_error)?
         .snapshot()
@@ -223,6 +333,7 @@ fn mutate(
     state: &HostState,
     operation: impl FnOnce(&mut GameRuntime) -> Result<GameSnapshotDto, GameRuntimeError>,
 ) -> ApiResult {
+    ensure_available(state).map_err(api_error)?;
     let mut runtime = lock_runtime(state).map_err(api_error)?;
     operation(&mut runtime).map(Json).map_err(api_error)
 }
@@ -232,6 +343,53 @@ fn lock_runtime(state: &HostState) -> Result<MutexGuard<'_, GameRuntime>, GameRu
         .runtime
         .lock()
         .map_err(|_| GameRuntimeError::InvalidState("runtime lock was poisoned".to_owned()))
+}
+
+fn lock_persistence_error(
+    state: &HostState,
+) -> Result<MutexGuard<'_, Option<String>>, GameRuntimeError> {
+    state
+        .persistence_error
+        .lock()
+        .map_err(|_| GameRuntimeError::InvalidState("recovery lock was poisoned".to_owned()))
+}
+
+fn ensure_available(state: &HostState) -> Result<(), GameRuntimeError> {
+    if let Some(error) = lock_persistence_error(state)?.as_ref() {
+        return Err(GameRuntimeError::InvalidSave(error.clone()));
+    }
+    Ok(())
+}
+
+fn save_status_for(
+    state: &HostState,
+    runtime: &GameRuntime,
+    persistence_error: Option<&str>,
+) -> Result<SaveStatusDto, GameRuntimeError> {
+    let save_identity = state.save_path.display().to_string();
+    if let Some(error) = persistence_error {
+        return Ok(SaveStatusDto {
+            save_identity,
+            state: SaveStateDto::RecoveryRequired,
+            campaign_id: None,
+            campaign_title: None,
+            revision: None,
+            persistence_error: Some(error.to_owned()),
+        });
+    }
+    let snapshot = runtime.snapshot()?;
+    let (state, campaign_id, campaign_title) = match snapshot.campaign {
+        Some(campaign) => (SaveStateDto::Ready, Some(campaign.id), Some(campaign.title)),
+        None => (SaveStateDto::Empty, None, None),
+    };
+    Ok(SaveStatusDto {
+        save_identity,
+        state,
+        campaign_id,
+        campaign_title,
+        revision: Some(snapshot.revision),
+        persistence_error: None,
+    })
 }
 
 fn api_error(error: GameRuntimeError) -> (StatusCode, Json<ApiErrorDto>) {
@@ -299,7 +457,7 @@ mod tests {
 
     #[tokio::test]
     async fn api_exposes_health_and_rust_owned_readout() {
-        let (app, _) = test_state();
+        let (app, save_path) = test_state();
 
         let health_response = app
             .clone()
@@ -309,6 +467,7 @@ mod tests {
         assert_eq!(health_response.status(), StatusCode::OK);
 
         let readout_response = app
+            .clone()
             .oneshot(Request::get("/api/v1/readout").body(Body::empty()).unwrap())
             .await
             .unwrap();
@@ -323,6 +482,20 @@ mod tests {
         assert_eq!(readout.product, "Rusty D20");
         assert_eq!(readout.engine_revision, crate::ENGINE_REVISION);
         assert_eq!(readout.entity_count, 0);
+
+        let (status, body) = get_json(&app, "/api/v1/session/save-status").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            serde_json::from_slice::<SaveStatusDto>(&body).unwrap(),
+            SaveStatusDto {
+                save_identity: save_path.display().to_string(),
+                state: SaveStateDto::Empty,
+                campaign_id: None,
+                campaign_title: None,
+                revision: Some(0),
+                persistence_error: None,
+            }
+        );
     }
 
     #[tokio::test]
@@ -399,6 +572,116 @@ mod tests {
     async fn pending_preview_and_reaction_saves_reject_before_runtime_or_file_mutation() {
         assert_pending_save_rejection(false).await;
         assert_pending_save_rejection(true).await;
+    }
+
+    #[tokio::test]
+    async fn reset_is_identity_revision_guarded_and_removes_the_persisted_campaign() {
+        let (app, save_path) = test_state();
+        let (_, camp_body) = post_json(
+            &app,
+            "/api/v1/session/new",
+            r#"{"expectedRevision":0,"adventureId":"wardens-gate"}"#,
+        )
+        .await;
+        let camp: GameSnapshotDto = serde_json::from_slice(&camp_body).unwrap();
+        let (saved_status, _) = post_json(
+            &app,
+            "/api/v1/session/save",
+            &format!(r#"{{"expectedRevision":{}}}"#, camp.revision),
+        )
+        .await;
+        assert_eq!(saved_status, StatusCode::OK);
+        let saved_bytes = fs::read(&save_path).unwrap();
+
+        let (wrong_identity, wrong_identity_body) = post_json(
+            &app,
+            "/api/v1/session/reset",
+            &format!(
+                r#"{{"expectedSaveIdentity":"wrong-save","expectedRevision":{},"expectedAdventureId":"wardens-gate"}}"#,
+                camp.revision
+            ),
+        )
+        .await;
+        assert_eq!(wrong_identity, StatusCode::CONFLICT);
+        assert_eq!(
+            serde_json::from_slice::<ApiErrorDto>(&wrong_identity_body)
+                .unwrap()
+                .kind,
+            ApiErrorKindDto::Stale
+        );
+        assert_eq!(fs::read(&save_path).unwrap(), saved_bytes);
+
+        let (stale, _) = post_json(
+            &app,
+            "/api/v1/session/reset",
+            &format!(
+                r#"{{"expectedSaveIdentity":{},"expectedRevision":0,"expectedAdventureId":"wardens-gate"}}"#,
+                serde_json::to_string(&save_path.display().to_string()).unwrap()
+            ),
+        )
+        .await;
+        assert_eq!(stale, StatusCode::CONFLICT);
+        assert_eq!(fs::read(&save_path).unwrap(), saved_bytes);
+
+        let (reset, body) = post_json(
+            &app,
+            "/api/v1/session/reset",
+            &format!(
+                r#"{{"expectedSaveIdentity":{},"expectedRevision":{},"expectedAdventureId":"wardens-gate"}}"#,
+                serde_json::to_string(&save_path.display().to_string()).unwrap(),
+                camp.revision
+            ),
+        )
+        .await;
+        assert_eq!(reset, StatusCode::OK);
+        let reset_snapshot: GameSnapshotDto = serde_json::from_slice(&body).unwrap();
+        assert_eq!(reset_snapshot.revision, 0);
+        assert!(reset_snapshot.campaign.is_none());
+        assert!(!save_path.exists());
+    }
+
+    #[tokio::test]
+    async fn malformed_save_starts_in_typed_recovery_and_can_be_safely_discarded() {
+        let (_, save_path) = test_state();
+        fs::write(&save_path, b"{not-valid-json").unwrap();
+        let loaded = load_host_runtime(&save_path).unwrap();
+        assert!(loaded.persistence_error.is_some());
+        let app = router_with_recovery(
+            Arc::new(Mutex::new(loaded.runtime)),
+            save_path.clone(),
+            loaded.persistence_error,
+            None,
+        );
+
+        let (session_status, session_body) = get_json(&app, "/api/v1/session").await;
+        assert_eq!(session_status, StatusCode::INTERNAL_SERVER_ERROR);
+        let session_error: ApiErrorDto = serde_json::from_slice(&session_body).unwrap();
+        assert_eq!(session_error.kind, ApiErrorKindDto::Persistence);
+
+        let (status_code, status_body) = get_json(&app, "/api/v1/session/save-status").await;
+        assert_eq!(status_code, StatusCode::OK);
+        let status: SaveStatusDto = serde_json::from_slice(&status_body).unwrap();
+        assert_eq!(status.state, SaveStateDto::RecoveryRequired);
+        assert_eq!(status.save_identity, save_path.display().to_string());
+        assert!(status
+            .persistence_error
+            .unwrap()
+            .contains("could not restore"));
+
+        let (reset_status, reset_body) = post_json(
+            &app,
+            "/api/v1/session/reset",
+            &format!(
+                r#"{{"expectedSaveIdentity":{},"expectedRevision":null,"expectedAdventureId":null}}"#,
+                serde_json::to_string(&save_path.display().to_string()).unwrap()
+            ),
+        )
+        .await;
+        assert_eq!(reset_status, StatusCode::OK);
+        let reset: GameSnapshotDto = serde_json::from_slice(&reset_body).unwrap();
+        assert!(reset.campaign.is_none());
+        assert!(!save_path.exists());
+        assert_eq!(get_json(&app, "/api/v1/session").await.0, StatusCode::OK);
     }
 
     async fn assert_pending_save_rejection(apply_reaction: bool) {

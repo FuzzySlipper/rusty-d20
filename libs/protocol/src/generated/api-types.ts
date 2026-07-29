@@ -3,6 +3,7 @@
 export const D20_PROTOCOL_LIMITS = Object.freeze({
 maxAvailableAdventures: 16,
 maxAdventureDetails: 64,
+maxCampaignEncounters: 64,
 } as const);
 
 export type RuntimeStatusDto = "ready";
@@ -35,6 +36,8 @@ export type EncounterOutcomeKindDto = "victory" | "defeat";
 
 export type CampaignOutcomeDto = { kind: EncounterOutcomeKindDto, encounterId: string, title: string, summary: string, rewardItemId: number | null, reward: string | null, };
 
+export type CompletedEncounterDto = { encounterId: string, title: string, outcome: EncounterOutcomeKindDto, };
+
 export type EncounterChoiceDto = { id: string, title: string, summary: string, };
 
 export type AdventureChoiceDto = { id: string, title: string, summary: string, details: Array<string>, };
@@ -51,9 +54,15 @@ export type DefenseReadoutDto = { id: string, label: string, value: number, sour
 
 export type LoadoutDto = { ownerId: number, stashOwnerId: number, inventorySlots: Array<LoadoutItemDto | null>, equipmentSlots: Array<EquipmentSlotDto>, stashItems: Array<LoadoutItemDto>, capacity: LoadoutCapacityDto, defenses: Array<DefenseReadoutDto>, };
 
-export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, hero: CharacterDto, loadout: LoadoutDto, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, latestOutcome: CampaignOutcomeDto | null, };
+export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, hero: CharacterDto, loadout: LoadoutDto, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, latestOutcome: CampaignOutcomeDto | null, completedEncounters: Array<CompletedEncounterDto>, };
 
 export type GameSnapshotDto = { product: string, version: string, engineRevision: string, rulesetFingerprint: string, revision: number, saved: boolean, availableAdventures: Array<AdventureChoiceDto>, campaign: CampaignDto | null, encounter: EncounterDto | null, };
+
+export type SaveStateDto = "empty" | "ready" | "recovery-required";
+
+export type SaveStatusDto = { saveIdentity: string, state: SaveStateDto, campaignId: string | null, campaignTitle: string | null, revision: number | null, persistenceError: string | null, };
+
+export type ResetSessionRequestDto = { expectedSaveIdentity: string, expectedRevision: number | null, expectedAdventureId: string | null, };
 
 export type ExpectedRevisionDto = { expectedRevision: number, };
 

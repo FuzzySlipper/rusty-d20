@@ -1,5 +1,7 @@
 use super::*;
 
+pub(super) const LEGACY_D20G1_WARDEN_FINGERPRINT: &str = "rusty-d20/starter-core@1=af2dc794bdc02dcf8a99753fef15e706d664a7d3f2c2562468938163d6af2ff6|rusty-d20/steel-guard@1=d25c138ad46342423764603fe6302c3411e748b4bb85973d24d01e88e6f8c567|rusty-d20/wardens-gate@1=588af08d7e4e72e58222fde4a92f3b52946fde2b453b851ff33db133aa06aa76";
+
 impl GameRuntime {
     pub fn decode_save(input: &str) -> Result<Self, GameRuntimeError> {
         if input.len() > MAX_GAME_SAVE_BYTES {
@@ -44,6 +46,46 @@ impl GameRuntime {
                 false,
             );
         }
+        if envelope.schema_version == 5 {
+            let save: SchemaFiveGameSave = serde_json::from_value(value)?;
+            let adventure_id = D20Id::parse(&save.campaign.adventure_id).map_err(|error| {
+                GameRuntimeError::InvalidSave(format!(
+                    "saved adventure identity is invalid: {error}"
+                ))
+            })?;
+            let rules = catalog
+                .rules_for(&adventure_id)
+                .map_err(GameRuntimeError::InvalidSave)?;
+            let legacy_fingerprint = if save.composition_fingerprint == rules.fingerprint() {
+                None
+            } else if adventure_id.as_str() == "wardens-gate"
+                && save.composition_fingerprint == LEGACY_D20G1_WARDEN_FINGERPRINT
+            {
+                Some(LEGACY_D20G1_WARDEN_FINGERPRINT)
+            } else {
+                return Err(GameRuntimeError::CompositionFingerprintMismatch {
+                    expected: rules.fingerprint().to_owned(),
+                    actual: save.composition_fingerprint,
+                });
+            };
+            let campaign =
+                validate_schema_five_campaign_save(&rules, &adventure_id, save.campaign)?;
+            return Self::restore(
+                catalog,
+                rules,
+                adventure_id,
+                RestoreData {
+                    revision: save.revision,
+                    next_operation: save.next_operation,
+                    next_log_id: save.next_log_id,
+                    log: save.log,
+                    session: save.session,
+                },
+                campaign,
+                legacy_fingerprint,
+                false,
+            );
+        }
         let adventure_id = catalog.default_adventure().clone();
         let rules = catalog
             .rules_for(&adventure_id)
@@ -82,6 +124,7 @@ impl GameRuntime {
                         resolved_encounter_id: None,
                         turn_owner: Some(EncounterTurnOwner::Player),
                         outcome: None,
+                        completed_encounters: Vec::new(),
                     },
                     Some(&legacy_fingerprint),
                     true,
@@ -245,6 +288,7 @@ impl GameRuntime {
                 resolved_encounter_id: campaign.resolved_encounter_id.clone(),
                 turn_owner: campaign.turn_owner,
                 outcome: campaign.outcome,
+                completed_encounters: campaign.completed_encounters.clone(),
             },
             session,
         })?)
@@ -283,6 +327,18 @@ struct LegacyGameSave {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct CampaignSave {
+    adventure_id: String,
+    phase: CampaignPhase,
+    active_encounter_id: Option<String>,
+    resolved_encounter_id: Option<String>,
+    turn_owner: Option<EncounterTurnOwner>,
+    outcome: Option<EncounterOutcome>,
+    completed_encounters: Vec<CompletedEncounter>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct SchemaFiveCampaignSave {
     adventure_id: String,
     phase: CampaignPhase,
     active_encounter_id: Option<String>,
@@ -344,6 +400,20 @@ struct GameSave {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct SchemaFiveGameSave {
+    #[serde(rename = "schemaVersion")]
+    _schema_version: u32,
+    composition_fingerprint: String,
+    revision: u64,
+    next_operation: u64,
+    next_log_id: u64,
+    log: Vec<GameLogEntryDto>,
+    campaign: SchemaFiveCampaignSave,
+    session: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct SchemaFourGameSave {
     #[serde(rename = "schemaVersion")]
     _schema_version: u32,
@@ -377,13 +447,28 @@ fn validate_campaign_save(
                 .any(|candidate| candidate.as_str() == encounter)
         })
     };
+    if save.completed_encounters.len() > adventure.encounters.len()
+        || save
+            .completed_encounters
+            .iter()
+            .zip(adventure.encounters.iter())
+            .any(|(completed, expected)| completed.encounter_id != expected.as_str())
+    {
+        return Err(GameRuntimeError::InvalidSave(
+            "completed encounters are not the authored campaign prefix".to_owned(),
+        ));
+    }
+    let latest_completed = save.completed_encounters.last();
     let valid_phase = match save.phase {
         CampaignPhase::Camp => {
             save.active_encounter_id.is_none()
                 && save.turn_owner.is_none()
-                && match save.outcome {
-                    None => save.resolved_encounter_id.is_none(),
-                    Some(_) => authored_encounter(&save.resolved_encounter_id),
+                && match (save.outcome, save.resolved_encounter_id.as_deref()) {
+                    (None, None) => save.completed_encounters.is_empty(),
+                    (Some(outcome), Some(resolved)) => latest_completed.is_some_and(|completed| {
+                        completed.encounter_id == resolved && completed.outcome == outcome
+                    }),
+                    _ => false,
                 }
         }
         CampaignPhase::Encounter => {
@@ -391,12 +476,23 @@ fn validate_campaign_save(
                 && save.resolved_encounter_id.is_none()
                 && save.turn_owner.is_some()
                 && save.outcome.is_none()
+                && adventure
+                    .encounters
+                    .get(save.completed_encounters.len())
+                    .is_some_and(|expected| {
+                        save.active_encounter_id.as_deref() == Some(expected.as_str())
+                    })
         }
         CampaignPhase::Outcome => {
             authored_encounter(&save.active_encounter_id)
                 && save.active_encounter_id == save.resolved_encounter_id
                 && save.turn_owner.is_none()
-                && save.outcome.is_some()
+                && save.outcome.is_some_and(|outcome| {
+                    latest_completed.is_some_and(|completed| {
+                        Some(completed.encounter_id.as_str()) == save.active_encounter_id.as_deref()
+                            && completed.outcome == outcome
+                    })
+                })
         }
     };
     if !valid_phase {
@@ -410,7 +506,40 @@ fn validate_campaign_save(
         resolved_encounter_id: save.resolved_encounter_id,
         turn_owner: save.turn_owner,
         outcome: save.outcome,
+        completed_encounters: save.completed_encounters,
     })
+}
+
+fn validate_schema_five_campaign_save(
+    rules: &D20Ruleset,
+    adventure_id: &D20Id,
+    save: SchemaFiveCampaignSave,
+) -> Result<CampaignState, GameRuntimeError> {
+    let completed_encounters = match (save.resolved_encounter_id.as_ref(), save.outcome) {
+        (Some(encounter_id), Some(outcome)) => vec![CompletedEncounter {
+            encounter_id: encounter_id.clone(),
+            outcome,
+        }],
+        (None, None) => Vec::new(),
+        _ => {
+            return Err(GameRuntimeError::InvalidSave(
+                "schema-5 resolved encounter and outcome are inconsistent".to_owned(),
+            ));
+        }
+    };
+    validate_campaign_save(
+        rules,
+        adventure_id,
+        CampaignSave {
+            adventure_id: save.adventure_id,
+            phase: save.phase,
+            active_encounter_id: save.active_encounter_id,
+            resolved_encounter_id: save.resolved_encounter_id,
+            turn_owner: save.turn_owner,
+            outcome: save.outcome,
+            completed_encounters,
+        },
+    )
 }
 
 fn validate_schema_four_campaign_save(
@@ -428,6 +557,13 @@ fn validate_schema_four_campaign_save(
     } else {
         None
     };
+    let completed_encounters = match (resolved_encounter_id.as_ref(), save.outcome) {
+        (Some(encounter_id), Some(outcome)) => vec![CompletedEncounter {
+            encounter_id: encounter_id.clone(),
+            outcome,
+        }],
+        _ => Vec::new(),
+    };
     validate_campaign_save(
         rules,
         adventure_id,
@@ -438,6 +574,7 @@ fn validate_schema_four_campaign_save(
             resolved_encounter_id,
             turn_owner: save.turn_owner,
             outcome: save.outcome,
+            completed_encounters,
         },
     )
 }
@@ -461,6 +598,7 @@ fn validate_legacy_campaign_save(
             resolved_encounter_id: None,
             turn_owner: (phase == CampaignPhase::Encounter).then_some(EncounterTurnOwner::Player),
             outcome: None,
+            completed_encounters: Vec::new(),
         },
     )
 }

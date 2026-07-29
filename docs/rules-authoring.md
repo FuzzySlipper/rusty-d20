@@ -98,6 +98,12 @@ equipment, explanations, availability, or outcome content, does not require
 edits to `game.rs`, `session.rs`, the semantic compiler, or Rusty Engine. New
 semantic behavior still belongs in the Rust candidate and compiler.
 
+The encounter identities in an adventure are an authored ordered sequence.
+Warden's Gate demonstrates two entries and a repeated opponent without adding
+runtime TypeScript: Rust admits only the next incomplete encounter, persists
+the completed prefix, restores bounded returning vitality, and preserves prior
+resources, effects, loadout, and reward state.
+
 The focused gate checks generated-contract freshness, package isolation,
 deterministic goldens, TypeScript tests, strict Rust canonical decode, package
 and catalog fingerprints, Node-free adventure compilation, and correlated

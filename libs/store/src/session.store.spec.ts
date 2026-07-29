@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { GameSnapshotDto, Result, RuntimeReadoutDto } from '@rusty-d20/protocol';
+import type {
+  GameSnapshotDto,
+  Result,
+  RuntimeReadoutDto,
+  SaveStatusDto,
+} from '@rusty-d20/protocol';
 import type { RustyD20Transport } from '@rusty-d20/transport';
 import { SessionStore } from './index';
 
@@ -36,11 +41,22 @@ const snapshot: GameSnapshotDto = {
   encounter: null,
 };
 
+const saveStatus: SaveStatusDto = {
+  saveIdentity: '/tmp/rusty-d20.json',
+  state: 'empty',
+  campaignId: null,
+  campaignTitle: null,
+  revision: 1,
+  persistenceError: null,
+};
+
 function transport(overrides: Partial<RustyD20Transport> = {}): RustyD20Transport {
   const sessionResult: Result<GameSnapshotDto> = { ok: true, value: snapshot };
   return {
     loadReadout: async () => ({ ok: true, value: readout }),
     loadSession: async () => sessionResult,
+    loadSaveStatus: async () => ({ ok: true, value: saveStatus }),
+    resetSession: async () => sessionResult,
     newAdventure: async () => sessionResult,
     enterEncounter: async () => sessionResult,
     equipItem: async () => sessionResult,
@@ -88,6 +104,7 @@ describe('SessionStore', () => {
       },
       activeEncounterId: null,
       latestOutcome: null,
+      completedEncounters: [],
       availableEncounters: [
         {
           id: 'iron-warden',
@@ -225,19 +242,26 @@ describe('SessionStore', () => {
     const first = new Promise<Result<GameSnapshotDto>>((resolve) => {
       resolveFirst = resolve;
     });
+    let markFirstStarted: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
     let calls = 0;
     const store = new SessionStore(
       transport({
         loadSession: async () => {
           calls += 1;
-          return calls === 1
-            ? first
-            : { ok: true, value: { ...snapshot, revision: 2, saved: true } };
+          if (calls === 1) {
+            markFirstStarted?.();
+            return first;
+          }
+          return { ok: true, value: { ...snapshot, revision: 2, saved: true } };
         },
       }),
     );
 
     const oldLoad = store.load();
+    await firstStarted;
     await store.load();
     resolveFirst?.({ ok: true, value: { ...snapshot, revision: 1 } });
     await oldLoad;
@@ -246,5 +270,52 @@ describe('SessionStore', () => {
       kind: 'data',
       value: { revision: 2, saved: true },
     });
+  });
+
+  it('recovers a malformed save through the explicit identity-guarded reset', async () => {
+    const recoveryStatus: SaveStatusDto = {
+      saveIdentity: '/tmp/malformed.json',
+      state: 'recovery-required',
+      campaignId: null,
+      campaignTitle: null,
+      revision: null,
+      persistenceError: 'save is malformed',
+    };
+    let statusCalls = 0;
+    let resetRequest: Parameters<RustyD20Transport['resetSession']>[0] | undefined;
+    const store = new SessionStore(
+      transport({
+        loadSession: async () => ({
+          ok: false,
+          error: { kind: 'persistence', message: 'save is malformed', retryable: false },
+        }),
+        loadSaveStatus: async () => {
+          statusCalls += 1;
+          return {
+            ok: true,
+            value: statusCalls === 1 ? recoveryStatus : saveStatus,
+          };
+        },
+        resetSession: async (request) => {
+          resetRequest = request;
+          return { ok: true, value: { ...snapshot, revision: 0 } };
+        },
+      }),
+    );
+
+    await store.load();
+    expect(store.session()).toMatchObject({ kind: 'error' });
+    expect(store.saveStatus()).toEqual({ kind: 'data', value: recoveryStatus });
+    await store.resetSession();
+    expect(resetRequest).toEqual({
+      expectedSaveIdentity: '/tmp/malformed.json',
+      expectedRevision: null,
+      expectedAdventureId: null,
+    });
+    expect(store.session()).toMatchObject({
+      kind: 'data',
+      value: { revision: 0, campaign: null },
+    });
+    expect(store.saveStatus()).toEqual({ kind: 'data', value: saveStatus });
   });
 });

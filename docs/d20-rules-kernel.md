@@ -61,8 +61,9 @@ canonical packages:
   and two physical actions;
 - `ember-ward` contributes resolve equipment, a focus reaction, a temporary
   ward, and two fire/psychic actions;
-- `wardens-gate` contributes its cast, concrete loadout/storage, encounter,
-  consequences, reward, and default adventure;
+- `wardens-gate` contributes its cast, concrete loadout/storage, ordered
+  two-encounter sequence, consequences, exactly-once reward, and default
+  adventure;
 - `embers-wake` contributes its distinct cast, Resolve loadout/storage, Ash
   Seer encounter, consequences, reward, and selectable adventure;
 - `catalog-probe` contributes a non-default, non-selectable content-only
@@ -132,8 +133,8 @@ constant-time rather than replaying every prior random draw.
 
 The product runtime wraps that session with its strict schema, authored
 adventure and exact composition fingerprint, active/resolved encounter
-identities, optimistic revision, next operation/log identities, and bounded
-receipt-explanation log.
+identities, ordered completed prefix, optimistic revision, next operation/log
+identities, and bounded receipt-explanation log.
 Pending preview authority is process-local and deliberately excluded. The
 browser never receives the `ActionPreview`; it receives a token plus immutable
 projection, while Rust retains and applies the actual preview.

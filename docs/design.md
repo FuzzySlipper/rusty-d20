@@ -42,9 +42,12 @@ and `outcome` phases, with an exact encounter turn owner and typed terminal
 result. It is product state for this adventure, not a generic Engine campaign
 mechanism. Rusty D20 registers durable ability-score, action-resource, and
 scheduled-effect components beside Engine mechanics components.
-The campaign retains both the active and last resolved encounter identity, so
-multi-encounter content cannot project or validate an outcome against a
-different authored encounter.
+The campaign retains the active and last resolved encounter identity plus the
+ordered completed-encounter prefix. Only the next incomplete encounter in the
+adventure's authored list is offered. Reusing an opponent in a later encounter
+restores only its bounded vitality through the Engine track service; resources,
+effects, equipment, rewards, and other prior facts remain authoritative. This
+is explicit Rusty D20 campaign policy, not a generic quest graph.
 
 `D20Session` stages heterogeneous action work in an `EntityState` clone and
 publishes only after every d20 and Engine service succeeds. Damage, equipment,
@@ -107,7 +110,10 @@ dependencies. See
 `rusty-d20-host` serves the Angular build plus read-only session projection and
 typed adventure selection, loadout equip/unequip/transfer, enter-encounter,
 preview, reaction, action, begin-opposition, return-to-camp, and save commands
-from one origin. Rust DTOs generate
+from one origin. It also exposes a Rust-generated save-status contract and an
+identity/revision/adventure-guarded destructive reset. A malformed save keeps
+the host alive in a recovery-only state; ordinary session commands fail closed
+until the exact save is discarded. Rust DTOs generate
 `libs/protocol/src/generated/api-types.ts`. The protocol layer strictly decodes
 unknown JSON with collection bounds; transport preserves typed HTTP rejection;
 domain projects a view; store owns async UI state and rejects late responses
@@ -129,10 +135,11 @@ graph in `boundaries.json`; production code cannot import testing fixtures.
 `D20Session` saves the exact Engine revision, ruleset fingerprint, explicit RNG
 seed/roll position, caller-owned turn, and canonical entity snapshot. Product
 session save schema 2 includes the catalog-v2 inventory/equipment state.
-Product save schema 5 wraps it with the authored adventure identity, exact
+Product save schema 6 wraps it with the authored adventure identity, exact
 composition fingerprint, phase, active and resolved encounter identities,
-encounter turn owner, terminal outcome, product revision, next operation/log
-identities, and the bounded explanatory log. Product schemas 1 through 3 migrate
+ordered completed-encounter history, encounter turn owner, terminal outcome,
+product revision, next operation/log identities, and the bounded explanatory
+log. Product schemas 1 through 3 migrate
 deterministically: the old mechanics catalog is upgraded, the fixed starter
 loadout is installed without replay where required, and older active
 encounters resume at the player decision boundary. A reachable legacy
@@ -144,7 +151,9 @@ establishes the active Iron Warden encounter. Unknown schemas, partial
 loadouts, and inconsistent phase/turn/outcome pairs reject rather than
 defaulting or discarding state. Schema 4 is admitted through its strict
 single-adventure compatibility shape and upgraded to the catalog composition;
-new saves never infer a missing adventure or composition.
+schema 5 additionally migrates the prior Warden composition fingerprint and
+infers its completed first encounter before strict schema-6 admission. New
+saves never infer a missing adventure or composition.
 Opaque previews are intentionally not durable, so save rejects before file
 mutation while an action is pending; the user must resolve it first. This
 includes a pending action whose reaction has already committed resource and
@@ -156,6 +165,12 @@ cross-checks encounter phase and outcome against authoritative participant
 vitality, reacquires non-durable component revisions, and continues the exact
 camp, encounter, or outcome phase, turn owner, loadout, and deterministic
 rolls without replay.
+
+File layout and storage policy remain host-owned. The browser observes the
+configured save identity but never chooses an arbitrary path. Reset validates
+that identity together with the current campaign and revision before deleting
+the file or replacing live state; stale requests and file failures leave both
+unchanged.
 
 Round advancement is an explicit downstream consequence of resolving the
 opposition action and expires recorded effect instances atomically before the

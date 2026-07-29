@@ -556,7 +556,15 @@ fn complete_encounter_victory_grants_reward_once_and_reopens_exactly() {
     let camp = reopened.return_to_camp(before_late.revision).unwrap();
     let campaign = camp.campaign.as_ref().unwrap();
     assert_eq!(campaign.phase, CampaignPhaseDto::Camp);
-    assert!(campaign.available_encounters.is_empty());
+    assert_eq!(
+        campaign
+            .available_encounters
+            .iter()
+            .map(|encounter| encounter.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["wardens-reckoning"]
+    );
+    assert_eq!(campaign.completed_encounters.len(), 1);
     assert_eq!(
         campaign
             .loadout
@@ -579,6 +587,94 @@ fn complete_encounter_victory_grants_reward_once_and_reopens_exactly() {
             .encode_save()
             .unwrap(),
         camp_save
+    );
+}
+
+#[test]
+fn ordered_campaign_advances_through_two_encounters_without_duplicate_reward() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    start_test_encounter(&mut runtime);
+    let first = play_to_outcome(&mut runtime, "precise-shot", false, true);
+    assert_eq!(
+        first
+            .campaign
+            .as_ref()
+            .unwrap()
+            .latest_outcome
+            .as_ref()
+            .unwrap()
+            .kind,
+        EncounterOutcomeKindDto::Victory
+    );
+    let camp = runtime.return_to_camp(first.revision).unwrap();
+    let entered = runtime
+        .enter_encounter(EnterEncounterRequestDto {
+            expected_revision: camp.revision,
+            encounter_id: "wardens-reckoning".to_owned(),
+        })
+        .unwrap();
+    let opponent = entered
+        .encounter
+        .as_ref()
+        .unwrap()
+        .characters
+        .iter()
+        .find(|character| character.id == OPPONENT.raw())
+        .unwrap();
+    assert_eq!(opponent.health_current, opponent.health_maximum);
+    assert!(entered
+        .encounter
+        .as_ref()
+        .unwrap()
+        .log
+        .iter()
+        .any(|entry| entry
+            .details
+            .iter()
+            .any(|detail| detail.contains("prior resources, effects, and loadout"))));
+    let entered_save = runtime.encode_save().unwrap();
+    let mut reopened = GameRuntime::decode_save(&entered_save).unwrap();
+    assert_eq!(reopened.encode_save().unwrap(), entered_save);
+
+    let second = play_to_outcome(&mut reopened, "precise-shot", false, true);
+    let second_campaign = second.campaign.as_ref().unwrap();
+    assert_eq!(second_campaign.completed_encounters.len(), 2);
+    assert_eq!(
+        second_campaign
+            .completed_encounters
+            .iter()
+            .map(|entry| entry.encounter_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["iron-warden", "wardens-reckoning"]
+    );
+    assert_eq!(
+        second_campaign
+            .loadout
+            .stash_items
+            .iter()
+            .filter(|item| item.entity_id == OPPONENT_ARMOR.raw())
+            .count(),
+        1
+    );
+    assert_eq!(
+        second_campaign
+            .latest_outcome
+            .as_ref()
+            .unwrap()
+            .reward_item_id,
+        None
+    );
+    let complete = reopened.return_to_camp(second.revision).unwrap();
+    let complete_campaign = complete.campaign.as_ref().unwrap();
+    assert!(complete_campaign.available_encounters.is_empty());
+    assert_eq!(complete_campaign.completed_encounters.len(), 2);
+    let complete_save = reopened.encode_save().unwrap();
+    assert_eq!(
+        GameRuntime::decode_save(&complete_save)
+            .unwrap()
+            .encode_save()
+            .unwrap(),
+        complete_save
     );
 }
 
@@ -714,6 +810,57 @@ fn schema_four_rejects_outcome_that_disagrees_with_authoritative_vitality() {
         &serde_json::to_string(&schema_four_save(&defeat_runtime.encode_save().unwrap())).unwrap(),
     )
     .unwrap();
+}
+
+#[test]
+fn schema_five_warden_save_migrates_fingerprint_and_completed_prefix() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    start_test_encounter(&mut runtime);
+    let victory = play_to_outcome(&mut runtime, "precise-shot", false, true);
+    runtime.return_to_camp(victory.revision).unwrap();
+    let mut legacy: serde_json::Value =
+        serde_json::from_str(&runtime.encode_save().unwrap()).unwrap();
+    legacy["schemaVersion"] = json!(5);
+    legacy["compositionFingerprint"] = json!(persistence::LEGACY_D20G1_WARDEN_FINGERPRINT);
+    legacy["session"]["rulesetFingerprint"] = json!(persistence::LEGACY_D20G1_WARDEN_FINGERPRINT);
+    legacy["campaign"]
+        .as_object_mut()
+        .unwrap()
+        .remove("completedEncounters");
+
+    let migrated = GameRuntime::decode_save(&serde_json::to_string(&legacy).unwrap()).unwrap();
+    let snapshot = migrated.snapshot().unwrap();
+    let campaign = snapshot.campaign.as_ref().unwrap();
+    assert_eq!(
+        campaign
+            .completed_encounters
+            .iter()
+            .map(|entry| entry.encounter_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["iron-warden"]
+    );
+    assert_eq!(
+        campaign
+            .available_encounters
+            .iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["wardens-reckoning"]
+    );
+    let encoded = migrated.encode_save().unwrap();
+    let current: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(current["schemaVersion"], json!(GAME_SAVE_SCHEMA_VERSION));
+    assert_ne!(
+        current["compositionFingerprint"],
+        json!(persistence::LEGACY_D20G1_WARDEN_FINGERPRINT)
+    );
+    assert_eq!(
+        GameRuntime::decode_save(&encoded)
+            .unwrap()
+            .encode_save()
+            .unwrap(),
+        encoded
+    );
 }
 
 #[test]
@@ -987,6 +1134,10 @@ fn legacy_product_save(input: &str, schema: u32) -> serde_json::Value {
     save.as_object_mut()
         .unwrap()
         .remove("compositionFingerprint");
+    save["campaign"]
+        .as_object_mut()
+        .unwrap()
+        .remove("completedEncounters");
     save["session"]["rulesetFingerprint"] = json!(legacy_rules_fingerprint());
     if schema == 1 {
         save.as_object_mut().unwrap().remove("campaign");
@@ -1014,6 +1165,10 @@ fn schema_four_save(input: &str) -> serde_json::Value {
         .as_object_mut()
         .unwrap()
         .remove("resolvedEncounterId");
+    save["campaign"]
+        .as_object_mut()
+        .unwrap()
+        .remove("completedEncounters");
     save["session"]["rulesetFingerprint"] = json!(legacy_rules_fingerprint());
     save
 }
@@ -1175,6 +1330,10 @@ fn downgrade_to_pre_loadout_v2(input: &str) -> String {
         .as_object_mut()
         .unwrap()
         .remove("resolvedEncounterId");
+    save["campaign"]
+        .as_object_mut()
+        .unwrap()
+        .remove("completedEncounters");
     save["session"]["rulesetFingerprint"] = json!(legacy_rules_fingerprint());
     save["session"]["schemaVersion"] = json!(1);
     let state = save["session"]["entityState"].as_object_mut().unwrap();

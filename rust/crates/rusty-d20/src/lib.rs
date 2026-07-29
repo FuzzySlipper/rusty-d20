@@ -49,11 +49,12 @@ pub use component::{
 pub use game::{
     ActionDto, AdventureChoiceDto, ApiErrorDto, ApiErrorKindDto, ApplyActionRequestDto,
     ApplyReactionRequestDto, CampaignDto, CampaignOutcomeDto, CampaignPhaseDto, CharacterDto,
-    DefenseReadoutDto, EncounterChoiceDto, EncounterDto, EncounterOutcomeKindDto,
-    EncounterTurnOwnerDto, EnterEncounterRequestDto, EquipItemRequestDto, EquipmentSlotDto,
-    ExpectedRevisionDto, GameLogEntryDto, GameLogKindDto, GameRuntime, GameRuntimeError,
-    GameSnapshotDto, LoadoutCapacityDto, LoadoutDto, LoadoutItemDto, LoadoutRarityDto,
-    NewAdventureRequestDto, PendingActionDto, PreviewActionRequestDto, ReactionDto, ResourceDto,
+    CompletedEncounterDto, DefenseReadoutDto, EncounterChoiceDto, EncounterDto,
+    EncounterOutcomeKindDto, EncounterTurnOwnerDto, EnterEncounterRequestDto, EquipItemRequestDto,
+    EquipmentSlotDto, ExpectedRevisionDto, GameLogEntryDto, GameLogKindDto, GameRuntime,
+    GameRuntimeError, GameSnapshotDto, LoadoutCapacityDto, LoadoutDto, LoadoutItemDto,
+    LoadoutRarityDto, NewAdventureRequestDto, PendingActionDto, PreviewActionRequestDto,
+    ReactionDto, ResetSessionRequestDto, ResourceDto, SaveStateDto, SaveStatusDto,
     TransferItemRequestDto, UnequipItemRequestDto,
 };
 pub use identity::{D20Id, D20IdentityError, D20_ID_PATTERN, MAX_D20_ID_BYTES};
@@ -122,6 +123,7 @@ pub fn generated_typescript() -> String {
         CampaignPhaseDto::decl(),
         EncounterOutcomeKindDto::decl(),
         CampaignOutcomeDto::decl(),
+        CompletedEncounterDto::decl(),
         EncounterChoiceDto::decl(),
         AdventureChoiceDto::decl(),
         LoadoutRarityDto::decl(),
@@ -132,6 +134,9 @@ pub fn generated_typescript() -> String {
         LoadoutDto::decl(),
         CampaignDto::decl(),
         GameSnapshotDto::decl(),
+        SaveStateDto::decl(),
+        SaveStatusDto::decl(),
+        ResetSessionRequestDto::decl(),
         ExpectedRevisionDto::decl(),
         NewAdventureRequestDto::decl(),
         EnterEncounterRequestDto::decl(),
@@ -149,6 +154,7 @@ pub fn generated_typescript() -> String {
 export const D20_PROTOCOL_LIMITS = Object.freeze({{\n\
   maxAvailableAdventures: {MAX_D20_SELECTABLE_ADVENTURES},\n\
   maxAdventureDetails: {MAX_D20_ADVENTURE_ENTRIES},\n\
+  maxCampaignEncounters: {MAX_D20_ADVENTURE_ENTRIES},\n\
 }} as const);\n\n\
 export {}\n",
         declarations.join("\n\nexport "),

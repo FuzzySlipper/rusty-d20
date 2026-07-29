@@ -35,6 +35,15 @@ const snapshot = {
   encounter: null,
 };
 
+const saveStatus = {
+  saveIdentity: '/tmp/rusty-d20.json',
+  state: 'empty',
+  campaignId: null,
+  campaignTitle: null,
+  revision: 0,
+  persistenceError: null,
+};
+
 function http(response: () => Promise<HttpResponse>): HttpPort {
   return { getJson: response, postJson: async () => response() };
 }
@@ -45,7 +54,11 @@ describe('createHttpRustyD20Transport', () => {
     const port: HttpPort = {
       getJson: async (path) => ({
         status: 200,
-        body: path.endsWith('readout') ? readout : snapshot,
+        body: path.endsWith('readout')
+          ? readout
+          : path.endsWith('save-status')
+            ? saveStatus
+            : snapshot,
       }),
       postJson: async (path, body) => {
         posts.push({ path, body });
@@ -61,6 +74,25 @@ describe('createHttpRustyD20Transport', () => {
       ok: true,
       value: snapshot,
     });
+    await expect(transport.loadSaveStatus()).resolves.toEqual({
+      ok: true,
+      value: saveStatus,
+    });
+    await expect(
+      transport.resetSession({
+        expectedSaveIdentity: '/tmp/rusty-d20.json',
+        expectedRevision: 0,
+        expectedAdventureId: null,
+      }),
+    ).resolves.toEqual({ ok: true, value: snapshot });
+    expect(posts[0]).toEqual({
+      path: '/api/v1/session/reset',
+      body: {
+        expectedSaveIdentity: '/tmp/rusty-d20.json',
+        expectedRevision: 0,
+        expectedAdventureId: null,
+      },
+    });
     await expect(
       transport.newAdventure({
         expectedRevision: 0,
@@ -70,7 +102,7 @@ describe('createHttpRustyD20Transport', () => {
       ok: true,
       value: snapshot,
     });
-    expect(posts[0]).toEqual({
+    expect(posts[1]).toEqual({
       path: '/api/v1/session/new',
       body: {
         expectedRevision: 0,

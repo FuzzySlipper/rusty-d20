@@ -1,10 +1,26 @@
 import { expect, test, type Page } from '@playwright/test';
 
 test.describe.serial('real Rust encounter shell', () => {
+  test('loading projection is visible while Rust save status is pending', async ({
+    page,
+  }, testInfo) => {
+    await page.route('**/api/v1/session/save-status', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      await route.continue();
+    });
+    await page.goto('/');
+    await expect(page.getByText('Loading authored rules and Rust state…')).toBeVisible();
+    await testInfo.attach('loading-state.png', {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: 'image/png',
+    });
+    await page.unroute('**/api/v1/session/save-status');
+  });
+
   test('empty game starts and resolves authored action, reaction, turn, and save', async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     const health = await request.get('/healthz');
     expect(health.ok()).toBe(true);
     await expect(health.json()).resolves.toEqual({
@@ -17,6 +33,10 @@ test.describe.serial('real Rust encounter shell', () => {
       page.getByRole('heading', { level: 1, name: 'Rusty D20', exact: true }),
     ).toBeVisible();
     await expect(page.getByRole('heading', { name: "The Warden's Gate" })).toBeVisible();
+    await testInfo.attach('empty-adventure-catalog.png', {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: 'image/png',
+    });
     await page
       .getByRole('button', {
         name: "New Adventure · The Warden's Gate",
@@ -32,6 +52,10 @@ test.describe.serial('real Rust encounter shell', () => {
     await page.getByRole('button', { name: 'Take' }).click();
     await expect(page.getByRole('alert')).toContainText('capacity rejection');
     await expect(page.getByRole('alert')).toContainText('maximum: 2');
+    await testInfo.attach('capacity-rejection.png', {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: 'image/png',
+    });
     await page.getByRole('button', { name: 'Dismiss' }).click();
     await expect(page.getByLabel('Armor defense readout')).toContainText('16');
     await expect(page.getByText('Carried 2/2')).toBeVisible();

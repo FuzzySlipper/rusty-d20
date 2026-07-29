@@ -35,6 +35,13 @@ composition. Character templates, storage, item instances, encounters,
 outcomes, rewards, and adventures are ordinary authored definitions; follow
 the multi-file example under `content/adventures/`.
 
+An adventure's encounter list is its ordered campaign sequence. The runtime
+offers only the next incomplete entry and persists the exact completed prefix.
+The same opponent may be referenced again: entry restores only bounded
+vitality, while prior resources, effects, equipment, and rewards persist.
+Branching, repeatable encounters, or alternate recovery policy would be new
+Rust-owned semantics, not fields to smuggle into presentation text.
+
 The runtime resolves an adventure to its exact package dependency closure.
 Content-only additions therefore change TypeScript source and regenerated
 artifacts, not `game.rs`, `session.rs`, the Rust semantic compiler, or Engine.

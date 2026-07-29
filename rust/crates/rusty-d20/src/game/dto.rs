@@ -155,6 +155,15 @@ pub struct CampaignOutcomeDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
+pub struct CompletedEncounterDto {
+    pub encounter_id: String,
+    pub title: String,
+    pub outcome: EncounterOutcomeKindDto,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct EncounterChoiceDto {
     pub id: String,
     pub title: String,
@@ -255,6 +264,7 @@ pub struct CampaignDto {
     pub active_encounter_id: Option<String>,
     pub available_encounters: Vec<EncounterChoiceDto>,
     pub latest_outcome: Option<CampaignOutcomeDto>,
+    pub completed_encounters: Vec<CompletedEncounterDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -271,6 +281,38 @@ pub struct GameSnapshotDto {
     pub available_adventures: Vec<AdventureChoiceDto>,
     pub campaign: Option<CampaignDto>,
     pub encounter: Option<EncounterDto>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum SaveStateDto {
+    Empty,
+    Ready,
+    RecoveryRequired,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct SaveStatusDto {
+    pub save_identity: String,
+    pub state: SaveStateDto,
+    pub campaign_id: Option<String>,
+    pub campaign_title: Option<String>,
+    #[ts(type = "number | null")]
+    pub revision: Option<u64>,
+    pub persistence_error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ResetSessionRequestDto {
+    pub expected_save_identity: String,
+    #[ts(type = "number | null")]
+    pub expected_revision: Option<u64>,
+    pub expected_adventure_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

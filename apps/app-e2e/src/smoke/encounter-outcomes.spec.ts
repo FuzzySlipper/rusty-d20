@@ -7,12 +7,19 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { workspaceRoot } from '@nx/devkit';
 
 test.describe.serial('complete deterministic encounter outcomes', () => {
-  test('victory grants one canonical reward and survives outcome and camp reopen', async ({
+  test('victory reward and the next authored encounter survive complete campaign reopen', async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(180_000);
     const host = await startIsolatedHost('victory');
+    const browserErrors: string[] = [];
+    page.on('pageerror', (error) => browserErrors.push(error.message));
+    page.on('console', (message) => {
+      if (message.type() === 'error') {
+        browserErrors.push(message.text());
+      }
+    });
     try {
       await page.goto(host.baseUrl);
       await startAdventure(page, "The Warden's Gate");
@@ -21,6 +28,10 @@ test.describe.serial('complete deterministic encounter outcomes', () => {
 
       await expect(page.getByLabel('Encounter victory')).toContainText('The Iron Warden defeated');
       await expect(page.getByLabel('Encounter victory')).toContainText('Warden chain armor');
+      await testInfo.attach('warden-victory.png', {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: 'image/png',
+      });
       await page.getByRole('button', { name: 'Save', exact: true }).click();
       const outcome = await sessionSnapshot(request, host.baseUrl);
       expect(outcome.campaign.phase).toBe('outcome');
@@ -41,15 +52,49 @@ test.describe.serial('complete deterministic encounter outcomes', () => {
       await expect(page.getByRole('heading', { name: "The Warden's Gate Camp" })).toBeVisible();
       await expect(page.getByLabel('Latest encounter victory')).toContainText('Warden chain armor');
       await expect(page.getByLabel('Camp stash')).toContainText('Warden chain armor');
+      await expect(page.getByLabel('Completed encounters')).toContainText('The Iron Warden');
+      await expect(
+        page.getByRole('button', { name: "Enter The Warden's Reckoning" }),
+      ).toBeVisible();
+      await page.getByRole('button', { name: "Enter The Warden's Reckoning" }).click();
+      await expect(page.getByLabel('Latest outcome explanation')).toContainText(
+        'bounded vitality track service',
+      );
+      await playToOutcome(page, 'Precise Shot', 'Iron Warden', false, true);
+      await expect(page.getByLabel('Encounter defeat')).toContainText(
+        'Mara fell at the reckoning',
+      );
+      await expect(page.getByLabel('Encounter defeat')).toContainText(
+        'without granting a reward',
+      );
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+      await host.restart();
+      await page.goto(host.baseUrl);
+      await page.getByRole('button', { name: 'Continue Adventure' }).click();
+      await expect(page.getByLabel('Encounter defeat')).toContainText(
+        'Mara fell at the reckoning',
+      );
+      await page.getByRole('button', { name: "Return to The Warden's Gate Camp" }).click();
+      await expect(page.getByLabel('Completed encounters')).toContainText(
+        "The Warden's Reckoning",
+      );
+      await expect(page.getByRole('button', { name: /^Enter / })).toHaveCount(0);
       await page.getByRole('button', { name: 'Save', exact: true }).click();
 
       await host.restart();
       const reopened = await sessionSnapshot(request, host.baseUrl);
       expect(reopened.campaign.phase).toBe('camp');
+      expect(reopened.campaign.completedEncounters).toEqual([
+        expect.objectContaining({ encounterId: 'iron-warden', outcome: 'victory' }),
+        expect.objectContaining({ encounterId: 'wardens-reckoning', outcome: 'defeat' }),
+      ]);
+      expect(reopened.campaign.hero.healthCurrent).toBe(12);
       expect(
         reopened.campaign.loadout.stashItems.filter((item) => item.entityId === 201),
       ).toHaveLength(1);
       expect(reopened.encounter).toBeNull();
+      expect(browserErrors).toEqual([]);
     } finally {
       await host.stop();
     }
@@ -58,7 +103,7 @@ test.describe.serial('complete deterministic encounter outcomes', () => {
   test('defeat grants no reward and applies bounded camp recovery on mobile', async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(180_000);
     const host = await startIsolatedHost('defeat');
     try {
@@ -78,6 +123,10 @@ test.describe.serial('complete deterministic encounter outcomes', () => {
       await playToOutcome(page, 'Longsword Strike', 'Iron Warden', true, false);
 
       await expect(page.getByLabel('Encounter defeat')).toContainText('Mara was defeated');
+      await testInfo.attach('mobile-defeat.png', {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: 'image/png',
+      });
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
       ).toBe(true);
@@ -266,6 +315,10 @@ interface SessionSnapshot {
     loadout: {
       stashItems: Array<{ entityId: number; name: string }>;
     };
+    completedEncounters: Array<{
+      encounterId: string;
+      outcome: 'victory' | 'defeat';
+    }>;
   };
   encounter: { turnOwner: 'player' | 'opposition' | null } | null;
 }

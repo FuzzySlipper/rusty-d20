@@ -29,6 +29,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let runtime = host::load_runtime(&save_path)?;
-    host::serve(&address, web_root, save_path, runtime).await
+    let runtime = host::load_host_runtime(&save_path)?;
+    host::serve_host(&address, web_root, save_path, runtime).await
 }

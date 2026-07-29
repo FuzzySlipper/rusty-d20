@@ -239,8 +239,14 @@ pub(super) fn validate_product_state(
             )));
         }
     }
-    let encounter = current_encounter_definition(rules, adventure, campaign)?;
-    if let Some(reward) = encounter.victory.reward_item.as_ref() {
+    for encounter in adventure
+        .encounters
+        .iter()
+        .filter_map(|encounter| rules.encounter(encounter))
+    {
+        let Some(reward) = encounter.victory.reward_item.as_ref() else {
+            continue;
+        };
         let reward = rules
             .item_instance(reward)
             .expect("compiled reward reference");
@@ -255,7 +261,10 @@ pub(super) fn validate_product_state(
             })?;
         let hero = character_entity(rules, adventure, &adventure.hero)?;
         let stash = storage_entity(rules, adventure, &adventure.camp_storage)?;
-        let victory = campaign.outcome == Some(EncounterOutcome::Victory);
+        let victory = campaign.completed_encounters.iter().any(|completed| {
+            completed.encounter_id == encounter.id.as_str()
+                && completed.outcome == EncounterOutcome::Victory
+        });
         let reward_is_claimed = matches!(reward_owner, Some(owner) if owner == hero || owner == stash)
             && original_equipment
                 .assignments()
@@ -352,12 +361,20 @@ pub(super) fn migrate_legacy_campaign(
             campaign.resolved_encounter_id = campaign.active_encounter_id.clone();
             campaign.turn_owner = None;
             campaign.outcome = Some(EncounterOutcome::Victory);
+            campaign.completed_encounters.push(CompletedEncounter {
+                encounter_id: encounter.id.to_string(),
+                outcome: EncounterOutcome::Victory,
+            });
         }
         CampaignPhase::Encounter if player_vitality == 0 && opponent_vitality > 0 => {
             campaign.phase = CampaignPhase::Outcome;
             campaign.resolved_encounter_id = campaign.active_encounter_id.clone();
             campaign.turn_owner = None;
             campaign.outcome = Some(EncounterOutcome::Defeat);
+            campaign.completed_encounters.push(CompletedEncounter {
+                encounter_id: encounter.id.to_string(),
+                outcome: EncounterOutcome::Defeat,
+            });
         }
         CampaignPhase::Camp if player_vitality > 0 && opponent_vitality > 0 => {}
         CampaignPhase::Encounter | CampaignPhase::Camp | CampaignPhase::Outcome => {
@@ -509,4 +526,30 @@ pub(super) fn current_encounter_definition<'a>(
     rules.encounter(encounter).ok_or_else(|| {
         GameRuntimeError::InvalidState(format!("encounter definition {encounter} is missing"))
     })
+}
+
+pub(super) fn next_available_encounter_definition<'a>(
+    rules: &'a D20Ruleset,
+    adventure: &AdventureDefinition,
+    campaign: &CampaignState,
+) -> Result<Option<&'a EncounterDefinition>, GameRuntimeError> {
+    for candidate in &adventure.encounters {
+        if campaign
+            .completed_encounters
+            .iter()
+            .any(|completed| completed.encounter_id == candidate.as_str())
+        {
+            continue;
+        }
+        let encounter = rules.encounter(candidate).ok_or_else(|| {
+            GameRuntimeError::InvalidState(format!("encounter definition {candidate} is missing"))
+        })?;
+        if !encounter.available_from_camp {
+            return Err(GameRuntimeError::InvalidState(format!(
+                "next authored encounter {candidate} is not available from camp"
+            )));
+        }
+        return Ok(Some(encounter));
+    }
+    Ok(None)
 }

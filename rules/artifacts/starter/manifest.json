@@ -34,14 +34,14 @@
       "domain": "rusty-d20",
       "package": "wardens-gate",
       "version": 1,
-      "fingerprint": "588af08d7e4e72e58222fde4a92f3b52946fde2b453b851ff33db133aa06aa76"
+      "fingerprint": "21dc5b9c5b3c22c89cfa3941d68e3159094bf6734c465e71791e75a147fe8886"
     },
     {
       "path": "catalog-probe.json",
       "domain": "rusty-d20",
       "package": "catalog-probe",
       "version": 1,
-      "fingerprint": "07b5724f73adc066912b57cebbbd96bf40a38468d616bda94bd04555e34bbff3"
+      "fingerprint": "f964528d22a4318526f8fd1675a17a94951a0630b2794d0e518bd3661dc6be56"
     },
     {
       "path": "invalid-semantics.json",

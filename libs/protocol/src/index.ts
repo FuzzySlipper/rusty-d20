@@ -9,6 +9,7 @@ import type {
   CampaignDto,
   CampaignOutcomeDto,
   CharacterDto,
+  CompletedEncounterDto,
   DefenseReadoutDto,
   EncounterChoiceDto,
   EncounterDto,
@@ -26,6 +27,7 @@ import type {
   ReactionDto,
   ResourceDto,
   RuntimeReadoutDto,
+  SaveStatusDto,
 } from './generated/api-types';
 
 export type ClassifiedError =
@@ -93,6 +95,70 @@ export function decodeGameSnapshot(value: unknown): Result<GameSnapshotDto> {
         error: unknownError('Game snapshot has an unexpected or invalid shape.'),
       }
     : { ok: true, value: decoded };
+}
+
+export function decodeSaveStatus(value: unknown): Result<SaveStatusDto> {
+  if (
+    !hasExactKeys(value, [
+      'campaignId',
+      'campaignTitle',
+      'persistenceError',
+      'revision',
+      'saveIdentity',
+      'state',
+    ])
+  ) {
+    return {
+      ok: false,
+      error: unknownError('Save status has an unexpected shape.'),
+    };
+  }
+  const saveIdentity = value['saveIdentity'];
+  const state = value['state'];
+  const campaignId = value['campaignId'];
+  const campaignTitle = value['campaignTitle'];
+  const revision = value['revision'];
+  const persistenceError = value['persistenceError'];
+  const valid =
+    typeof saveIdentity === 'string' &&
+    saveIdentity.length > 0 &&
+    (state === 'empty' || state === 'ready' || state === 'recovery-required') &&
+    (campaignId === null || (typeof campaignId === 'string' && campaignId.length > 0)) &&
+    (campaignTitle === null || (typeof campaignTitle === 'string' && campaignTitle.length > 0)) &&
+    (revision === null || isSafeNonNegativeInteger(revision)) &&
+    (persistenceError === null ||
+      (typeof persistenceError === 'string' && persistenceError.length > 0)) &&
+    ((state === 'empty' &&
+      campaignId === null &&
+      campaignTitle === null &&
+      revision !== null &&
+      persistenceError === null) ||
+      (state === 'ready' &&
+        campaignId !== null &&
+        campaignTitle !== null &&
+        revision !== null &&
+        persistenceError === null) ||
+      (state === 'recovery-required' &&
+        campaignId === null &&
+        campaignTitle === null &&
+        revision === null &&
+        persistenceError !== null));
+  return valid
+    ? {
+        ok: true,
+        value: {
+          saveIdentity,
+          state,
+          campaignId,
+          campaignTitle,
+          revision,
+          persistenceError,
+        },
+      }
+    : {
+        ok: false,
+        error: unknownError('Save status contains invalid values.'),
+      };
 }
 
 export function decodeApiError(value: unknown): ApiErrorDto | undefined {
@@ -172,6 +238,7 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
     !hasExactKeys(value, [
       'activeEncounterId',
       'availableEncounters',
+      'completedEncounters',
       'hero',
       'id',
       'loadout',
@@ -184,7 +251,16 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
   }
   const hero = decodeCharacter(value['hero']);
   const loadout = decodeLoadout(value['loadout']);
-  const encounters = decodeArray(value['availableEncounters'], 16, decodeEncounterChoice);
+  const encounters = decodeArray(
+    value['availableEncounters'],
+    D20_PROTOCOL_LIMITS.maxCampaignEncounters,
+    decodeEncounterChoice,
+  );
+  const completedEncounters = decodeArray(
+    value['completedEncounters'],
+    D20_PROTOCOL_LIMITS.maxCampaignEncounters,
+    decodeCompletedEncounter,
+  );
   const activeEncounterId = value['activeEncounterId'];
   const phase = value['phase'];
   const latestOutcomeValue = value['latestOutcome'];
@@ -198,11 +274,21 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
     hero === undefined ||
     loadout === undefined ||
     encounters === undefined ||
+    completedEncounters === undefined ||
+    new Set(completedEncounters.map((entry) => entry.encounterId)).size !==
+      completedEncounters.length ||
     latestOutcome === undefined ||
     (phase === 'camp' && activeEncounterId !== null) ||
+    (phase === 'camp' && latestOutcome === null && completedEncounters.length !== 0) ||
     ((phase === 'encounter' || phase === 'outcome') && activeEncounterId === null) ||
+    (phase === 'encounter' &&
+      completedEncounters.some((completed) => completed.encounterId === activeEncounterId)) ||
     (phase === 'encounter' && latestOutcome !== null) ||
-    (phase === 'outcome' && latestOutcome === null)
+    (phase === 'outcome' && latestOutcome === null) ||
+    (phase === 'outcome' && latestOutcome?.encounterId !== activeEncounterId) ||
+    (latestOutcome !== null &&
+      (completedEncounters.at(-1)?.encounterId !== latestOutcome.encounterId ||
+        completedEncounters.at(-1)?.outcome !== latestOutcome.kind))
   ) {
     return undefined;
   }
@@ -215,6 +301,7 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
     activeEncounterId,
     availableEncounters: encounters,
     latestOutcome,
+    completedEncounters,
   };
 }
 
@@ -231,8 +318,8 @@ function decodeCampaignOutcome(value: unknown): CampaignOutcomeDto | undefined {
     typeof value['summary'] === 'string' &&
     (rewardItemId === null || isSafePositiveInteger(rewardItemId)) &&
     (reward === null || typeof reward === 'string') &&
-    ((value['kind'] === 'victory' && rewardItemId !== null && reward !== null) ||
-      (value['kind'] === 'defeat' && rewardItemId === null && reward === null))
+    ((rewardItemId === null && reward === null) ||
+      (value['kind'] === 'victory' && rewardItemId !== null && reward !== null))
     ? {
         kind: value['kind'],
         encounterId: value['encounterId'],
@@ -240,6 +327,23 @@ function decodeCampaignOutcome(value: unknown): CampaignOutcomeDto | undefined {
         summary: value['summary'],
         rewardItemId,
         reward,
+      }
+    : undefined;
+}
+
+function decodeCompletedEncounter(value: unknown): CompletedEncounterDto | undefined {
+  if (!hasExactKeys(value, ['encounterId', 'outcome', 'title'])) {
+    return undefined;
+  }
+  return typeof value['encounterId'] === 'string' &&
+    value['encounterId'].length > 0 &&
+    typeof value['title'] === 'string' &&
+    value['title'].length > 0 &&
+    isEncounterOutcomeKind(value['outcome'])
+    ? {
+        encounterId: value['encounterId'],
+        title: value['title'],
+        outcome: value['outcome'],
       }
     : undefined;
 }

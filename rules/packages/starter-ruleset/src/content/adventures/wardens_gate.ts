@@ -47,6 +47,48 @@ export const wardensGateModule = defineD20Module(
           recoveryVitality: 12,
         },
       }),
+      encounter(64, {
+        id: 'wardens-reckoning',
+        title: "The Warden's Reckoning",
+        summary:
+          'Face the reawakened sentinel after its gate armor has become part of the camp loadout.',
+        opponent: 'iron-warden',
+        availableFromCamp: true,
+        introductionSource: 'Encounter',
+        introductionText: "The Iron Warden rises for a final reckoning.",
+        introductionDetails: [
+          'Rust restores the returning opponent through the bounded vitality track service.',
+          'Prior resources, effects, loadout, and the first reward remain authoritative.',
+        ],
+        victory: {
+          title: "The Warden's Reckoning ended",
+          summary:
+            'Mara completed the authored gate sequence; no duplicate reward was created.',
+          logSource: 'Victory',
+          logText: 'The reawakened sentinel yields and the mountain pass is secure.',
+          logDetails: [
+            'The ordered campaign recorded its second distinct encounter outcome.',
+            'The original Warden chain reward remains the only canonical reward instance.',
+          ],
+          rewardItem: null,
+          rewardLabel: null,
+          recoveryVitality: null,
+        },
+        defeat: {
+          title: 'Mara fell at the reckoning',
+          summary:
+            'The authored sequence still completes; camp applies bounded recovery without a reward.',
+          logSource: 'Defeat',
+          logText: 'Mara withdraws from the final reckoning.',
+          logDetails: [
+            'No duplicate reward or inventory mutation occurred.',
+            'Return to camp applies the explicit bounded recovery consequence.',
+          ],
+          rewardItem: null,
+          rewardLabel: null,
+          recoveryVitality: 12,
+        },
+      }),
     ],
     adventures: [
       adventure(52, {
@@ -64,12 +106,12 @@ export const wardensGateModule = defineD20Module(
           'mara-buckler',
           'spare-buckler',
         ],
-        encounters: ['iron-warden'],
+        encounters: ['iron-warden', 'wardens-reckoning'],
         startSource: 'Adventure',
         startText: "Mara Venn prepares at the Warden's Gate camp.",
         startDetails: [
           'Starter Core + Steel Guard authored packages compiled by Rust.',
-          'The Iron Warden encounter is available from camp.',
+          'The Iron Warden and Warden’s Reckoning form an ordered two-encounter campaign.',
         ],
       }),
     ],

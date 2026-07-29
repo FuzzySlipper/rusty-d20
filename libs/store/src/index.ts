@@ -7,7 +7,12 @@ import {
   type RuntimeReadoutView,
 } from '@rusty-d20/domain';
 import { browserHttp } from '@rusty-d20/platform';
-import type { ClassifiedError, GameSnapshotDto, Result } from '@rusty-d20/protocol';
+import type {
+  ClassifiedError,
+  GameSnapshotDto,
+  Result,
+  SaveStatusDto,
+} from '@rusty-d20/protocol';
 import { createHttpRustyD20Transport, type RustyD20Transport } from '@rusty-d20/transport';
 
 export type AsyncState<T> =
@@ -28,12 +33,16 @@ export class SessionStore {
   private readonly _session = signal<AsyncState<GameSnapshotView>>({
     kind: 'idle',
   });
+  private readonly _saveStatus = signal<AsyncState<SaveStatusDto>>({
+    kind: 'idle',
+  });
   private readonly _commandError = signal<ClassifiedError | null>(null);
   private readonly _busy = signal(false);
   private generation = 0;
 
   readonly readout: Signal<AsyncState<RuntimeReadoutView>> = this._readout.asReadonly();
   readonly session: Signal<AsyncState<GameSnapshotView>> = this._session.asReadonly();
+  readonly saveStatus: Signal<AsyncState<SaveStatusDto>> = this._saveStatus.asReadonly();
   readonly commandError: Signal<ClassifiedError | null> = this._commandError.asReadonly();
   readonly busy: Signal<boolean> = this._busy.asReadonly();
 
@@ -54,7 +63,34 @@ export class SessionStore {
     if (this._session().kind !== 'data') {
       this._session.set({ kind: 'loading' });
     }
+    this._saveStatus.set({ kind: 'loading' });
     this._busy.set(true);
+    const saveStatus = await this.transport.loadSaveStatus();
+    if (generation === this.generation) {
+      this._saveStatus.set(
+        saveStatus.ok
+          ? { kind: 'data', value: saveStatus.value }
+          : { kind: 'error', error: saveStatus.error },
+      );
+    }
+    if (generation !== this.generation) {
+      return;
+    }
+    if (saveStatus.ok && saveStatus.value.state === 'recovery-required') {
+      this.publish(
+        generation,
+        {
+          ok: false,
+          error: {
+            kind: 'persistence',
+            message: saveStatus.value.persistenceError ?? 'Save recovery is required.',
+            retryable: false,
+          },
+        },
+        true,
+      );
+      return;
+    }
     const result = await this.transport.loadSession();
     this.publish(generation, result, true);
   }
@@ -131,6 +167,50 @@ export class SessionStore {
 
   async save(): Promise<void> {
     await this.mutate((revision) => this.transport.save(revision));
+  }
+
+  async resetSession(): Promise<void> {
+    if (this._busy()) {
+      return;
+    }
+    const status = this._saveStatus();
+    if (status.kind !== 'data') {
+      return;
+    }
+    const session = this._session();
+    const recovery = status.value.state === 'recovery-required';
+    if (!recovery && session.kind !== 'data') {
+      return;
+    }
+    const generation = ++this.generation;
+    this._busy.set(true);
+    this._commandError.set(null);
+    const result = await this.transport.resetSession({
+      expectedSaveIdentity: status.value.saveIdentity,
+      expectedRevision: recovery ? null : session.kind === 'data' ? session.value.revision : null,
+      expectedAdventureId:
+        recovery || session.kind !== 'data' ? null : (session.value.campaign?.id ?? null),
+    });
+    if (generation !== this.generation) {
+      return;
+    }
+    if (!result.ok) {
+      this._busy.set(false);
+      this._commandError.set(result.error);
+      return;
+    }
+    const refreshedStatus = await this.transport.loadSaveStatus();
+    if (generation !== this.generation) {
+      return;
+    }
+    this._saveStatus.set(
+      refreshedStatus.ok
+        ? { kind: 'data', value: refreshedStatus.value }
+        : { kind: 'error', error: refreshedStatus.error },
+    );
+    this._busy.set(false);
+    this._commandError.set(null);
+    this._session.set({ kind: 'data', value: projectGameSnapshot(result.value) });
   }
 
   clearCommandError(): void {

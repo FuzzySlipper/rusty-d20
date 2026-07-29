@@ -88,6 +88,13 @@ reopens its pre-encounter camp, completes the Ash Seer encounter, reopens the
 terminal outcome, returns to camp, and reopens the exactly-once reward. Those
 terminal scenarios are part of `verify:browser`, not a non-idempotent
 requirement on an arbitrary already-running live save.
+The Warden scenario continues from its exactly-once first reward into the next
+authored encounter, records the ordered completion history, applies its
+terminal recovery, returns to camp with no third encounter, and reopens again.
+A separate real-host scenario displays the exact save identity, proves reset
+cancel/confirm behavior, reopens a replacement Ember campaign, then starts from
+a deliberately malformed save and recovers through the typed discard path
+without page or console errors.
 
 ## Standalone clone
 

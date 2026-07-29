@@ -1,4 +1,9 @@
-import type { GameSnapshotDto, Result, RuntimeReadoutDto } from '@rusty-d20/protocol';
+import type {
+  GameSnapshotDto,
+  Result,
+  RuntimeReadoutDto,
+  SaveStatusDto,
+} from '@rusty-d20/protocol';
 import type { RustyD20Transport } from '@rusty-d20/transport';
 
 export function makeRuntimeReadout(overrides: Partial<RuntimeReadoutDto> = {}): RuntimeReadoutDto {
@@ -50,9 +55,19 @@ export function createFakeRustyD20Transport(
     value: makeGameSnapshot(),
   },
 ): RustyD20Transport {
+  const saveStatus: SaveStatusDto = {
+    saveIdentity: '/fixture/rusty-d20.json',
+    state: 'empty',
+    campaignId: null,
+    campaignTitle: null,
+    revision: 0,
+    persistenceError: null,
+  };
   return {
     loadReadout: async () => readoutResult,
     loadSession: async () => sessionResult,
+    loadSaveStatus: async () => ({ ok: true, value: saveStatus }),
+    resetSession: async () => sessionResult,
     newAdventure: async () => sessionResult,
     enterEncounter: async () => sessionResult,
     equipItem: async () => sessionResult,

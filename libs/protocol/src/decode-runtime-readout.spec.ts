@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { D20_PROTOCOL_LIMITS, decodeGameSnapshot, decodeRuntimeReadout } from './index';
+import {
+  D20_PROTOCOL_LIMITS,
+  decodeGameSnapshot,
+  decodeRuntimeReadout,
+  decodeSaveStatus,
+} from './index';
 
 const validReadout = {
   engineRevision: 'fb608e323a8b44a55195f5720101224ff37fd5db',
@@ -178,6 +183,7 @@ describe('decodeGameSnapshot', () => {
       },
       activeEncounterId: null,
       latestOutcome: null,
+      completedEncounters: [],
       availableEncounters: [
         {
           id: 'iron-warden',
@@ -268,6 +274,13 @@ describe('decodeGameSnapshot', () => {
           phase: 'outcome',
           activeEncounterId: 'iron-warden',
           latestOutcome: victory,
+          completedEncounters: [
+            {
+              encounterId: 'iron-warden',
+              title: 'The Iron Warden',
+              outcome: 'victory',
+            },
+          ],
         },
         encounter: {
           turn: 4,
@@ -289,6 +302,13 @@ describe('decodeGameSnapshot', () => {
           phase: 'outcome',
           activeEncounterId: 'iron-warden',
           latestOutcome: victory,
+          completedEncounters: [
+            {
+              encounterId: 'iron-warden',
+              title: 'The Iron Warden',
+              outcome: 'victory',
+            },
+          ],
         },
         encounter: {
           turn: 4,
@@ -300,6 +320,41 @@ describe('decodeGameSnapshot', () => {
           pendingAction: null,
           log: [],
         },
+      }),
+    ).toMatchObject({ ok: false });
+  });
+});
+
+describe('decodeSaveStatus', () => {
+  it('strictly distinguishes ready, empty, and recovery identities', () => {
+    expect(
+      decodeSaveStatus({
+        saveIdentity: '/tmp/campaign.json',
+        state: 'ready',
+        campaignId: 'wardens-gate',
+        campaignTitle: "The Warden's Gate",
+        revision: 9,
+        persistenceError: null,
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      decodeSaveStatus({
+        saveIdentity: '/tmp/campaign.json',
+        state: 'recovery-required',
+        campaignId: null,
+        campaignTitle: null,
+        revision: null,
+        persistenceError: 'save is malformed',
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      decodeSaveStatus({
+        saveIdentity: '/tmp/campaign.json',
+        state: 'recovery-required',
+        campaignId: 'forged',
+        campaignTitle: null,
+        revision: null,
+        persistenceError: 'save is malformed',
       }),
     ).toMatchObject({ ok: false });
   });

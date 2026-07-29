@@ -42,6 +42,7 @@ export interface CampaignView {
   readonly activeEncounterId: string | null;
   readonly availableEncounters: CampaignDto['availableEncounters'];
   readonly latestOutcome: CampaignDto['latestOutcome'];
+  readonly completedEncounters: CampaignDto['completedEncounters'];
 }
 
 export interface EncounterView {
@@ -94,6 +95,7 @@ function projectCampaign(campaign: CampaignDto): CampaignView {
     activeEncounterId: campaign.activeEncounterId,
     availableEncounters: campaign.availableEncounters,
     latestOutcome: campaign.latestOutcome,
+    completedEncounters: campaign.completedEncounters,
   };
 }
 
