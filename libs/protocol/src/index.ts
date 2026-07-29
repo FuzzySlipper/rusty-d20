@@ -279,6 +279,14 @@ function decodeExploration(value: unknown): ExplorationDto | undefined {
   const height = value['height'];
   const x = value['x'];
   const y = value['y'];
+  let viewOccluded = false;
+  const leaksOccludedTopology = view?.some((depth) => {
+    if (viewOccluded && !(depth.frontBlocked && depth.leftBlocked && depth.rightBlocked)) {
+      return true;
+    }
+    viewOccluded ||= depth.frontBlocked;
+    return false;
+  });
   if (
     typeof value['dungeonTitle'] !== 'string' ||
     value['dungeonTitle'].length === 0 ||
@@ -297,6 +305,7 @@ function decodeExploration(value: unknown): ExplorationDto | undefined {
     view === undefined ||
     view.length !== D20_PROTOCOL_LIMITS.maxDungeonViewDepth ||
     view.some((depth, index) => depth.depth !== index) ||
+    leaksOccludedTopology ||
     discoveredCells === undefined ||
     discoveredCells.length === 0 ||
     discoveredCells.some((cell) => cell.x >= width || cell.y >= height) ||

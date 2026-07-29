@@ -196,6 +196,51 @@ describe('decodeGameSnapshot', () => {
     expect(decodeGameSnapshot({ ...empty, campaign })).toMatchObject({
       ok: true,
     });
+    const occludedExploration = {
+      dungeonTitle: "Warden's Gate Pass",
+      wallStyle: 'mountain-fortress',
+      width: 11,
+      height: 7,
+      x: 1,
+      y: 1,
+      facing: 'east',
+      canStepForward: false,
+      canStepBackward: false,
+      view: [
+        { depth: 0, frontBlocked: true, leftBlocked: false, rightBlocked: false },
+        { depth: 1, frontBlocked: true, leftBlocked: true, rightBlocked: true },
+        { depth: 2, frontBlocked: true, leftBlocked: true, rightBlocked: true },
+      ],
+      discoveredCells: [{ x: 1, y: 1 }],
+      landmark: null,
+    };
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: { ...campaign, phase: 'exploration' },
+        exploration: occludedExploration,
+      }),
+    ).toMatchObject({ ok: true });
+    for (const hiddenTopology of [
+      [
+        occludedExploration.view[0],
+        { depth: 1, frontBlocked: true, leftBlocked: true, rightBlocked: false },
+        occludedExploration.view[2],
+      ],
+      [
+        occludedExploration.view[0],
+        occludedExploration.view[1],
+        { depth: 2, frontBlocked: true, leftBlocked: false, rightBlocked: true },
+      ],
+    ]) {
+      expect(
+        decodeGameSnapshot({
+          ...empty,
+          campaign: { ...campaign, phase: 'exploration' },
+          exploration: { ...occludedExploration, view: hiddenTopology },
+        }),
+      ).toMatchObject({ ok: false });
+    }
     expect(
       decodeGameSnapshot({
         ...empty,

@@ -151,6 +151,24 @@ test.describe.serial('complete deterministic encounter outcomes', () => {
 
       await host.restart();
       expect((await sessionSnapshot(request, host.baseUrl)).campaign.hero.healthCurrent).toBe(12);
+      await page.goto(host.baseUrl);
+      await page.getByRole('button', { name: 'Continue Adventure' }).click();
+      await page.getByRole('button', { name: 'Enter the dungeon' }).click();
+      await stepForward(page, 8);
+
+      const pastCompletedTrigger = await sessionSnapshot(request, host.baseUrl);
+      expect(pastCompletedTrigger.campaign.phase).toBe('exploration');
+      expect(pastCompletedTrigger.campaign.activeEncounterId).toBeNull();
+      expect(pastCompletedTrigger.exploration).toEqual(
+        expect.objectContaining({ x: 9, y: 1 }),
+      );
+
+      await enterWardenReckoning(page);
+      await expect(page.getByLabel('Encounter identity')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Precise Shot' })).toBeVisible();
+      const continued = await sessionSnapshot(request, host.baseUrl);
+      expect(continued.campaign.phase).toBe('encounter');
+      expect(continued.campaign.activeEncounterId).toBe('wardens-reckoning');
     } finally {
       await host.stop();
     }
@@ -333,6 +351,7 @@ interface SessionSnapshot {
     id: string;
     title: string;
     phase: 'camp' | 'exploration' | 'encounter' | 'outcome';
+    activeEncounterId: string | null;
     hero: { healthCurrent: number };
     latestOutcome: {
       kind: 'victory' | 'defeat';
@@ -346,6 +365,7 @@ interface SessionSnapshot {
       outcome: 'victory' | 'defeat';
     }>;
   };
+  exploration: { x: number; y: number } | null;
   encounter: { turnOwner: 'player' | 'opposition' | null } | null;
 }
 

@@ -62,7 +62,11 @@ trigger at the reached cell. The browser receives a bounded three-depth
 first-person wall projection, movement availability, the current landmark, and
 visited cells; it does not receive the complete wall grid or trigger
 coordinates. Compass and minimap are presentation over this projection, not a
-second navigation authority.
+second navigation authority. Completed encounter identities consume their
+authored trigger cells, so later traversal can cross them while the next
+unconsumed trigger still follows ordered admission. The fixed three-depth view
+emits neutral all-wall records after the first opaque front wall; the strict
+browser decoder rejects any non-neutral topology behind that occluder.
 
 `D20Session` stages heterogeneous action work in an `EntityState` clone and
 publishes only after every d20 and Engine service succeeds. Damage, equipment,

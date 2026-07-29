@@ -70,6 +70,14 @@ impl GameRuntime {
         self.ensure_exploration_phase()?;
         self.ensure_mutation_capacity(false, true)?;
         let dungeon = self.adventure()?.dungeon.clone();
+        let completed_encounters = self
+            .campaign
+            .as_ref()
+            .ok_or(GameRuntimeError::NoEncounter)?
+            .completed_encounters
+            .iter()
+            .map(|completed| completed.encounter_id.clone())
+            .collect::<BTreeSet<_>>();
 
         match request.command {
             ExplorationCommandKindDto::TurnLeft | ExplorationCommandKindDto::TurnRight => {
@@ -95,11 +103,11 @@ impl GameRuntime {
                 state.position = destination;
                 state.discovered.insert(destination);
 
-                if let Some(trigger) = dungeon
-                    .encounters
-                    .iter()
-                    .find(|trigger| trigger.x == destination.x && trigger.y == destination.y)
-                {
+                if let Some(trigger) = dungeon.encounters.iter().find(|trigger| {
+                    trigger.x == destination.x
+                        && trigger.y == destination.y
+                        && !completed_encounters.contains(trigger.encounter.as_str())
+                }) {
                     return self.enter_encounter_inner(EnterEncounterRequestDto {
                         expected_revision: request.expected_revision,
                         encounter_id: trigger.encounter.to_string(),
@@ -148,19 +156,7 @@ impl GameRuntime {
                 "exploration position is not traversable".to_owned(),
             ));
         }
-        let view = (0..VIEW_DEPTH)
-            .map(|depth| {
-                let center = offset_by(state.position, state.facing, i32::from(depth));
-                let (left, right) = side_positions(center, state.facing);
-                let front = offset_by(center, state.facing, 1);
-                ExplorationDepthDto {
-                    depth,
-                    front_blocked: !is_floor(dungeon, front),
-                    left_blocked: !is_floor(dungeon, left),
-                    right_blocked: !is_floor(dungeon, right),
-                }
-            })
-            .collect();
+        let view = project_view(dungeon, state.position, state.facing);
         let backward = offset(state.position, state.facing, false);
         let forward = offset(state.position, state.facing, true);
         let landmark = dungeon
@@ -233,6 +229,37 @@ impl GameRuntime {
     }
 }
 
+fn project_view(
+    dungeon: &crate::DungeonDefinition,
+    position: DungeonPosition,
+    facing: DungeonFacingDefinition,
+) -> Vec<ExplorationDepthDto> {
+    let mut occluded = false;
+    (0..VIEW_DEPTH)
+        .map(|depth| {
+            if occluded {
+                return ExplorationDepthDto {
+                    depth,
+                    front_blocked: true,
+                    left_blocked: true,
+                    right_blocked: true,
+                };
+            }
+            let center = offset_by(position, facing, i32::from(depth));
+            let (left, right) = side_positions(center, facing);
+            let front = offset_by(center, facing, 1);
+            let projected = ExplorationDepthDto {
+                depth,
+                front_blocked: !is_floor(dungeon, front),
+                left_blocked: !is_floor(dungeon, left),
+                right_blocked: !is_floor(dungeon, right),
+            };
+            occluded = projected.front_blocked;
+            projected
+        })
+        .collect()
+}
+
 fn turn(facing: DungeonFacingDefinition, clockwise: bool) -> DungeonFacingDefinition {
     match (facing, clockwise) {
         (DungeonFacingDefinition::North, true) | (DungeonFacingDefinition::South, false) => {
@@ -299,5 +326,68 @@ fn facing_dto(facing: DungeonFacingDefinition) -> ExplorationFacingDto {
         DungeonFacingDefinition::East => ExplorationFacingDto::East,
         DungeonFacingDefinition::South => ExplorationFacingDto::South,
         DungeonFacingDefinition::West => ExplorationFacingDto::West,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::D20Id;
+
+    fn dungeon(rows: &[&str]) -> crate::DungeonDefinition {
+        crate::DungeonDefinition {
+            title: "Occlusion probe".to_owned(),
+            wall_style: D20Id::parse("stone").unwrap(),
+            width: 7,
+            height: 5,
+            rows: rows.iter().map(|row| (*row).to_owned()).collect(),
+            start_x: 1,
+            start_y: 2,
+            checkpoint_x: 1,
+            checkpoint_y: 2,
+            start_facing: DungeonFacingDefinition::East,
+            encounters: Vec::new(),
+            landmarks: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn corridor_projection_neutralizes_asymmetric_topology_behind_front_wall() {
+        let open_hidden_space = dungeon(&["#######", "#.....#", "#.#...#", "#.....#", "#######"]);
+        let blocked_hidden_space =
+            dungeon(&["#######", "#.###.#", "#.##..#", "#.#...#", "#######"]);
+        let position = DungeonPosition { x: 1, y: 2 };
+
+        let open = project_view(&open_hidden_space, position, DungeonFacingDefinition::East);
+        let blocked = project_view(
+            &blocked_hidden_space,
+            position,
+            DungeonFacingDefinition::East,
+        );
+
+        assert_eq!(open, blocked);
+        assert_eq!(
+            open,
+            vec![
+                ExplorationDepthDto {
+                    depth: 0,
+                    front_blocked: true,
+                    left_blocked: false,
+                    right_blocked: false,
+                },
+                ExplorationDepthDto {
+                    depth: 1,
+                    front_blocked: true,
+                    left_blocked: true,
+                    right_blocked: true,
+                },
+                ExplorationDepthDto {
+                    depth: 2,
+                    front_blocked: true,
+                    left_blocked: true,
+                    right_blocked: true,
+                },
+            ]
+        );
     }
 }

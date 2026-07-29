@@ -874,6 +874,96 @@ fn complete_encounter_defeat_has_no_reward_and_applies_bounded_recovery() {
             .unwrap(),
         recovered_save
     );
+
+    let mut exploring = reopened.begin_exploration(camp.revision).unwrap();
+    for expected_x in 2..=9 {
+        exploring = reopened
+            .exploration_command(ExplorationCommandRequestDto {
+                expected_revision: exploring.revision,
+                command: ExplorationCommandKindDto::StepForward,
+            })
+            .unwrap();
+        assert_eq!(
+            exploring.exploration.as_ref().map(|state| state.x),
+            Some(expected_x)
+        );
+        assert_eq!(
+            exploring.campaign.as_ref().unwrap().phase,
+            CampaignPhaseDto::Exploration,
+            "the completed first trigger must remain consumed"
+        );
+        assert!(exploring.encounter.is_none());
+    }
+
+    let before_stale = reopened.snapshot().unwrap();
+    assert!(matches!(
+        reopened.exploration_command(ExplorationCommandRequestDto {
+            expected_revision: before_stale.revision - 1,
+            command: ExplorationCommandKindDto::TurnLeft,
+        }),
+        Err(GameRuntimeError::StaleCommand(_))
+    ));
+    assert_eq!(reopened.snapshot().unwrap(), before_stale);
+
+    exploring = reopened
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::TurnRight,
+        })
+        .unwrap();
+    for expected_y in 2..=5 {
+        exploring = reopened
+            .exploration_command(ExplorationCommandRequestDto {
+                expected_revision: exploring.revision,
+                command: ExplorationCommandKindDto::StepForward,
+            })
+            .unwrap();
+        assert_eq!(
+            exploring.exploration.as_ref().map(|state| state.y),
+            Some(expected_y)
+        );
+    }
+    exploring = reopened
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::TurnRight,
+        })
+        .unwrap();
+    for expected_x in (2..=8).rev() {
+        exploring = reopened
+            .exploration_command(ExplorationCommandRequestDto {
+                expected_revision: exploring.revision,
+                command: ExplorationCommandKindDto::StepForward,
+            })
+            .unwrap();
+        assert_eq!(
+            exploring.exploration.as_ref().map(|state| state.x),
+            Some(expected_x)
+        );
+        assert_eq!(
+            exploring.campaign.as_ref().unwrap().phase,
+            CampaignPhaseDto::Exploration
+        );
+    }
+    let second = reopened
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::StepForward,
+        })
+        .unwrap();
+    assert_eq!(
+        second.campaign.as_ref().unwrap().phase,
+        CampaignPhaseDto::Encounter
+    );
+    assert_eq!(
+        second
+            .campaign
+            .as_ref()
+            .unwrap()
+            .active_encounter_id
+            .as_deref(),
+        Some("wardens-reckoning")
+    );
 }
 
 #[test]
