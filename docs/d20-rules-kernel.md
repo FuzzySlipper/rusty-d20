@@ -19,17 +19,23 @@ twin.
 
 ## Package and candidate
 
-`D20RulesCandidate` is the strict `schemaVersion: 1` payload of a
+`D20RulesCandidate` is the strict `schemaVersion: 2` payload of a
 `gameplay-rules` package. It contains bounded lists of:
 
 - abilities with score bounds;
-- defenses with a base and ability-derived modifier;
+- defenses with a base and one or two governing abilities;
+- activation budgets with action/reaction timing and bounded initial amounts;
 - damage types;
 - action resources;
 - armor definitions and equipment slots;
-- temporary/ongoing effects with explicit turn durations;
+- implement definitions with slot, tags, attack ability/defense, damage, and
+  range;
+- temporary/ongoing effects with explicit turn durations and bounded condition
+  clauses;
 - resource-spending defensive reactions;
-- attack/check actions with fixed dice damage and an optional effect;
+- actions with tags, activation costs, participant/cell target shape, team,
+  target count, line-of-effect policy, a fixed or implement-bound attack, and
+  an optional effect;
 - character templates with abilities, resources, actions, reactions, and
   damage affinities;
 - storage and concrete item instances with authored containment/equipment;
@@ -40,7 +46,7 @@ twin.
 
 Package dependencies, canonical bytes, fingerprints, sources, and provenance
 come from `gameplay-rules`. Provenance subjects use stable names such as
-`ability:strength`, `armor:chain`, and `action:strike`. Semantic diagnostics
+`ability:might`, `implement:training-blade`, and `action:strike`. Semantic diagnostics
 retain the package plus source/line/column correlation when the matching
 subject was authored.
 
@@ -55,12 +61,13 @@ ruleset and mechanics catalog fingerprints.
 The runtime catalog demonstrates exact package dependencies with six
 canonical packages:
 
-- `starter-core` contributes four abilities, three defenses, four damage
-  types, and three reaction resources;
-- `steel-guard` contributes armor, a defensive reaction, ongoing bleeding,
-  and two physical actions;
-- `ember-ward` contributes resolve equipment, a focus reaction, a temporary
-  ward, and two fire/psychic actions;
+- `starter-core` contributes six abilities, four defenses, Standard/Bonus/
+  Reaction/Movement budgets, four damage types, and three reaction resources;
+- `steel-guard` contributes armor, Training Blade and Field Bow implements, a
+  defensive reaction, ongoing bleeding, Held/Unsettled conditions, and four
+  physical/control actions;
+- `ember-ward` contributes Nerve equipment, a focus reaction, a temporary
+  ward, and two energy/resolve actions;
 - `wardens-gate` contributes its cast, concrete loadout/storage, ordered
   two-encounter sequence, consequences, exactly-once reward, and default
   adventure;
@@ -89,18 +96,27 @@ Live character facts use one canonical `EntityState`:
   attributed intrinsic sources, active effects, equipment, and items.
 
 Armor and temporary defense effects compile to attributed mechanics sources.
+Implements compile to distinct canonical Engine item definitions rather than
+being represented as armor. Equipment references in authored item instances
+are a strict tagged union, so armor and implements cannot be confused at
+runtime.
 Resistance and vulnerability compile to exact one-half and two-times damage
 responses. Damage receipts therefore retain the source identities that changed
 the result.
 
 ## Action transaction
 
-An action preview reads the actor ability modifier, evaluates the target
-defense through `StatService`, reports currently affordable reactions, and
-captures exact relevant component revisions plus the explicit turn and roll
-position. Its authoritative fields are private; consumers receive read-only
-getters and cannot rewrite the action, roll modifier, defense evaluation, or
-reaction list before apply.
+An action preview first resolves its fixed attack or its currently equipped
+implement. Implement resolution obtains ability, defense, damage, and range
+from the compiled implement and rejects an actor without the matching
+canonical Engine item assignment. Rust then reads the actor ability modifier,
+applies active condition attack penalties or action-tag prohibitions,
+evaluates the target defense through `StatService`, reports currently
+affordable reactions, and captures exact relevant component revisions plus the
+explicit turn and roll position. Actor equipment and scheduled-condition
+revisions are included. Its authoritative fields are private; consumers
+receive read-only getters and cannot rewrite the action, roll modifier,
+resolved damage, defense evaluation, or reaction list before apply.
 
 A reaction spends its resource and applies/schedules its effect in one staged
 transaction. The original preview becomes stale; the caller must preview

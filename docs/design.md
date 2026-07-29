@@ -73,6 +73,19 @@ publishes only after every d20 and Engine service succeeds. Damage, equipment,
 effects, stats, tracks, and attributed sources remain Engine mechanisms.
 Ability modifiers, candidate meaning, attack checks, reactions, effect
 deadlines, turn advancement, and save policy remain Rusty D20 meaning.
+The admitted Ruleweaver foundation defines six attributes and four defenses;
+Wits and Nerve select the better modifier from their two authored governing
+attributes. Actions carry bounded tags, activation costs, target shape, range,
+line-of-effect policy, and either a fixed attack or an implement binding.
+Fixed attacks compile all roll facts directly. Implement-bound attacks resolve
+ability, defense, damage, and range from the required implement definition and
+require a matching canonical equipped Engine item at preview time.
+
+Scheduled effects may contribute bounded downstream condition clauses. The
+current non-spatial encounter enforces action-tag prohibitions and attack
+penalties in Rust; movement prohibition is compiled and projected for the
+tactical-grid owner to enforce when live combat movement arrives. TypeScript
+does not execute a condition predicate.
 
 The bounded opposition policy selects from the active encounter participant's
 admitted authored actions with the Rust-owned deterministic session seed, then
@@ -87,17 +100,20 @@ service. None of this policy is promoted into an Engine scheduler, AI graph,
 or event bus.
 
 The camp loadout uses the same canonical `EntityState`: characters and the camp
-stash carry `InventoryComponent`, unique armor entities use containment plus
-`ItemComponent`, and `EquipmentComponent` is the only assignment authority.
+stash carry `InventoryComponent`, unique armor and implement entities use
+containment plus `ItemComponent`, and `EquipmentComponent` is the only
+assignment authority.
 Rusty D20 owns the authored item selection, slot meaning, camp-only command
 policy, inventory presentation order, and product revision. Engine services own
 capacity, containment, equipment, prospective track validation, and attributed
 stat-source mutation. The browser receives immutable loadout and defense
 readouts and never maintains a shadow inventory.
 
-Preview records exact relevant component revisions. Applying a reaction changes
-resource and effect components, so callers must acquire a fresh action preview.
-Unrelated entity changes do not invalidate a preview.
+Preview records exact relevant component revisions, including actor equipment
+and scheduled conditions. Applying a reaction changes resource and effect
+components, so callers must acquire a fresh action preview. Unequipping the
+required implement or changing an active actor condition likewise makes an
+existing preview stale. Unrelated entity changes do not invalidate a preview.
 
 TypeScript does not host live rules, callbacks, runtime sessions, or gameplay
 state. The authoring SDK runs ordinary functions, tables, and loops only at
@@ -116,7 +132,8 @@ builders, module composition, deterministic definition ordering, exact package
 dependencies, and canonical artifact emission.
 
 `rules/packages/starter-ruleset` owns concrete content. The checked starter
-artifacts contain a shared core, distinct steel/armor and ember/resolve rule
+artifacts contain a shared Ruleweaver foundation, distinct steel/armor and
+ember/Nerve rule
 packages, the multi-file Warden's Gate and Ember's Wake adventures, and a
 non-selectable content-only catalog probe. `catalog.json` embeds canonical
 package bytes; Rust selects only the exact dependency closure that owns the

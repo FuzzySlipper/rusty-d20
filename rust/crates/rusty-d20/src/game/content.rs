@@ -73,10 +73,10 @@ pub(super) fn character_seed(definition: &CharacterTemplateDefinition) -> Charac
     }
 }
 
-pub(super) fn product_armor_items(
+pub(super) fn product_equipment_items(
     rules: &D20Ruleset,
     adventure: &AdventureDefinition,
-) -> Result<Vec<ArmorItemSeed>, GameRuntimeError> {
+) -> Result<Vec<EquipmentItemSeed>, GameRuntimeError> {
     adventure
         .items
         .iter()
@@ -84,11 +84,11 @@ pub(super) fn product_armor_items(
             let definition = rules.item_instance(item).ok_or_else(|| {
                 GameRuntimeError::InvalidState(format!("item instance {item} is missing"))
             })?;
-            Ok(ArmorItemSeed {
+            Ok(EquipmentItemSeed {
                 entity: EntityId::new(definition.entity_id),
                 owner: owner_entity(rules, adventure, &definition.owner)?,
                 name: definition.name.clone(),
-                armor: definition.armor.clone(),
+                equipment: definition.equipment.clone(),
             })
         })
         .collect()
@@ -126,11 +126,11 @@ pub(super) fn install_product_loadout(
             })
         })
         .collect::<Result<Vec<_>, GameRuntimeError>>()?;
-    let items = product_armor_items(rules, adventure)?
+    let items = product_equipment_items(rules, adventure)?
         .into_iter()
         .filter(|item| session.entities().core(item.entity).is_none())
         .collect();
-    session.install_loadout(inventory, storage, items)?;
+    session.install_equipment_loadout(inventory, storage, items)?;
     equip_initial_loadout(rules, adventure, session)
 }
 
@@ -232,7 +232,7 @@ pub(super) fn validate_product_state(
             .entities()
             .component::<ItemComponent>(entity)?
             .expect("validated product item component exists");
-        if actual.definition().as_str() != format!("armor.{}", definition.armor) {
+        if actual.definition() != &definition.equipment.mechanics_item_id() {
             return Err(GameRuntimeError::InvalidSave(format!(
                 "loadout item {} definition is inconsistent",
                 entity.raw()
@@ -415,7 +415,7 @@ pub(super) fn transfer_victory_reward(
     let owner = owner_entity(rules, adventure, &reward.owner)?;
     let item = EntityId::new(reward.entity_id);
     let unequip_serial = *next_operation;
-    session.unequip_armor(
+    session.unequip_item(
         owner,
         item,
         operation(&format!("reward-unequip-{unequip_serial}"))?,
@@ -424,7 +424,7 @@ pub(super) fn transfer_victory_reward(
         .checked_add(1)
         .ok_or(GameRuntimeError::CounterOverflow)?;
     let transfer_serial = *next_operation;
-    session.transfer_armor(
+    session.transfer_item(
         item,
         owner,
         storage_entity(rules, adventure, &adventure.camp_storage)?,
@@ -483,10 +483,10 @@ pub(super) fn equip_initial_loadout(
                     .any(|assignment| assignment.item == item_entity)
             });
         if !already_equipped {
-            session.equip_armor(
+            session.equip_item(
                 owner,
                 item_entity,
-                &definition.armor,
+                &definition.equipment,
                 operation(&format!("equip-authored-{item}"))?,
             )?;
         }

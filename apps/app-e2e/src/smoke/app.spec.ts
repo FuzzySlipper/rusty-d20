@@ -47,18 +47,20 @@ test.describe.serial('real Rust encounter shell', () => {
     await expect(page.getByLabel('Armor defense readout')).toContainText('16');
     await expect(page.getByRole('region', { name: 'Inventory', exact: true })).toBeVisible();
     await expect(page.getByLabel('Equipment')).toBeVisible();
+    await expect(page.getByLabel('Equipment')).toContainText("Mara's training blade");
+    await expect(page.getByLabel('Equipment')).toContainText("Mara's field bow");
     await expect(page.getByLabel('Camp stash')).toContainText('Spare buckler');
 
     await page.getByRole('button', { name: 'Take' }).click();
     await expect(page.getByRole('alert')).toContainText('capacity rejection');
-    await expect(page.getByRole('alert')).toContainText('maximum: 2');
+    await expect(page.getByRole('alert')).toContainText('maximum: 4');
     await testInfo.attach('capacity-rejection.png', {
       body: await page.screenshot({ fullPage: true }),
       contentType: 'image/png',
     });
     await page.getByRole('button', { name: 'Dismiss' }).click();
     await expect(page.getByLabel('Armor defense readout')).toContainText('16');
-    await expect(page.getByText('Carried 2/2')).toBeVisible();
+    await expect(page.getByText('Carried 4/4')).toBeVisible();
 
     const chainInventory = page.getByRole('button', {
       name: /Mara's chain armor · equipped body/,
@@ -109,6 +111,15 @@ test.describe.serial('real Rust encounter shell', () => {
       page.locator('aui-character-status').nth(1).getByText('Iron Warden', { exact: true }),
     ).toBeVisible();
     await expect(page.getByLabel('Encounter identity')).toContainText('Engine fb608e323a8b');
+    await expect(page.getByRole('button', { name: 'Pin In Place' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Disrupt' })).toBeVisible();
+    const translatedStrike = page
+      .locator('.action-note')
+      .filter({ hasText: 'Longsword Strike' });
+    await expect(translatedStrike).toContainText('Might vs Armor');
+    await expect(translatedStrike).toContainText('1 Standard Action');
+    await expect(translatedStrike).toContainText('range 1');
+    await expect(translatedStrike).toContainText('Training Blade');
 
     await page.getByLabel('Target').selectOption({ label: 'Iron Warden' });
     await page.getByRole('button', { name: 'Longsword Strike' }).click();

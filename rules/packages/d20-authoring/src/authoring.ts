@@ -18,6 +18,7 @@ import {
   D20_LIMITS,
   type AbilityCandidate,
   type ActionCandidate,
+  type ActivationBudgetCandidate,
   type AdventureCandidate,
   type ArmorCandidate,
   type CharacterTemplateCandidate,
@@ -27,6 +28,7 @@ import {
   type DefenseCandidate,
   type EffectCandidate,
   type EncounterCandidate,
+  type ImplementCandidate,
   type ItemInstanceCandidate,
   type ReactionCandidate,
   type ResourceCandidate,
@@ -50,9 +52,11 @@ export interface D20Module {
   readonly source: D20Source;
   readonly abilities: readonly Located<AbilityCandidate>[];
   readonly defenses: readonly Located<DefenseCandidate>[];
+  readonly activationBudgets: readonly Located<ActivationBudgetCandidate>[];
   readonly damageTypes: readonly Located<DamageTypeCandidate>[];
   readonly resources: readonly Located<ResourceCandidate>[];
   readonly armors: readonly Located<ArmorCandidate>[];
+  readonly implements: readonly Located<ImplementCandidate>[];
   readonly effects: readonly Located<EffectCandidate>[];
   readonly reactions: readonly Located<ReactionCandidate>[];
   readonly actions: readonly Located<ActionCandidate>[];
@@ -66,9 +70,11 @@ export interface D20Module {
 export interface D20ModuleDraft {
   readonly abilities?: readonly Located<AbilityCandidate>[];
   readonly defenses?: readonly Located<DefenseCandidate>[];
+  readonly activationBudgets?: readonly Located<ActivationBudgetCandidate>[];
   readonly damageTypes?: readonly Located<DamageTypeCandidate>[];
   readonly resources?: readonly Located<ResourceCandidate>[];
   readonly armors?: readonly Located<ArmorCandidate>[];
+  readonly implements?: readonly Located<ImplementCandidate>[];
   readonly effects?: readonly Located<EffectCandidate>[];
   readonly reactions?: readonly Located<ReactionCandidate>[];
   readonly actions?: readonly Located<ActionCandidate>[];
@@ -90,6 +96,11 @@ export interface D20ModuleBuilder {
     value: DefenseCandidate,
     column?: number,
   ): Located<DefenseCandidate>;
+  activationBudget(
+    line: number,
+    value: ActivationBudgetCandidate,
+    column?: number,
+  ): Located<ActivationBudgetCandidate>;
   damageType(
     line: number,
     value: DamageTypeCandidate,
@@ -105,6 +116,11 @@ export interface D20ModuleBuilder {
     value: ArmorCandidate,
     column?: number,
   ): Located<ArmorCandidate>;
+  implement(
+    line: number,
+    value: ImplementCandidate,
+    column?: number,
+  ): Located<ImplementCandidate>;
   effect(
     line: number,
     value: EffectCandidate,
@@ -200,9 +216,11 @@ export function defineD20Module(
     source: stableSource,
     abilities: [...(draft.abilities ?? [])],
     defenses: [...(draft.defenses ?? [])],
+    activationBudgets: [...(draft.activationBudgets ?? [])],
     damageTypes: [...(draft.damageTypes ?? [])],
     resources: [...(draft.resources ?? [])],
     armors: [...(draft.armors ?? [])],
+    implements: [...(draft.implements ?? [])],
     effects: [...(draft.effects ?? [])],
     reactions: [...(draft.reactions ?? [])],
     actions: [...(draft.actions ?? [])],
@@ -220,12 +238,20 @@ export function authorD20Package(
   const sources = collectSources(draft.modules);
   const abilities = collect<AbilityCandidate>(draft.modules, 'abilities');
   const defenses = collect<DefenseCandidate>(draft.modules, 'defenses');
+  const activationBudgets = collect<ActivationBudgetCandidate>(
+    draft.modules,
+    'activationBudgets',
+  );
   const damageTypes = collect<DamageTypeCandidate>(
     draft.modules,
     'damageTypes',
   );
   const resources = collect<ResourceCandidate>(draft.modules, 'resources');
   const armors = collect<ArmorCandidate>(draft.modules, 'armors');
+  const implementDefinitions = collect<ImplementCandidate>(
+    draft.modules,
+    'implements',
+  );
   const effects = collect<EffectCandidate>(draft.modules, 'effects');
   const reactions = collect<ReactionCandidate>(draft.modules, 'reactions');
   const actions = collect<ActionCandidate>(draft.modules, 'actions');
@@ -244,9 +270,11 @@ export function authorD20Package(
     schemaVersion: D20_CANDIDATE_SCHEMA_VERSION,
     abilities: values(abilities),
     defenses: values(defenses),
+    activationBudgets: values(activationBudgets),
     damageTypes: values(damageTypes),
     resources: values(resources),
     armors: values(armors),
+    implements: values(implementDefinitions),
     effects: values(effects),
     reactions: values(reactions),
     actions: values(actions),
@@ -259,9 +287,11 @@ export function authorD20Package(
   const provenance = [
     ...provenanceFor('ability', abilities),
     ...provenanceFor('defense', defenses),
+    ...provenanceFor('activation-budget', activationBudgets),
     ...provenanceFor('damage-type', damageTypes),
     ...provenanceFor('resource', resources),
     ...provenanceFor('armor', armors),
+    ...provenanceFor('implement', implementDefinitions),
     ...provenanceFor('effect', effects),
     ...provenanceFor('reaction', reactions),
     ...provenanceFor('action', actions),
@@ -331,10 +361,14 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
     ability: (line, value, column = 1) =>
       locate(source, line, column, value, [['id', value.id]]),
     defense: (line, value, column = 1) =>
-      locate(source, line, column, value, [
+      locate(source, line, column, { ...value, abilities: [...value.abilities] }, [
         ['id', value.id],
-        ['ability', value.ability],
+        ...value.abilities.map(
+          (ability) => ['abilities', ability] as const,
+        ),
       ]),
+    activationBudget: (line, value, column = 1) =>
+      locate(source, line, column, value, [['id', value.id]]),
     damageType: (line, value, column = 1) =>
       locate(source, line, column, value, [['id', value.id]]),
     resource: (line, value, column = 1) =>
@@ -345,12 +379,30 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
         ['defense', value.defense],
         ['slot', value.slot],
       ]),
+    implement: (line, value, column = 1) =>
+      locate(
+        source,
+        line,
+        column,
+        { ...value, tags: [...value.tags], damage: { ...value.damage } },
+        [
+          ['id', value.id],
+          ['slot', value.slot],
+          ...value.tags.map((tag) => ['tags', tag] as const),
+          ['ability', value.ability],
+          ['defense', value.defense],
+          ['damage.kind', value.damage.kind],
+        ],
+      ),
     effect: (line, value, column = 1) =>
       locate(
         source,
         line,
         column,
-        value,
+        {
+          ...value,
+          conditions: value.conditions.map((condition) => ({ ...condition })),
+        },
         value.defense === null
           ? [['id', value.id]]
           : [
@@ -372,13 +424,29 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
         column,
         {
           ...value,
-          damage: { ...value.damage },
+          tags: [...value.tags],
+          activationCosts: value.activationCosts.map((cost) => ({ ...cost })),
+          target: { ...value.target },
+          attack:
+            value.attack.kind === 'fixed'
+              ? { ...value.attack, damage: { ...value.attack.damage } }
+              : { ...value.attack },
         },
         [
           ['id', value.id],
-          ['ability', value.ability],
-          ['defense', value.defense],
-          ['damage.kind', value.damage.kind],
+          ...value.tags.map((tag) => ['tags', tag] as const),
+          ...value.activationCosts.map(
+            (cost) => ['activationCosts.budget', cost.budget] as const,
+          ),
+          ...(value.attack.kind === 'fixed'
+            ? ([
+                ['attack.ability', value.attack.ability],
+                ['attack.defense', value.attack.defense],
+                ['attack.damage.kind', value.attack.damage.kind],
+              ] as const)
+            : ([
+                ['attack.implement', value.attack.implement],
+              ] as const)),
           ...(value.effect === null
             ? []
             : ([['effect', value.effect]] as const)),
@@ -402,9 +470,11 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
     storage: (line, value, column = 1) =>
       locate(source, line, column, value, [['id', value.id]]),
     itemInstance: (line, value, column = 1) =>
-      locate(source, line, column, value, [
+      locate(source, line, column, { ...value, equipment: { ...value.equipment } }, [
         ['id', value.id],
-        ['armor', value.armor],
+        value.equipment.kind === 'armor'
+          ? ['equipment.armor', value.equipment.armor]
+          : ['equipment.implement', value.equipment.implement],
         ['owner', value.owner],
       ]),
     encounter: (line, value, column = 1) =>
@@ -520,9 +590,11 @@ function collect<T extends { readonly id: D20Id }>(
 type DefinitionKey =
   | 'abilities'
   | 'defenses'
+  | 'activationBudgets'
   | 'damageTypes'
   | 'resources'
   | 'armors'
+  | 'implements'
   | 'effects'
   | 'reactions'
   | 'actions'

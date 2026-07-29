@@ -214,14 +214,14 @@ fn alternate_ember_adventure_selection_is_atomic_distinct_and_persistent() {
     assert_eq!(campaign.title, "Ember's Wake");
     assert_eq!(campaign.hero.id, 111);
     assert_eq!(campaign.hero.name, "Sera Vale");
-    let resolve = campaign
+    let nerve = campaign
         .loadout
         .defenses
         .iter()
-        .find(|defense| defense.id == "resolve")
+        .find(|defense| defense.id == "nerve")
         .unwrap();
-    assert!(resolve.sources.iter().any(|source| source.contains("212")));
-    assert!(resolve.sources.iter().any(|source| source.contains("213")));
+    assert!(nerve.sources.iter().any(|source| source.contains("212")));
+    assert!(nerve.sources.iter().any(|source| source.contains("213")));
 
     let before_reselection = runtime.snapshot().unwrap();
     assert!(matches!(
@@ -330,8 +330,8 @@ fn camp_loadout_is_engine_backed_typed_atomic_and_persistent() {
     let mut runtime = GameRuntime::empty().unwrap();
     let camp = runtime.new_adventure(0).unwrap();
     let loadout = &camp.campaign.as_ref().unwrap().loadout;
-    assert_eq!(loadout.capacity.used, 2);
-    assert_eq!(loadout.capacity.maximum, 2);
+    assert_eq!(loadout.capacity.used, 4);
+    assert_eq!(loadout.capacity.maximum, 4);
     assert_eq!(defense_value(loadout, "armor"), 16);
     assert_eq!(
         loadout
@@ -431,7 +431,7 @@ fn camp_loadout_is_engine_backed_typed_atomic_and_persistent() {
         })
         .unwrap();
     let equipped_loadout = &equipped.campaign.as_ref().unwrap().loadout;
-    assert_eq!(equipped_loadout.capacity.used, 2);
+    assert_eq!(equipped_loadout.capacity.used, 4);
     assert_eq!(
         equipped_loadout
             .equipment_slots
@@ -511,13 +511,31 @@ fn equipment_track_bound_failure_keeps_its_public_error_identity() {
 }
 
 #[test]
+fn translated_action_rejections_keep_public_invalid_and_stale_identities() {
+    let unavailable = GameRuntimeError::Session(D20SessionError::RequiredImplementNotEquipped {
+        entity: PLAYER,
+        implement: D20Id::parse("training-blade").unwrap(),
+    })
+    .api_error();
+    assert_eq!(unavailable.kind, ApiErrorKindDto::Invalid);
+    assert!(!unavailable.retryable);
+
+    let stale = GameRuntimeError::Session(D20SessionError::StalePreview {
+        reason: "equipment changed",
+    })
+    .api_error();
+    assert_eq!(stale.kind, ApiErrorKindDto::Stale);
+    assert!(stale.retryable);
+}
+
+#[test]
 fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
     let mut runtime = GameRuntime::empty().unwrap();
     assert!(runtime.snapshot().unwrap().encounter.is_none());
     let started = start_test_encounter(&mut runtime);
     let encounter = started.encounter.unwrap();
     assert_eq!(encounter.characters.len(), 2);
-    assert_eq!(encounter.actions.len(), 2);
+    assert_eq!(encounter.actions.len(), 4);
 
     let before_stale = runtime.encode_save().unwrap();
     assert!(matches!(
@@ -1539,7 +1557,7 @@ fn campaign_phases_and_legacy_migration_are_strict_and_fail_atomic() {
 
     let migrated_v2 = GameRuntime::decode_save(&legacy_v2).unwrap();
     let migrated_loadout = migrated_v2.snapshot().unwrap().campaign.unwrap().loadout;
-    assert_eq!(migrated_loadout.capacity.used, 2);
+    assert_eq!(migrated_loadout.capacity.used, 4);
     assert_eq!(defense_value(&migrated_loadout, "armor"), 16);
     assert_eq!(migrated_loadout.stash_items.len(), 1);
 

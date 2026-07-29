@@ -132,14 +132,18 @@ fn checked_artifacts_drive_distinct_node_free_rust_compositions() {
     let combined = D20Ruleset::compile(vec![ember, core, steel]).unwrap();
     for action in [
         "fire-bolt",
+        "disrupt",
         "longsword-strike",
         "mind-spike",
+        "pin-in-place",
         "precise-shot",
     ] {
         assert!(combined.action(&id(action)).is_some());
     }
-    assert_eq!(combined.abilities().count(), 4);
-    assert_eq!(combined.defenses().count(), 3);
+    assert_eq!(combined.abilities().count(), 6);
+    assert_eq!(combined.defenses().count(), 4);
+    assert_eq!(combined.activation_budgets().count(), 4);
+    assert_eq!(combined.implements().count(), 2);
     assert_eq!(combined.damage_types().count(), 4);
     assert_eq!(combined.resources().count(), 3);
     assert_eq!(combined.reactions().count(), 2);

@@ -62,6 +62,11 @@ pub struct ActionDto {
     pub ability: String,
     pub defense: String,
     pub damage: String,
+    pub activation: Vec<String>,
+    pub target: String,
+    pub range: u16,
+    pub implement: Option<String>,
+    pub tags: Vec<String>,
     pub effect: Option<String>,
 }
 

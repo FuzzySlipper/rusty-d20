@@ -21,22 +21,41 @@ const source = Object.freeze({
 test('module order does not change canonical package identity', () => {
   const abilities = defineD20Module(source, ({ ability }) => ({
     abilities: [
-      ability(12, { id: 'strength', minimum: 1, maximum: 30 }),
+      ability(12, { id: 'might', minimum: 1, maximum: 30 }),
     ],
   }));
   const combat = defineD20Module(
     { id: 'combat-source', path: 'rules/test-combat.ts' },
-    ({ action, damageType, defense }) => ({
+    ({ action, activationBudget, damageType, defense }) => ({
       defenses: [
-        defense(8, { id: 'armor', base: 10, ability: 'strength' }),
+        defense(8, { id: 'armor', base: 10, abilities: ['might'] }),
+      ],
+      activationBudgets: [
+        activationBudget(10, {
+          id: 'standard-action',
+          timing: 'action',
+          initial: 1,
+        }),
       ],
       damageTypes: [damageType(12, { id: 'force' })],
       actions: [
         action(16, {
           id: 'shove',
-          ability: 'strength',
-          defense: 'armor',
-          damage: { kind: 'force', dice: 1, sides: 4, bonus: 0 },
+          tags: ['attack'],
+          activationCosts: [{ budget: 'standard-action', amount: 1 }],
+          target: {
+            kind: 'participant',
+            team: 'hostile',
+            maximumTargets: 1,
+            lineOfEffect: 'required',
+          },
+          attack: {
+            kind: 'fixed',
+            ability: 'might',
+            defense: 'armor',
+            damage: { kind: 'force', dice: 1, sides: 4, bonus: 0 },
+            range: 1,
+          },
           effect: null,
         }),
       ],

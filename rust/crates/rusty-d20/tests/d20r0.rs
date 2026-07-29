@@ -9,14 +9,18 @@ use gameplay_rules::{
     RuleSource, RuleSourceId, RuleSubjectId, RuleVersion,
 };
 use rusty_d20::{
-    ability_modifier, admit_d20_candidate, AbilityCandidate, AbilityScore, ActionCandidate,
-    ActionResource, AdventureCandidate, AffinitySeed, ApplyActionRequest, ArmorCandidate,
-    ArmorItemSeed, CharacterAbilityCandidate, CharacterResourceCandidate, CharacterSeed,
-    CharacterTemplateCandidate, D20CompileError, D20Id, D20PackageEnvelope, D20RulesCandidate,
+    ability_modifier, admit_d20_candidate, AbilityCandidate, AbilityScore, ActionAttackCandidate,
+    ActionCandidate, ActionLineOfEffectCandidate, ActionResource, ActionTargetCandidate,
+    ActionTargetKindCandidate, ActionTargetTeamCandidate, ActivationBudgetCandidate,
+    ActivationCostCandidate, ActivationTimingCandidate, AdventureCandidate, AffinitySeed,
+    ApplyActionRequest, ArmorCandidate, ArmorItemSeed, CharacterAbilityCandidate,
+    CharacterResourceCandidate, CharacterSeed, CharacterTemplateCandidate,
+    ConditionClauseCandidate, D20CompileError, D20Id, D20PackageEnvelope, D20RulesCandidate,
     D20Ruleset, D20Session, D20SessionError, DamageAffinity, DamageCandidate, DamageTypeCandidate,
     DefenseCandidate, DungeonCandidate, DungeonEncounterCandidate, DungeonFacingCandidate,
-    EffectCandidate, EncounterCandidate, EncounterOutcomeCandidate, ItemInstanceCandidate,
-    ItemRarityCandidate, ReactionCandidate, ResourceCandidate, SessionSaveError, StorageCandidate,
+    EffectCandidate, EncounterCandidate, EncounterOutcomeCandidate, EquipmentItemSeed,
+    EquipmentReferenceCandidate, ImplementCandidate, ItemInstanceCandidate, ItemRarityCandidate,
+    ReactionCandidate, ResourceCandidate, SessionSaveError, StorageCandidate,
     D20_CANDIDATE_SCHEMA_VERSION,
 };
 use serde_json::json;
@@ -83,7 +87,12 @@ fn base_candidate() -> D20RulesCandidate {
         defenses: vec![DefenseCandidate {
             id: id("armor"),
             base: 1,
-            ability: id("dexterity"),
+            abilities: vec![id("dexterity")],
+        }],
+        activation_budgets: vec![ActivationBudgetCandidate {
+            id: id("standard-action"),
+            timing: ActivationTimingCandidate::Action,
+            initial: 1,
         }],
         damage_types: vec![DamageTypeCandidate { id: id("slashing") }],
         resources: vec![ResourceCandidate {
@@ -102,12 +111,14 @@ fn base_candidate() -> D20RulesCandidate {
                 defense: None,
                 defense_bonus: 0,
                 duration_turns: 2,
+                conditions: vec![],
             },
             EffectCandidate {
                 id: id("reaction-guard"),
                 defense: Some(id("armor")),
                 defense_bonus: 5,
                 duration_turns: 1,
+                conditions: vec![],
             },
         ],
         reactions: vec![ReactionCandidate {
@@ -120,13 +131,27 @@ fn base_candidate() -> D20RulesCandidate {
         }],
         actions: vec![ActionCandidate {
             id: id("strike"),
-            ability: id("strength"),
-            defense: id("armor"),
-            damage: DamageCandidate {
-                kind: id("slashing"),
-                dice: 1,
-                sides: 8,
-                bonus: 2,
+            tags: vec![id("attack")],
+            activation_costs: vec![ActivationCostCandidate {
+                budget: id("standard-action"),
+                amount: 1,
+            }],
+            target: ActionTargetCandidate {
+                kind: ActionTargetKindCandidate::Participant,
+                team: ActionTargetTeamCandidate::Hostile,
+                maximum_targets: 1,
+                line_of_effect: ActionLineOfEffectCandidate::Required,
+            },
+            attack: ActionAttackCandidate::Fixed {
+                ability: id("strength"),
+                defense: id("armor"),
+                damage: DamageCandidate {
+                    kind: id("slashing"),
+                    dice: 1,
+                    sides: 8,
+                    bonus: 2,
+                },
+                range: 1,
             },
             effect: Some(id("bleeding")),
         }],
@@ -226,6 +251,169 @@ fn configured_session() -> D20Session {
 }
 
 #[test]
+fn implement_bound_actions_require_live_equipment_and_stale_after_unequip() {
+    let mut candidate = base_candidate();
+    candidate.implements = vec![ImplementCandidate {
+        id: id("training-blade"),
+        slot: id("main-hand"),
+        tags: vec![id("melee"), id("weapon")],
+        ability: id("strength"),
+        defense: id("armor"),
+        damage: DamageCandidate {
+            kind: id("slashing"),
+            dice: 1,
+            sides: 8,
+            bonus: 2,
+        },
+        range: 1,
+    }];
+    candidate.actions[0].attack = ActionAttackCandidate::Implement {
+        implement: id("training-blade"),
+    };
+    let rules = D20Ruleset::compile(vec![admit_d20_candidate(
+        envelope("implement-test", vec![], &[]),
+        candidate,
+    )
+    .unwrap()])
+    .unwrap();
+    let equipment = rusty_d20::EquipmentReferenceDefinition::Implement {
+        implement: id("training-blade"),
+    };
+    let item = EntityId::new(301);
+    let mut session = D20Session::new_with_equipment_loadout(
+        rules,
+        RngSeed::new(0xD20),
+        vec![
+            character(ATTACKER, "attacker", 18, 10, vec![]),
+            character(TARGET, "target", 10, 10, vec![]),
+        ],
+        vec![],
+        vec![],
+        vec![EquipmentItemSeed {
+            entity: item,
+            owner: ATTACKER,
+            name: "training blade".to_owned(),
+            equipment: equipment.clone(),
+        }],
+    )
+    .unwrap();
+
+    assert!(matches!(
+        session.preview_action(
+            ATTACKER,
+            TARGET,
+            &id("strike"),
+            operation("missing-implement")
+        ),
+        Err(D20SessionError::RequiredImplementNotEquipped { .. })
+    ));
+    session
+        .equip_item(ATTACKER, item, &equipment, operation("equip-implement"))
+        .unwrap();
+    let preview = session
+        .preview_action(
+            ATTACKER,
+            TARGET,
+            &id("strike"),
+            operation("equipped-implement"),
+        )
+        .unwrap();
+    session
+        .unequip_item(ATTACKER, item, operation("unequip-implement"))
+        .unwrap();
+    assert!(matches!(
+        session.apply_action(ApplyActionRequest {
+            preview,
+            effect_instance: Some(effect_instance("implement-effect")),
+        }),
+        Err(D20SessionError::StalePreview { .. })
+    ));
+}
+
+#[test]
+fn active_condition_clauses_penalize_and_forbid_tagged_actions() {
+    let mut penalized = base_candidate();
+    penalized.effects[0].conditions = vec![ConditionClauseCandidate::AttackPenalty { amount: -2 }];
+    let rules = D20Ruleset::compile(vec![admit_d20_candidate(
+        envelope("condition-penalty", vec![], &[]),
+        penalized,
+    )
+    .unwrap()])
+    .unwrap();
+    let mut session = D20Session::new(
+        rules,
+        RngSeed::new(0xD20),
+        vec![
+            character(ATTACKER, "attacker", 30, 10, vec![]),
+            character(TARGET, "target", 10, 10, vec![]),
+        ],
+        vec![],
+    )
+    .unwrap();
+    let preview = session
+        .preview_action(
+            ATTACKER,
+            TARGET,
+            &id("strike"),
+            operation("apply-condition"),
+        )
+        .unwrap();
+    session
+        .apply_action(ApplyActionRequest {
+            preview,
+            effect_instance: Some(effect_instance("condition-penalty-effect")),
+        })
+        .unwrap();
+    let penalized_preview = session
+        .preview_action(
+            TARGET,
+            ATTACKER,
+            &id("strike"),
+            operation("penalized-action"),
+        )
+        .unwrap();
+    assert_eq!(penalized_preview.ability_modifier(), -2);
+
+    let mut forbidden = base_candidate();
+    forbidden.effects[0].conditions =
+        vec![ConditionClauseCandidate::ForbidActionTag { tag: id("attack") }];
+    let rules = D20Ruleset::compile(vec![admit_d20_candidate(
+        envelope("condition-forbid", vec![], &[]),
+        forbidden,
+    )
+    .unwrap()])
+    .unwrap();
+    let mut session = D20Session::new(
+        rules,
+        RngSeed::new(0xD20),
+        vec![
+            character(ATTACKER, "attacker", 30, 10, vec![]),
+            character(TARGET, "target", 10, 10, vec![]),
+        ],
+        vec![],
+    )
+    .unwrap();
+    let preview = session
+        .preview_action(ATTACKER, TARGET, &id("strike"), operation("apply-forbid"))
+        .unwrap();
+    session
+        .apply_action(ApplyActionRequest {
+            preview,
+            effect_instance: Some(effect_instance("condition-forbid-effect")),
+        })
+        .unwrap();
+    assert!(matches!(
+        session.preview_action(
+            TARGET,
+            ATTACKER,
+            &id("strike"),
+            operation("forbidden-action")
+        ),
+        Err(D20SessionError::ActionForbidden { .. })
+    ));
+}
+
+#[test]
 fn candidate_artifact_and_direct_construction_converge() {
     let direct = admitted_base();
     let bytes = encode_rule_package(&direct);
@@ -247,7 +435,10 @@ fn candidate_artifact_and_direct_construction_converge() {
 #[test]
 fn compiler_reports_correlated_invalid_content_and_package_cycles() {
     let mut invalid = base_candidate();
-    invalid.actions[0].ability = id("unknown");
+    let ActionAttackCandidate::Fixed { ability, .. } = &mut invalid.actions[0].attack else {
+        panic!("test action is fixed");
+    };
+    *ability = id("unknown");
     let package =
         admit_d20_candidate(envelope("invalid", vec![], &["action:strike"]), invalid).unwrap();
     let error = D20Ruleset::compile(vec![package]).unwrap_err();
@@ -351,6 +542,37 @@ fn compiler_rejects_strict_shape_duplicates_and_d20_quotas() {
         .iter()
         .any(|diagnostic| diagnostic.code() == "D20_DEFINITION_QUOTA"));
 
+    let mut exact_nested_limit = base_candidate();
+    exact_nested_limit.actions[0].tags = (0..16).map(|index| id(&format!("tag-{index}"))).collect();
+    D20Ruleset::compile(vec![admit_d20_candidate(
+        envelope("exact-tags", vec![], &[]),
+        exact_nested_limit,
+    )
+    .unwrap()])
+    .unwrap();
+
+    let mut one_over_nested_limit = base_candidate();
+    one_over_nested_limit.actions[0].tags =
+        (0..17).map(|index| id(&format!("tag-{index}"))).collect();
+    let package = admit_d20_candidate(
+        envelope("too-many-tags", vec![], &["action:strike"]),
+        one_over_nested_limit,
+    )
+    .unwrap();
+    let D20CompileError::Diagnostics(report) = D20Ruleset::compile(vec![package]).unwrap_err()
+    else {
+        panic!("nested quota violation must produce diagnostics");
+    };
+    let diagnostic = report
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "D20_SEMANTIC_ENTRY_QUOTA")
+        .expect("semantic quota diagnostic");
+    assert_eq!(
+        diagnostic.correlation().unwrap().source().as_str(),
+        "too-many-tags-source"
+    );
+
     let duplicate =
         admit_d20_candidate(envelope("duplicate", vec![], &[]), base_candidate()).unwrap();
     let D20CompileError::Diagnostics(report) =
@@ -426,7 +648,7 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
                 id: id("orphan"),
                 entity_id: 202,
                 name: "Orphan armor".to_owned(),
-                armor: id("chain"),
+                equipment: EquipmentReferenceCandidate::Armor { armor: id("chain") },
                 owner: id("missing-owner"),
                 icon: "armor".to_owned(),
                 rarity: ItemRarityCandidate::Common,
@@ -436,7 +658,7 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
                 id: id("stored-equipped"),
                 entity_id: 203,
                 name: "Stored armor".to_owned(),
-                armor: id("chain"),
+                equipment: EquipmentReferenceCandidate::Armor { armor: id("chain") },
                 owner: id("camp"),
                 icon: "armor".to_owned(),
                 rarity: ItemRarityCandidate::Common,

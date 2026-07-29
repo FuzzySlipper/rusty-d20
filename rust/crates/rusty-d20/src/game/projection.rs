@@ -163,6 +163,11 @@ impl GameRuntime {
             .rules
             .armors()
             .map(|armor| armor.slot.clone())
+            .chain(
+                self.rules
+                    .implements()
+                    .map(|implement| implement.slot.clone()),
+            )
             .fold(BTreeMap::<String, D20Id>::new(), |mut slots, slot| {
                 slots.entry(slot.to_string()).or_insert(slot);
                 slots
@@ -236,10 +241,15 @@ impl GameRuntime {
     ) -> Result<LoadoutItemDto, GameRuntimeError> {
         let adventure = self.adventure()?;
         let authored = product_loadout_item(&self.rules, adventure, item)?;
-        let armor = authored.armor.clone();
-        let definition = self.rules.armor(&armor).ok_or_else(|| {
-            GameRuntimeError::InvalidState(format!("loadout armor {armor} is missing"))
-        })?;
+        let (definition_id, slot) = self
+            .rules
+            .equipment_definition(&authored.equipment)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(format!(
+                    "loadout equipment {} is missing",
+                    authored.equipment.id()
+                ))
+            })?;
         let component = session
             .entities()
             .component::<ItemComponent>(item)?
@@ -249,8 +259,7 @@ impl GameRuntime {
                     item.raw()
                 ))
             })?;
-        let expected_definition = format!("armor.{armor}");
-        if component.definition().as_str() != expected_definition {
+        if component.definition() != &authored.equipment.mechanics_item_id() {
             return Err(GameRuntimeError::InvalidState(format!(
                 "loadout item {} definition is inconsistent",
                 item.raw()
@@ -281,12 +290,12 @@ impl GameRuntime {
         };
         Ok(LoadoutItemDto {
             entity_id: item.raw(),
-            definition_id: armor.to_string(),
+            definition_id: definition_id.to_string(),
             name: item_name,
             icon: authored.icon.clone(),
             rarity,
             quantity: 1,
-            equipment_slot_id: definition.slot.to_string(),
+            equipment_slot_id: slot.to_string(),
             equipped_slot_id,
         })
     }
@@ -322,25 +331,52 @@ impl GameRuntime {
                 .actions
                 .iter()
                 .filter_map(|action| self.rules.action(action))
-                .map(|action| ActionDto {
-                    id: action.id.to_string(),
-                    label: humanize(action.id.as_str()),
-                    ability: humanize(action.ability.as_str()),
-                    defense: humanize(action.defense.as_str()),
-                    damage: format!(
-                        "{}d{}{}{} {}",
-                        action.damage.dice,
-                        action.damage.sides,
-                        if action.damage.bonus >= 0 { "+" } else { "" },
-                        action.damage.bonus,
-                        humanize(action.damage.kind.as_str())
-                    ),
-                    effect: action
-                        .effect
-                        .as_ref()
-                        .map(|effect| humanize(effect.as_str())),
+                .map(|action| {
+                    let resolved = session.action_definition_profile(&action.id)?;
+                    Ok(ActionDto {
+                        id: action.id.to_string(),
+                        label: humanize(action.id.as_str()),
+                        ability: humanize(resolved.ability.as_str()),
+                        defense: humanize(resolved.defense.as_str()),
+                        damage: format!(
+                            "{}d{}{}{} {}",
+                            resolved.damage.dice,
+                            resolved.damage.sides,
+                            if resolved.damage.bonus >= 0 { "+" } else { "" },
+                            resolved.damage.bonus,
+                            humanize(resolved.damage.kind.as_str())
+                        ),
+                        activation: action
+                            .activation_costs
+                            .iter()
+                            .map(|cost| {
+                                format!("{} {}", cost.amount, humanize(cost.budget.as_str()))
+                            })
+                            .collect(),
+                        target: format!(
+                            "{} {} {} · line of effect {}",
+                            action.target.maximum_targets,
+                            humanize(&format!("{:?}", action.target.team).to_lowercase()),
+                            humanize(&format!("{:?}", action.target.kind).to_lowercase()),
+                            humanize(&format!("{:?}", action.target.line_of_effect).to_lowercase())
+                        ),
+                        range: resolved.range,
+                        implement: resolved
+                            .implement
+                            .as_ref()
+                            .map(|implement| humanize(implement.as_str())),
+                        tags: action
+                            .tags
+                            .iter()
+                            .map(|tag| humanize(tag.as_str()))
+                            .collect(),
+                        effect: action
+                            .effect
+                            .as_ref()
+                            .map(|effect| humanize(effect.as_str())),
+                    })
                 })
-                .collect(),
+                .collect::<Result<Vec<_>, GameRuntimeError>>()?,
             pending_action: self
                 .pending
                 .as_ref()

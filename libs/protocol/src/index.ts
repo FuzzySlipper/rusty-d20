@@ -822,15 +822,37 @@ function decodeResource(value: unknown): ResourceDto | undefined {
 }
 
 function decodeAction(value: unknown): ActionDto | undefined {
-  if (!hasExactKeys(value, ['ability', 'damage', 'defense', 'effect', 'id', 'label'])) {
+  if (
+    !hasExactKeys(value, [
+      'ability',
+      'activation',
+      'damage',
+      'defense',
+      'effect',
+      'id',
+      'implement',
+      'label',
+      'range',
+      'tags',
+      'target',
+    ])
+  ) {
     return undefined;
   }
+  const activation = decodeStrings(value['activation'], 4);
+  const tags = decodeStrings(value['tags'], 16);
   const effect = value['effect'];
+  const implement = value['implement'];
   return typeof value['id'] === 'string' &&
     typeof value['label'] === 'string' &&
     typeof value['ability'] === 'string' &&
     typeof value['defense'] === 'string' &&
     typeof value['damage'] === 'string' &&
+    activation !== undefined &&
+    typeof value['target'] === 'string' &&
+    isSafeNonNegativeInteger(value['range']) &&
+    (typeof implement === 'string' || implement === null) &&
+    tags !== undefined &&
     (typeof effect === 'string' || effect === null)
     ? {
         id: value['id'],
@@ -838,6 +860,11 @@ function decodeAction(value: unknown): ActionDto | undefined {
         ability: value['ability'],
         defense: value['defense'],
         damage: value['damage'],
+        activation,
+        target: value['target'],
+        range: value['range'],
+        implement,
+        tags,
         effect,
       }
     : undefined;

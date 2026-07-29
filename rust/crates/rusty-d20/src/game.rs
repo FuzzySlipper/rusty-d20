@@ -14,9 +14,9 @@ use crate::adventure::AuthoredAdventureCatalog;
 use crate::compiler::defense_stat_id;
 use crate::{
     AbilityScore, ActionPreview, ActionResource, ActionResourcesComponent, AdventureDefinition,
-    AffinitySeed, ApplyActionRequest, ArmorItemSeed, CharacterAffinityKindDefinition,
-    CharacterSeed, CharacterTemplateDefinition, D20CompileError, D20Id, D20Ruleset, D20Session,
-    D20SessionError, DamageAffinity, DungeonFacingDefinition, EncounterDefinition, InventorySeed,
+    AffinitySeed, ApplyActionRequest, CharacterAffinityKindDefinition, CharacterSeed,
+    CharacterTemplateDefinition, D20CompileError, D20Id, D20Ruleset, D20Session, D20SessionError,
+    DamageAffinity, DungeonFacingDefinition, EncounterDefinition, EquipmentItemSeed, InventorySeed,
     ItemInstanceDefinition, ItemRarityDefinition, ReactionReceipt, ScheduledEffectsComponent,
     SessionSaveError, StorageSeed, ENGINE_REVISION,
 };
@@ -330,13 +330,13 @@ impl GameRuntime {
                 }
             })
             .collect();
-        let mut session = D20Session::new_with_loadout(
+        let mut session = D20Session::new_with_equipment_loadout(
             self.rules.clone(),
             RngSeed::new(0xD20_2026),
             characters,
             inventories,
             storage,
-            product_armor_items(&self.rules, &adventure)?,
+            product_equipment_items(&self.rules, &adventure)?,
         )?;
         equip_initial_loadout(&self.rules, &adventure, &mut session)?;
         self.campaign = Some(CampaignState {
@@ -505,24 +505,25 @@ impl GameRuntime {
         let item = entity(request.item_id)?;
         let adventure = self.adventure()?.clone();
         let item_definition = product_loadout_item(&self.rules, &adventure, item)?.clone();
-        let armor = item_definition.armor;
-        let definition = self
+        let equipment = item_definition.equipment;
+        let (definition_id, slot) = self
             .rules
-            .armor(&armor)
-            .expect("authored product armor exists in the compiled ruleset")
-            .clone();
-        if request.slot_id != definition.slot.as_str() {
+            .equipment_definition(&equipment)
+            .expect("authored equipment exists in the compiled ruleset");
+        let definition_id = definition_id.clone();
+        let slot = slot.clone();
+        if request.slot_id != slot.as_str() {
             return Err(GameRuntimeError::InvalidEquipmentSlot {
                 requested: request.slot_id,
-                required: definition.slot.to_string(),
+                required: slot.to_string(),
             });
         }
         let serial = self.next_operation;
         let hero = character_entity(&self.rules, &adventure, &adventure.hero)?;
-        self.session_mut()?.equip_armor(
+        self.session_mut()?.equip_item(
             hero,
             item,
-            &armor,
+            &equipment,
             operation(&format!("equip-item-{serial}"))?,
         )?;
         self.next_operation = serial + 1;
@@ -531,11 +532,11 @@ impl GameRuntime {
         self.push_log(
             GameLogKindDto::System,
             "Loadout",
-            &format!("Equipped {}.", humanize(armor.as_str())),
+            &format!("Equipped {}.", humanize(definition_id.as_str())),
             vec![format!(
                 "{} now occupies the {} slot.",
-                humanize(armor.as_str()),
-                humanize(definition.slot.as_str())
+                humanize(definition_id.as_str()),
+                humanize(slot.as_str())
             )],
         )?;
         self.snapshot()
@@ -550,8 +551,8 @@ impl GameRuntime {
         self.ensure_mutation_capacity(true, true)?;
         let item = entity(request.item_id)?;
         let adventure = self.adventure()?.clone();
-        let armor = product_loadout_item(&self.rules, &adventure, item)?
-            .armor
+        let equipment = product_loadout_item(&self.rules, &adventure, item)?
+            .equipment
             .clone();
         let hero_name = self
             .rules
@@ -561,7 +562,7 @@ impl GameRuntime {
             .clone();
         let hero = character_entity(&self.rules, &adventure, &adventure.hero)?;
         let serial = self.next_operation;
-        self.session_mut()?.unequip_armor(
+        self.session_mut()?.unequip_item(
             hero,
             item,
             operation(&format!("unequip-item-{serial}"))?,
@@ -572,7 +573,7 @@ impl GameRuntime {
         self.push_log(
             GameLogKindDto::System,
             "Loadout",
-            &format!("Unequipped {}.", humanize(armor.as_str())),
+            &format!("Unequipped {}.", humanize(equipment.id().as_str())),
             vec![format!("The item remains in {hero_name}'s inventory.")],
         )?;
         self.snapshot()
@@ -587,8 +588,8 @@ impl GameRuntime {
         self.ensure_mutation_capacity(true, true)?;
         let item = entity(request.item_id)?;
         let adventure = self.adventure()?.clone();
-        let armor = product_loadout_item(&self.rules, &adventure, item)?
-            .armor
+        let equipment = product_loadout_item(&self.rules, &adventure, item)?
+            .equipment
             .clone();
         let from_owner = entity(request.from_owner_id)?;
         let to_owner = entity(request.to_owner_id)?;
@@ -613,7 +614,7 @@ impl GameRuntime {
             )));
         }
         let serial = self.next_operation;
-        self.session_mut()?.transfer_armor(
+        self.session_mut()?.transfer_item(
             item,
             from_owner,
             to_owner,
@@ -636,7 +637,10 @@ impl GameRuntime {
         self.push_log(
             GameLogKindDto::System,
             "Loadout",
-            &format!("Moved {} to {destination}.", humanize(armor.as_str())),
+            &format!(
+                "Moved {} to {destination}.",
+                humanize(equipment.id().as_str())
+            ),
             vec![format!(
                 "Canonical containment now points to entity {}.",
                 to_owner.raw()
@@ -1428,6 +1432,11 @@ impl GameRuntimeError {
                 let kind = mechanics_api_error_kind(error);
                 (kind, kind == ApiErrorKindDto::Stale)
             }
+            Self::Session(D20SessionError::StalePreview { .. }) => (ApiErrorKindDto::Stale, true),
+            Self::Session(
+                D20SessionError::RequiredImplementNotEquipped { .. }
+                | D20SessionError::ActionForbidden { .. },
+            ) => (ApiErrorKindDto::Invalid, false),
             Self::PendingActionCannotBeSaved | Self::InvalidCommand(_) | Self::D20Identity(_) => {
                 (ApiErrorKindDto::Invalid, false)
             }

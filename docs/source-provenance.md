@@ -89,13 +89,29 @@ repositories:
   `content-packs/ruleweaver-foundation`, and
   `play-bundles/ruleweaver-foundation.ts`.
 
-This exploration milestone copies no Ruleweaver or Asha content into canonical
-artifacts. It introduces original Warden's Gate and Ember's Wake dungeon grids
-to prove the owning Rust contract first. Later content milestones must select a
-bounded source set, record exact paths and any licensing disposition, translate
-meaning into Rusty D20's authoring contract, and regenerate canonical
-fingerprints. Neither local repository becomes a runtime dependency or a
-sibling path fallback.
+Task 6388 reviewed and translated the following bounded inventory. The
+Ruleweaver checkout has no top-level license or copying notice, so it is design
+evidence only: no prose, record, stat block, or catalog bytes were copied. Asha
+`SOURCES.md` identifies its Ruleweaver Tactics foundation and Crosswind content
+as clean-room original work released under CC BY 4.0. Rusty D20 attributes that
+review here and adapts only selected mechanical vocabulary and independently
+authored values through its own schema.
+
+| Disposition | Reviewed source | Rusty D20 result |
+| --- | --- | --- |
+| Adopted | Ruleweaver `design-doc.md` | Six attributes: Might, Finesse, Acuity, Intellect, Conviction, Spirit; Armor, Grit, Wits, and Nerve defense derivation. |
+| Adopted | Ruleweaver `docs/design/action-economy-conditions-targeting.md` and Asha `rulesets/ruleweaver-tactics/src/ruleset.ts` | Standard, Bonus, Reaction, and Movement budgets with initial amounts 1/1/1/6; bounded participant/cell, team, target-count, range, and line-of-effect action shapes. |
+| Adapted | Ruleweaver `docs/design/equipment-system.md`, `docs/design/implement-system.md`; Asha `content-packs/ruleweaver-foundation/src/items.ts` and `src/actions.ts` | Training Blade and Field Bow become distinct Rust-compiled implement definitions and canonical Engine items. Implement-bound actions resolve ability, defense, damage, and range only from the currently equipped authored implement. |
+| Adapted | Ruleweaver condition design; Asha `content-packs/ruleweaver-foundation/src/effects.ts` | Held and Unsettled become bounded Rust condition clauses: movement prohibition, action-tag prohibition, and attack penalty. Existing Warden and Ember content uses the same clause system. |
+| Adapted | Asha Ruleweaver foundation action examples | Existing playable actions now carry explicit tags, activation cost, target shape, range, and fixed or implement-bound attack identity. Pin in Place and Disrupt exercise selected control conditions in the default encounter. |
+| Replaced | Previous Rusty D20 Strength/Dexterity/Wisdom/Constitution and Armor/Resolve/Fortitude vocabulary | Replaced by the six-attribute/four-defense foundation. Previous direct weapon-shaped actions now use the explicit attack union and equipment binding. |
+| Replaced | Asha TypeScript predicate/effect execution and package shape | Replaced by Rust semantic compilation, registered Engine entity facts, named Engine services, complete Rust saves, Rust-generated browser protocol, and strict decoding. |
+| Excluded | Ruleweaver `docs/dnd4e-content/**`, `content/**/imported/**`, class/talent catalogs, creature catalogs, broad action/equipment catalogs | No bulk import, transformed dataset, branded creature, class system, or universal rules AST. |
+| Excluded | Ruleweaver `content/scenarios/goblin-ambush.json`, `content/scenarios/kobold-warren.json`; Asha Crosswind Outpost content | Reviewed only as scale/shape witnesses. Task 6388 does not copy those encounters or claim the later bounded adventure milestone. |
+
+Neither donor repository is a build/runtime dependency or sibling fallback.
+The committed canonical artifacts contain only the selected Rusty D20-owned
+translation and their exact local source provenance.
 
 ## GM7 product compositions
 
@@ -164,3 +180,24 @@ minimap are now connected only to those Rust-projected facts, while the new
 renderer corridor remains product-neutral presentation. No Engine mechanism,
 Ruleweaver bulk import, Asha runtime, fixture transport, browser rules
 evaluator, or direct browser encounter command was introduced.
+
+## Ruleweaver foundation translation disposition
+
+The foundation translation keeps both reviewed Engine/UI pins unchanged.
+TypeScript authoring gained immutable builders for activation budgets,
+implements, condition clauses, shaped targets, attack variants, and typed
+equipment references. Rust remains the only semantic owner: it enforces
+bounded lists and references, compiles armor and implements into distinct
+Engine item definitions, derives Wits/Nerve from the better of their two
+governing attributes, resolves implement-bound attacks from canonical equipped
+items, applies active condition penalties/prohibitions, and captures equipment
+and condition revisions in action previews.
+
+Canonical artifacts were regenerated from the Rust-owned contract. The normal
+Warden's Gate encounter equips both selected implements and exposes
+implement-bound attacks plus Held/Unsettled control actions. The browser
+receives only resolved presentation facts, target/range/cost metadata, and
+strict command inputs; it does not evaluate the translated rules. Live
+per-actor activation-budget consumption/reset remains owned by the following
+party/turn milestone, and spatial range/line-of-effect enforcement remains
+owned by the tactical-grid milestone.

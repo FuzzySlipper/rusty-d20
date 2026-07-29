@@ -7,12 +7,14 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::{
-    D20Id, D20_ID_PATTERN, MAX_D20_ADVENTURES_PER_PACKAGE, MAX_D20_ADVENTURE_ENTRIES,
-    MAX_D20_AUTHORED_TEXT_BYTES, MAX_D20_DAMAGE_DICE, MAX_D20_DAMAGE_DIE_SIDES,
+    D20Id, D20_ID_PATTERN, MAX_D20_ACTION_TAGS, MAX_D20_ACTION_TARGETS, MAX_D20_ACTIVATION_COSTS,
+    MAX_D20_ADVENTURES_PER_PACKAGE, MAX_D20_ADVENTURE_ENTRIES, MAX_D20_AUTHORED_TEXT_BYTES,
+    MAX_D20_CONDITION_CLAUSES, MAX_D20_DAMAGE_DICE, MAX_D20_DAMAGE_DIE_SIDES,
     MAX_D20_DEFINITIONS_PER_KIND, MAX_D20_EFFECT_DURATION_TURNS, MAX_D20_ID_BYTES,
+    MAX_D20_IMPLEMENT_TAGS, MAX_D20_TACTICAL_RANGE,
 };
 
-pub const D20_CANDIDATE_SCHEMA_VERSION: u32 = 1;
+pub const D20_CANDIDATE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -24,11 +26,15 @@ pub struct D20RulesCandidate {
     #[serde(default)]
     pub defenses: Vec<DefenseCandidate>,
     #[serde(default)]
+    pub activation_budgets: Vec<ActivationBudgetCandidate>,
+    #[serde(default)]
     pub damage_types: Vec<DamageTypeCandidate>,
     #[serde(default)]
     pub resources: Vec<ResourceCandidate>,
     #[serde(default)]
     pub armors: Vec<ArmorCandidate>,
+    #[serde(default)]
+    pub implements: Vec<ImplementCandidate>,
     #[serde(default)]
     pub effects: Vec<EffectCandidate>,
     #[serde(default)]
@@ -62,7 +68,24 @@ pub struct AbilityCandidate {
 pub struct DefenseCandidate {
     pub id: D20Id,
     pub base: i16,
-    pub ability: D20Id,
+    pub abilities: Vec<D20Id>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum ActivationTimingCandidate {
+    Action,
+    Reaction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ActivationBudgetCandidate {
+    pub id: D20Id,
+    pub timing: ActivationTimingCandidate,
+    pub initial: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -93,11 +116,34 @@ pub struct ArmorCandidate {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
+pub struct ImplementCandidate {
+    pub id: D20Id,
+    pub slot: D20Id,
+    pub tags: Vec<D20Id>,
+    pub ability: D20Id,
+    pub defense: D20Id,
+    pub damage: DamageCandidate,
+    pub range: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+#[ts(tag = "kind", rename_all = "kebab-case")]
+pub enum ConditionClauseCandidate {
+    ForbidMovement,
+    ForbidActionTag { tag: D20Id },
+    AttackPenalty { amount: i16 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct EffectCandidate {
     pub id: D20Id,
     pub defense: Option<D20Id>,
     pub defense_bonus: i16,
     pub duration_turns: u16,
+    pub conditions: Vec<ConditionClauseCandidate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -117,10 +163,70 @@ pub struct ReactionCandidate {
 #[ts(rename_all = "camelCase")]
 pub struct ActionCandidate {
     pub id: D20Id,
-    pub ability: D20Id,
-    pub defense: D20Id,
-    pub damage: DamageCandidate,
+    pub tags: Vec<D20Id>,
+    pub activation_costs: Vec<ActivationCostCandidate>,
+    pub target: ActionTargetCandidate,
+    pub attack: ActionAttackCandidate,
     pub effect: Option<D20Id>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ActivationCostCandidate {
+    pub budget: D20Id,
+    pub amount: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum ActionTargetKindCandidate {
+    Participant,
+    Cell,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum ActionTargetTeamCandidate {
+    Hostile,
+    Ally,
+    SelfOnly,
+    Any,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum ActionLineOfEffectCandidate {
+    Required,
+    Ignored,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ActionTargetCandidate {
+    pub kind: ActionTargetKindCandidate,
+    pub team: ActionTargetTeamCandidate,
+    pub maximum_targets: u16,
+    pub line_of_effect: ActionLineOfEffectCandidate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+#[ts(tag = "kind", rename_all = "kebab-case")]
+pub enum ActionAttackCandidate {
+    Fixed {
+        ability: D20Id,
+        defense: D20Id,
+        damage: DamageCandidate,
+        range: u16,
+    },
+    Implement {
+        implement: D20Id,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -215,11 +321,19 @@ pub struct ItemInstanceCandidate {
     #[ts(type = "number")]
     pub entity_id: u64,
     pub name: String,
-    pub armor: D20Id,
+    pub equipment: EquipmentReferenceCandidate,
     pub owner: D20Id,
     pub icon: String,
     pub rarity: ItemRarityCandidate,
     pub equipped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+#[ts(tag = "kind", rename_all = "kebab-case")]
+pub enum EquipmentReferenceCandidate {
+    Armor { armor: D20Id },
+    Implement { implement: D20Id },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -356,12 +470,22 @@ pub fn generated_d20_candidate_typescript() -> String {
         D20Id::decl(),
         AbilityCandidate::decl(),
         DefenseCandidate::decl(),
+        ActivationTimingCandidate::decl(),
+        ActivationBudgetCandidate::decl(),
         DamageTypeCandidate::decl(),
         ResourceCandidate::decl(),
         ArmorCandidate::decl(),
+        ImplementCandidate::decl(),
+        ConditionClauseCandidate::decl(),
         EffectCandidate::decl(),
         DamageCandidate::decl(),
         ReactionCandidate::decl(),
+        ActivationCostCandidate::decl(),
+        ActionTargetKindCandidate::decl(),
+        ActionTargetTeamCandidate::decl(),
+        ActionLineOfEffectCandidate::decl(),
+        ActionTargetCandidate::decl(),
+        ActionAttackCandidate::decl(),
         ActionCandidate::decl(),
         CharacterAbilityCandidate::decl(),
         CharacterResourceCandidate::decl(),
@@ -370,6 +494,7 @@ pub fn generated_d20_candidate_typescript() -> String {
         CharacterTemplateCandidate::decl(),
         StorageCandidate::decl(),
         ItemRarityCandidate::decl(),
+        EquipmentReferenceCandidate::decl(),
         ItemInstanceCandidate::decl(),
         EncounterOutcomeCandidate::decl(),
         EncounterCandidate::decl(),
@@ -395,6 +520,12 @@ export const D20_LIMITS = Object.freeze({{\n\
   maxDamageDice: {MAX_D20_DAMAGE_DICE},\n\
   maxDamageDieSides: {MAX_D20_DAMAGE_DIE_SIDES},\n\
   maxEffectDurationTurns: {MAX_D20_EFFECT_DURATION_TURNS},\n\
+  maxActionTags: {MAX_D20_ACTION_TAGS},\n\
+  maxActivationCosts: {MAX_D20_ACTIVATION_COSTS},\n\
+  maxConditionClauses: {MAX_D20_CONDITION_CLAUSES},\n\
+  maxImplementTags: {MAX_D20_IMPLEMENT_TAGS},\n\
+  maxTacticalRange: {MAX_D20_TACTICAL_RANGE},\n\
+  maxActionTargets: {MAX_D20_ACTION_TARGETS},\n\
   maxAdventuresPerPackage: {MAX_D20_ADVENTURES_PER_PACKAGE},\n\
   maxAdventureEntries: {MAX_D20_ADVENTURE_ENTRIES},\n\
   maxAuthoredTextBytes: {MAX_D20_AUTHORED_TEXT_BYTES},\n\

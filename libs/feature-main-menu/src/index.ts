@@ -1205,6 +1205,12 @@ import {
                           <span>
                             {{ action.ability }} vs {{ action.defense }} ·
                             {{ action.damage }}
+                            · range {{ action.range }} ·
+                            {{ action.activation.join(' + ') }} ·
+                            {{ action.target }}
+                            @if (action.implement !== null) {
+                              · {{ action.implement }}
+                            }
                             @if (action.effect !== null) {
                               · {{ action.effect }}
                             }

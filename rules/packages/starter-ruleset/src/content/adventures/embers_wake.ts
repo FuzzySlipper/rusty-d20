@@ -90,8 +90,8 @@ export const embersWakeModule = defineD20Module(
         startSource: 'Adventure',
         startText: 'Sera Vale prepares beside the ember reliquary.',
         startDetails: [
-          'Starter Core + Ember Ward authored packages compiled by Rust.',
-          'The Ash Seer encounter uses focus, resolve, fire, and psychic mechanics.',
+          'Ruleweaver foundation + Ember Ward authored packages compiled by Rust.',
+          'The Ash Seer encounter uses focus, Wits, Nerve, energy, and resolve mechanics.',
         ],
       }),
     ],

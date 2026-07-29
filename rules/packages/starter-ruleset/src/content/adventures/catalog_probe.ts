@@ -21,6 +21,10 @@ export const catalogProbeModule = defineD20Module(
           'mara-chain',
           'spare-buckler',
           'warden-chain',
+          'warden-blade',
+          'mara-blade',
+          'warden-bow',
+          'mara-bow',
         ],
         encounters: ['iron-warden'],
         dungeon: {

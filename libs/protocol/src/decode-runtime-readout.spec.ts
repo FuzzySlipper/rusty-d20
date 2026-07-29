@@ -304,6 +304,83 @@ describe('decodeGameSnapshot', () => {
       }),
     ).toMatchObject({ ok: true });
 
+    const action = {
+      id: 'longsword-strike',
+      label: 'Longsword Strike',
+      ability: 'Might',
+      defense: 'Armor',
+      damage: '1d8+2 Impact',
+      activation: ['1 Standard Action'],
+      target: '1 Hostile Participant · line of effect Required',
+      range: 1,
+      implement: 'Training Blade',
+      tags: ['Attack', 'Melee', 'Weapon'],
+      effect: 'Bleeding',
+    };
+    const encounterWithAction = {
+      turn: 0,
+      nextRoll: 0,
+      playerId: 101,
+      turnOwner: 'player',
+      characters: [hero, target],
+      actions: [action],
+      pendingAction: null,
+      log: [],
+    };
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          phase: 'encounter',
+          activeEncounterId: 'iron-warden',
+        },
+        encounter: encounterWithAction,
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          phase: 'encounter',
+          activeEncounterId: 'iron-warden',
+        },
+        encounter: {
+          ...encounterWithAction,
+          actions: [
+            {
+              ...action,
+              activation: [
+                'one',
+                'two',
+                'three',
+                'four',
+                'one-over',
+              ],
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ ok: false });
+    const missingBinding = Object.fromEntries(
+      Object.entries(action).filter(([key]) => key !== 'implement'),
+    );
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          phase: 'encounter',
+          activeEncounterId: 'iron-warden',
+        },
+        encounter: {
+          ...encounterWithAction,
+          actions: [missingBinding],
+        },
+      }),
+    ).toMatchObject({ ok: false });
+
     const victory = {
       kind: 'victory',
       encounterId: 'iron-warden',

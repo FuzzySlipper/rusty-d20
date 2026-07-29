@@ -29,7 +29,16 @@ test('starter catalog keeps rules, adventure content, and content-only extension
   const starter = authorStarterArtifacts();
   assert.deepEqual(
     starter.steelGuard.package.payload.actions?.map((action) => action.id),
-    ['longsword-strike', 'precise-shot'],
+    ['disrupt', 'longsword-strike', 'pin-in-place', 'precise-shot'],
+  );
+  assert.equal(starter.core.package.payload.abilities?.length, 6);
+  assert.equal(starter.core.package.payload.defenses?.length, 4);
+  assert.equal(starter.core.package.payload.activationBudgets?.length, 4);
+  assert.deepEqual(
+    starter.steelGuard.package.payload.implements?.map(
+      (implement) => implement.id,
+    ),
+    ['field-bow', 'training-blade'],
   );
   assert.deepEqual(
     starter.emberWard.package.payload.actions?.map((action) => action.id),

@@ -186,10 +186,10 @@ test.describe.serial('complete deterministic encounter outcomes', () => {
       await startAdventure(page, "Ember's Wake");
       await expect(page.getByRole('heading', { name: "Ember's Wake Camp" })).toBeVisible();
       await expect(page.getByText('Sera Vale', { exact: true })).toBeVisible();
-      await expect(page.getByLabel('Resolve defense readout')).toContainText('16');
-      await expect(page.getByLabel('Resolve defense readout')).toContainText('Equipped item 212');
-      await expect(page.getByLabel('Resolve defense readout')).toContainText('Equipped item 213');
-      await expect(page.getByLabel('Resolve defense readout')).toContainText('suppressed');
+      await expect(page.getByLabel('Nerve defense readout')).toContainText('16');
+      await expect(page.getByLabel('Nerve defense readout')).toContainText('Equipped item 212');
+      await expect(page.getByLabel('Nerve defense readout')).toContainText('Equipped item 213');
+      await expect(page.getByLabel('Nerve defense readout')).toContainText('suppressed');
       await expect(page.getByLabel('Camp stash')).toContainText('Spare runed robe');
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),

@@ -1,10 +1,12 @@
 import { defineD20Module } from '@rusty-d20/rules-authoring';
 
 const abilityNames = [
-  'strength',
-  'dexterity',
-  'wisdom',
-  'constitution',
+  'might',
+  'finesse',
+  'acuity',
+  'intellect',
+  'conviction',
+  'spirit',
 ] as const;
 
 export const abilitiesModule = defineD20Module(

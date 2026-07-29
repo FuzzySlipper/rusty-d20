@@ -21,13 +21,14 @@ use serde::{Deserialize, Serialize};
 use svc_rng::{RngSeed, ScopedRng};
 
 use crate::compiler::{
-    armor_item_id, damage_kind_id, defense_stat_id, equipment_slot_id, loadout_capacity_id,
-    mechanics_effect_id, resistance_source_id, vitality_track_id, vulnerability_source_id,
+    damage_kind_id, defense_stat_id, equipment_slot_id, loadout_capacity_id, mechanics_effect_id,
+    resistance_source_id, vitality_track_id, vulnerability_source_id,
 };
 use crate::{
-    d20_component_registry, AbilityScore, AbilityScoresComponent, ActionResource,
-    ActionResourcesComponent, D20ComponentDataError, D20Id, D20Ruleset, ScheduledEffect,
-    ScheduledEffectsComponent, ENGINE_REVISION,
+    d20_component_registry, AbilityScore, AbilityScoresComponent, ActionAttackDefinition,
+    ActionDefinition, ActionResource, ActionResourcesComponent, ConditionClauseDefinition,
+    D20ComponentDataError, D20Id, D20Ruleset, DamageDefinition, EquipmentReferenceDefinition,
+    ScheduledEffect, ScheduledEffectsComponent, ENGINE_REVISION,
 };
 
 const D20_SAVE_SCHEMA_VERSION: u32 = 2;
@@ -62,6 +63,25 @@ pub struct ArmorItemSeed {
     pub owner: EntityId,
     pub name: String,
     pub armor: D20Id,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EquipmentItemSeed {
+    pub entity: EntityId,
+    pub owner: EntityId,
+    pub name: String,
+    pub equipment: EquipmentReferenceDefinition,
+}
+
+impl From<ArmorItemSeed> for EquipmentItemSeed {
+    fn from(value: ArmorItemSeed) -> Self {
+        Self {
+            entity: value.entity,
+            owner: value.owner,
+            name: value.name,
+            equipment: EquipmentReferenceDefinition::Armor { armor: value.armor },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,14 +174,26 @@ pub struct ActionPreview {
     operation: OperationId,
     ability_score: i16,
     ability_modifier: i16,
+    damage: DamageDefinition,
     defense: StatEvaluation,
     reactions: Vec<ReactionOption>,
     actor_abilities_revision: ComponentRevision,
+    actor_equipment_revision: ComponentRevision,
+    actor_scheduled_effects_revision: ComponentRevision,
     target_resources_revision: ComponentRevision,
     target_tracks_revision: ComponentRevision,
     target_scheduled_effects_revision: ComponentRevision,
     turn: u64,
     roll_index: u64,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ResolvedActionDefinition {
+    pub ability: D20Id,
+    pub defense: D20Id,
+    pub damage: DamageDefinition,
+    pub range: u16,
+    pub implement: Option<D20Id>,
 }
 
 impl ActionPreview {
@@ -267,6 +299,27 @@ impl D20Session {
         storage: Vec<StorageSeed>,
         armor_items: Vec<ArmorItemSeed>,
     ) -> Result<Self, D20SessionError> {
+        Self::new_with_equipment_loadout(
+            rules,
+            seed,
+            characters,
+            inventories,
+            storage,
+            armor_items
+                .into_iter()
+                .map(EquipmentItemSeed::from)
+                .collect(),
+        )
+    }
+
+    pub fn new_with_equipment_loadout(
+        rules: D20Ruleset,
+        seed: RngSeed,
+        characters: Vec<CharacterSeed>,
+        inventories: Vec<InventorySeed>,
+        storage: Vec<StorageSeed>,
+        equipment_items: Vec<EquipmentItemSeed>,
+    ) -> Result<Self, D20SessionError> {
         let mut definitions = characters
             .iter()
             .map(|character| EntityDefinition::new(character.entity, character.name.clone()))
@@ -276,7 +329,7 @@ impl D20Session {
                 .iter()
                 .map(|storage| EntityDefinition::new(storage.entity, storage.name.clone())),
         );
-        definitions.extend(armor_items.iter().map(|item| {
+        definitions.extend(equipment_items.iter().map(|item| {
             EntityDefinition::new(item.entity, item.name.clone()).with_containment(item.owner)
         }));
         let registry = d20_component_registry()?;
@@ -303,12 +356,18 @@ impl D20Session {
             let stats = rules
                 .defenses()
                 .map(|defense| {
-                    let score = character
+                    let score = defense
                         .abilities
                         .iter()
-                        .find(|score| score.id() == &defense.ability)
-                        .expect("character seed validation requires every defense ability")
-                        .score();
+                        .filter_map(|ability| {
+                            character
+                                .abilities
+                                .iter()
+                                .find(|score| score.id() == ability)
+                                .map(AbilityScore::score)
+                        })
+                        .max()
+                        .expect("character seed validation requires every defense ability");
                     StatValue::new(
                         defense_stat_id(&defense.id),
                         scalar(i64::from(defense.base + ability_modifier(score))),
@@ -361,16 +420,16 @@ impl D20Session {
         for storage in &storage {
             attach_inventory(&mut entities, &rules, storage.entity, storage.maximum_items)?;
         }
-        for item in &armor_items {
-            let armor = rules
-                .armor(&item.armor)
-                .ok_or_else(|| D20SessionError::UnknownArmor(item.armor.clone()))?;
+        for item in &equipment_items {
+            rules
+                .equipment_definition(&item.equipment)
+                .ok_or_else(|| D20SessionError::UnknownEquipment(item.equipment.clone()))?;
             attach(
                 &mut entities,
                 item.entity,
                 ItemComponent::new(
                     rules.mechanics().version().clone(),
-                    armor_item_id(&armor.id),
+                    item.equipment.mechanics_item_id(),
                 ),
             )?;
         }
@@ -440,11 +499,28 @@ impl D20Session {
         armor: &D20Id,
         operation: OperationId,
     ) -> Result<EquipmentMutationReceipt, D20SessionError> {
-        let definition = self
+        self.equip_item(
+            owner,
+            item,
+            &EquipmentReferenceDefinition::Armor {
+                armor: armor.clone(),
+            },
+            operation,
+        )
+    }
+
+    pub fn equip_item(
+        &mut self,
+        owner: EntityId,
+        item: EntityId,
+        equipment: &EquipmentReferenceDefinition,
+        operation: OperationId,
+    ) -> Result<EquipmentMutationReceipt, D20SessionError> {
+        let (_, slot) = self
             .rules
-            .armor(armor)
-            .ok_or_else(|| D20SessionError::UnknownArmor(armor.clone()))?;
-        let expected_item = armor_item_id(armor);
+            .equipment_definition(equipment)
+            .ok_or_else(|| D20SessionError::UnknownEquipment(equipment.clone()))?;
+        let expected_item = equipment.mechanics_item_id();
         let actual_item = self.entities.component::<ItemComponent>(item)?.ok_or(
             D20SessionError::MissingComponent {
                 entity: item,
@@ -452,12 +528,12 @@ impl D20Session {
             },
         )?;
         if actual_item.definition() != &expected_item {
-            return Err(D20SessionError::ArmorItemMismatch {
+            return Err(D20SessionError::EquipmentItemMismatch {
                 item,
-                expected: armor.clone(),
+                expected: equipment.clone(),
             });
         }
-        let source = request_source(&operation, "equip-armor");
+        let source = request_source(&operation, "equip-item");
         let expected_state_revision = self.entities.revision();
         Ok(EquipmentService::equip(
             &mut self.entities,
@@ -467,7 +543,7 @@ impl D20Session {
                 source,
                 owner,
                 item,
-                slots: vec![equipment_slot_id(&definition.slot)],
+                slots: vec![equipment_slot_id(slot)],
                 expected_equipment_revision: None,
                 expected_state_revision,
             },
@@ -480,7 +556,16 @@ impl D20Session {
         item: EntityId,
         operation: OperationId,
     ) -> Result<EquipmentMutationReceipt, D20SessionError> {
-        let source = request_source(&operation, "unequip-armor");
+        self.unequip_item(owner, item, operation)
+    }
+
+    pub fn unequip_item(
+        &mut self,
+        owner: EntityId,
+        item: EntityId,
+        operation: OperationId,
+    ) -> Result<EquipmentMutationReceipt, D20SessionError> {
+        let source = request_source(&operation, "unequip-item");
         let expected_state_revision = self.entities.revision();
         Ok(EquipmentService::unequip(
             &mut self.entities,
@@ -503,7 +588,17 @@ impl D20Session {
         to_owner: EntityId,
         operation: OperationId,
     ) -> Result<ItemTransferReceipt, D20SessionError> {
-        let source = request_source(&operation, "transfer-armor");
+        self.transfer_item(item, from_owner, to_owner, operation)
+    }
+
+    pub fn transfer_item(
+        &mut self,
+        item: EntityId,
+        from_owner: EntityId,
+        to_owner: EntityId,
+        operation: OperationId,
+    ) -> Result<ItemTransferReceipt, D20SessionError> {
+        let source = request_source(&operation, "transfer-item");
         let expected_relationship_revision = self.entities.revision();
         Ok(EquipmentService::transfer_unique_item(
             &mut self.entities,
@@ -535,12 +630,28 @@ impl D20Session {
         storage: Vec<StorageSeed>,
         armor_items: Vec<ArmorItemSeed>,
     ) -> Result<(), D20SessionError> {
+        self.install_equipment_loadout(
+            inventories,
+            storage,
+            armor_items
+                .into_iter()
+                .map(EquipmentItemSeed::from)
+                .collect(),
+        )
+    }
+
+    pub fn install_equipment_loadout(
+        &mut self,
+        inventories: Vec<InventorySeed>,
+        storage: Vec<StorageSeed>,
+        equipment_items: Vec<EquipmentItemSeed>,
+    ) -> Result<(), D20SessionError> {
         let mut staged = self.entities.clone();
         let mut definitions = storage
             .iter()
             .map(|storage| EntityDefinition::new(storage.entity, storage.name.clone()))
             .collect::<Vec<_>>();
-        definitions.extend(armor_items.iter().map(|item| {
+        definitions.extend(equipment_items.iter().map(|item| {
             EntityDefinition::new(item.entity, item.name.clone()).with_containment(item.owner)
         }));
         let revision = staged.revision();
@@ -561,17 +672,16 @@ impl D20Session {
                 storage.maximum_items,
             )?;
         }
-        for item in &armor_items {
-            let armor = self
-                .rules
-                .armor(&item.armor)
-                .ok_or_else(|| D20SessionError::UnknownArmor(item.armor.clone()))?;
+        for item in &equipment_items {
+            self.rules
+                .equipment_definition(&item.equipment)
+                .ok_or_else(|| D20SessionError::UnknownEquipment(item.equipment.clone()))?;
             attach(
                 &mut staged,
                 item.entity,
                 ItemComponent::new(
                     self.rules.mechanics().version().clone(),
-                    armor_item_id(&armor.id),
+                    item.equipment.mechanics_item_id(),
                 ),
             )?;
         }
@@ -591,6 +701,7 @@ impl D20Session {
             .rules
             .action(action)
             .ok_or_else(|| D20SessionError::UnknownAction(action.clone()))?;
+        let resolved = self.resolve_action_definition(actor, action_definition)?;
         let abilities = self
             .entities
             .component::<AbilityScoresComponent>(actor)?
@@ -598,17 +709,19 @@ impl D20Session {
                 entity: actor,
                 component: AbilityScoresComponent::LABEL,
             })?;
-        let ability_score = abilities.score(&action_definition.ability).ok_or_else(|| {
-            D20SessionError::MissingAbility {
-                entity: actor,
-                ability: action_definition.ability.clone(),
-            }
-        })?;
+        let ability_score =
+            abilities
+                .score(&resolved.ability)
+                .ok_or_else(|| D20SessionError::MissingAbility {
+                    entity: actor,
+                    ability: resolved.ability.clone(),
+                })?;
+        let attack_penalty = self.active_attack_penalty(actor, action_definition)?;
         let defense = StatService::evaluate(
             &self.entities,
             self.rules.mechanics(),
             target,
-            &defense_stat_id(&action_definition.defense),
+            &defense_stat_id(&resolved.defense),
             &operation,
             &[],
         )?;
@@ -622,7 +735,7 @@ impl D20Session {
         let reactions = self
             .rules
             .reactions()
-            .filter(|reaction| reaction.defense == action_definition.defense)
+            .filter(|reaction| reaction.defense == resolved.defense)
             .filter_map(|reaction| {
                 let available = resources.current(&reaction.resource)?;
                 (available >= reaction.cost).then(|| ReactionOption {
@@ -641,12 +754,19 @@ impl D20Session {
             action: action.clone(),
             operation,
             ability_score,
-            ability_modifier: ability_modifier(ability_score),
+            ability_modifier: ability_modifier(ability_score).saturating_add(attack_penalty),
+            damage: resolved.damage,
             defense,
             reactions,
             actor_abilities_revision: self
                 .entities
                 .component_revision::<AbilityScoresComponent>(actor)?,
+            actor_equipment_revision: self
+                .entities
+                .component_revision::<EquipmentComponent>(actor)?,
+            actor_scheduled_effects_revision: self
+                .entities
+                .component_revision::<ScheduledEffectsComponent>(actor)?,
             target_resources_revision: self
                 .entities
                 .component_revision::<ActionResourcesComponent>(target)?,
@@ -659,6 +779,123 @@ impl D20Session {
             turn: self.current_turn,
             roll_index: self.next_roll,
         })
+    }
+
+    pub(crate) fn action_definition_profile(
+        &self,
+        action: &D20Id,
+    ) -> Result<ResolvedActionDefinition, D20SessionError> {
+        let definition = self
+            .rules
+            .action(action)
+            .ok_or_else(|| D20SessionError::UnknownAction(action.clone()))?;
+        Ok(self.static_action_definition(definition))
+    }
+
+    fn resolve_action_definition(
+        &self,
+        actor: EntityId,
+        action: &ActionDefinition,
+    ) -> Result<ResolvedActionDefinition, D20SessionError> {
+        let resolved = self.static_action_definition(action);
+        if let Some(implement) = &resolved.implement {
+            let equipment = self
+                .entities
+                .component::<EquipmentComponent>(actor)?
+                .ok_or(D20SessionError::MissingComponent {
+                    entity: actor,
+                    component: EquipmentComponent::LABEL,
+                })?;
+            let required_item = crate::compiler::implement_item_id(implement);
+            let equipped = equipment.assignments().iter().any(|assignment| {
+                self.entities
+                    .component::<ItemComponent>(assignment.item)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|item| item.definition() == &required_item)
+            });
+            if !equipped {
+                return Err(D20SessionError::RequiredImplementNotEquipped {
+                    entity: actor,
+                    implement: implement.clone(),
+                });
+            }
+        }
+        Ok(resolved)
+    }
+
+    fn static_action_definition(&self, action: &ActionDefinition) -> ResolvedActionDefinition {
+        match &action.attack {
+            ActionAttackDefinition::Fixed {
+                ability,
+                defense,
+                damage,
+                range,
+            } => ResolvedActionDefinition {
+                ability: ability.clone(),
+                defense: defense.clone(),
+                damage: damage.clone(),
+                range: *range,
+                implement: None,
+            },
+            ActionAttackDefinition::Implement { implement } => {
+                let definition = self
+                    .rules
+                    .implement(implement)
+                    .expect("compiled action references a known implement");
+                ResolvedActionDefinition {
+                    ability: definition.ability.clone(),
+                    defense: definition.defense.clone(),
+                    damage: definition.damage.clone(),
+                    range: definition.range,
+                    implement: Some(definition.id.clone()),
+                }
+            }
+        }
+    }
+
+    fn active_attack_penalty(
+        &self,
+        actor: EntityId,
+        action: &ActionDefinition,
+    ) -> Result<i16, D20SessionError> {
+        let schedule = self
+            .entities
+            .component::<ScheduledEffectsComponent>(actor)?
+            .ok_or(D20SessionError::MissingComponent {
+                entity: actor,
+                component: ScheduledEffectsComponent::LABEL,
+            })?;
+        let mut penalty = 0_i16;
+        for scheduled in schedule
+            .effects()
+            .iter()
+            .filter(|effect| effect.expires_at_turn() > self.current_turn)
+        {
+            let definition = self
+                .rules
+                .effect(scheduled.definition())
+                .expect("restored and authored schedules reference compiled effects");
+            for condition in &definition.conditions {
+                match condition {
+                    ConditionClauseDefinition::ForbidActionTag { tag }
+                        if action.tags.contains(tag) =>
+                    {
+                        return Err(D20SessionError::ActionForbidden {
+                            entity: actor,
+                            action: action.id.clone(),
+                            effect: definition.id.clone(),
+                        });
+                    }
+                    ConditionClauseDefinition::AttackPenalty { amount } => {
+                        penalty = penalty.saturating_add(*amount);
+                    }
+                    ConditionClauseDefinition::ForbidMovement
+                    | ConditionClauseDefinition::ForbidActionTag { .. } => {}
+                }
+            }
+        }
+        Ok(penalty)
     }
 
     pub fn apply_reaction(
@@ -747,17 +984,17 @@ impl D20Session {
 
         let mut rolled_damage = 0_u32;
         if hit {
-            for _ in 0..action.damage.dice {
+            for _ in 0..request.preview.damage.dice {
                 rolled_damage = rolled_damage
                     .checked_add(
-                        rng.next_bounded_u32(u32::from(action.damage.sides))
+                        rng.next_bounded_u32(u32::from(request.preview.damage.sides))
                             .expect("compiled damage die has a nonzero bound")
                             + 1,
                     )
                     .ok_or(D20SessionError::DamageOverflow)?;
             }
         }
-        let adjusted_damage = i64::from(rolled_damage) + i64::from(action.damage.bonus);
+        let adjusted_damage = i64::from(rolled_damage) + i64::from(request.preview.damage.bonus);
         let applied_damage = adjusted_damage.max(0);
 
         let mut staged = self.entities.clone();
@@ -773,7 +1010,7 @@ impl D20Session {
                     target_track: vitality_track_id(),
                     parts: vec![DamagePart {
                         amount: scalar(applied_damage),
-                        kind: damage_kind_id(&action.damage.kind),
+                        kind: damage_kind_id(&request.preview.damage.kind),
                     }],
                     request_sources: vec![],
                     expected_tracks_revision: Some(request.preview.target_tracks_revision.clone()),
@@ -965,6 +1202,18 @@ impl D20Session {
         )?;
         ensure_component_revision(
             &self.entities,
+            &preview.actor_equipment_revision,
+            self.entities
+                .component_revision::<EquipmentComponent>(preview.actor)?,
+        )?;
+        ensure_component_revision(
+            &self.entities,
+            &preview.actor_scheduled_effects_revision,
+            self.entities
+                .component_revision::<ScheduledEffectsComponent>(preview.actor)?,
+        )?;
+        ensure_component_revision(
+            &self.entities,
             &preview.target_resources_revision,
             self.entities
                 .component_revision::<ActionResourcesComponent>(preview.target)?,
@@ -1001,6 +1250,7 @@ pub const fn ability_modifier(score: i16) -> i16 {
 pub enum D20SessionError {
     UnknownAction(D20Id),
     UnknownArmor(D20Id),
+    UnknownEquipment(EquipmentReferenceDefinition),
     UnknownDamageType(D20Id),
     MissingAbility {
         entity: EntityId,
@@ -1034,6 +1284,19 @@ pub enum D20SessionError {
     ArmorItemMismatch {
         item: EntityId,
         expected: D20Id,
+    },
+    EquipmentItemMismatch {
+        item: EntityId,
+        expected: EquipmentReferenceDefinition,
+    },
+    RequiredImplementNotEquipped {
+        entity: EntityId,
+        implement: D20Id,
+    },
+    ActionForbidden {
+        entity: EntityId,
+        action: D20Id,
+        effect: D20Id,
     },
     LegacyCatalogVersionMismatch {
         entity: EntityId,

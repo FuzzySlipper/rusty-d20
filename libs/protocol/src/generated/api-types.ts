@@ -22,7 +22,7 @@ export type ResourceDto = { id: string, label: string, current: number, maximum:
 
 export type CharacterDto = { id: number, name: string, title: string, level: number, healthCurrent: number, healthMaximum: number, resources: Array<ResourceDto>, effects: Array<string>, };
 
-export type ActionDto = { id: string, label: string, ability: string, defense: string, damage: string, effect: string | null, };
+export type ActionDto = { id: string, label: string, ability: string, defense: string, damage: string, activation: Array<string>, target: string, range: number, implement: string | null, tags: Array<string>, effect: string | null, };
 
 export type ReactionDto = { id: string, label: string, resource: string, cost: number, available: number, bonus: number, effect: string, };
 

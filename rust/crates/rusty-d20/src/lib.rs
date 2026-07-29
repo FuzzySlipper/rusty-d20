@@ -20,26 +20,35 @@ use ts_rs::TS;
 
 pub use adventure::MAX_D20_SELECTABLE_ADVENTURES;
 pub use candidate::{
-    admit_d20_candidate, generated_d20_candidate_typescript, AbilityCandidate, ActionCandidate,
-    AdventureCandidate, ArmorCandidate, CharacterAbilityCandidate, CharacterAffinityCandidate,
-    CharacterAffinityKindCandidate, CharacterResourceCandidate, CharacterTemplateCandidate,
+    admit_d20_candidate, generated_d20_candidate_typescript, AbilityCandidate,
+    ActionAttackCandidate, ActionCandidate, ActionLineOfEffectCandidate, ActionTargetCandidate,
+    ActionTargetKindCandidate, ActionTargetTeamCandidate, ActivationBudgetCandidate,
+    ActivationCostCandidate, ActivationTimingCandidate, AdventureCandidate, ArmorCandidate,
+    CharacterAbilityCandidate, CharacterAffinityCandidate, CharacterAffinityKindCandidate,
+    CharacterResourceCandidate, CharacterTemplateCandidate, ConditionClauseCandidate,
     D20PackageEnvelope, D20RulesCandidate, DamageCandidate, DamageTypeCandidate, DefenseCandidate,
     DungeonCandidate, DungeonEncounterCandidate, DungeonFacingCandidate, DungeonLandmarkCandidate,
-    EffectCandidate, EncounterCandidate, EncounterOutcomeCandidate, ItemInstanceCandidate,
-    ItemRarityCandidate, ReactionCandidate, ResourceCandidate, StorageCandidate,
-    D20_CANDIDATE_SCHEMA_VERSION,
+    EffectCandidate, EncounterCandidate, EncounterOutcomeCandidate, EquipmentReferenceCandidate,
+    ImplementCandidate, ItemInstanceCandidate, ItemRarityCandidate, ReactionCandidate,
+    ResourceCandidate, StorageCandidate, D20_CANDIDATE_SCHEMA_VERSION,
 };
 pub use compiler::{
-    AbilityDefinition, ActionDefinition, AdventureDefinition, ArmorDefinition,
-    CharacterAffinityDefinition, CharacterAffinityKindDefinition, CharacterTemplateDefinition,
+    AbilityDefinition, ActionAttackDefinition, ActionDefinition, ActionLineOfEffectDefinition,
+    ActionTargetDefinition, ActionTargetKindDefinition, ActionTargetTeamDefinition,
+    ActivationBudgetDefinition, ActivationCostDefinition, ActivationTimingDefinition,
+    AdventureDefinition, ArmorDefinition, CharacterAffinityDefinition,
+    CharacterAffinityKindDefinition, CharacterTemplateDefinition, ConditionClauseDefinition,
     D20CompileError, D20Ruleset, DamageDefinition, DefenseDefinition, DungeonDefinition,
     DungeonEncounterDefinition, DungeonFacingDefinition, DungeonLandmarkDefinition,
-    EffectDefinition, EncounterDefinition, EncounterOutcomeDefinition, ItemInstanceDefinition,
+    EffectDefinition, EncounterDefinition, EncounterOutcomeDefinition,
+    EquipmentReferenceDefinition, ImplementDefinition, ItemInstanceDefinition,
     ItemRarityDefinition, ReactionDefinition, ResourceDefinition, StorageDefinition,
+    MAX_D20_ACTION_TAGS, MAX_D20_ACTION_TARGETS, MAX_D20_ACTIVATION_COSTS,
     MAX_D20_ADVENTURES_PER_PACKAGE, MAX_D20_ADVENTURE_ENTRIES, MAX_D20_AUTHORED_TEXT_BYTES,
-    MAX_D20_DAMAGE_DICE, MAX_D20_DAMAGE_DIE_SIDES, MAX_D20_DEFINITIONS_PER_KIND,
-    MAX_D20_DUNGEON_CELLS, MAX_D20_DUNGEON_HEIGHT, MAX_D20_DUNGEON_WIDTH,
-    MAX_D20_EFFECT_DURATION_TURNS,
+    MAX_D20_CONDITION_CLAUSES, MAX_D20_DAMAGE_DICE, MAX_D20_DAMAGE_DIE_SIDES,
+    MAX_D20_DEFINITIONS_PER_KIND, MAX_D20_DUNGEON_CELLS, MAX_D20_DUNGEON_HEIGHT,
+    MAX_D20_DUNGEON_WIDTH, MAX_D20_EFFECT_DURATION_TURNS, MAX_D20_IMPLEMENT_TAGS,
+    MAX_D20_TACTICAL_RANGE,
 };
 pub use component::{
     d20_component_registry, register_d20_components, AbilityScore, AbilityScoresComponent,
@@ -66,7 +75,8 @@ pub use identity::{D20Id, D20IdentityError, D20_ID_PATTERN, MAX_D20_ID_BYTES};
 pub use session::{
     ability_modifier, ActionPreview, ActionReceipt, AdvanceTurnReceipt, AffinitySeed,
     ApplyActionRequest, ArmorItemSeed, CharacterSeed, D20Session, D20SessionError, DamageAffinity,
-    InventorySeed, ReactionOption, ReactionReceipt, SessionSaveError, StorageSeed,
+    EquipmentItemSeed, InventorySeed, ReactionOption, ReactionReceipt, SessionSaveError,
+    StorageSeed,
 };
 
 /// Exact reviewed Rusty Engine revision used by this repository.

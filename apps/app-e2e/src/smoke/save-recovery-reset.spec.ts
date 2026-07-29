@@ -128,7 +128,10 @@ test('visible save identity guards reset and malformed persistence has a usable 
 
     await page.keyboard.press('Enter');
     await expect(recoveryDialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
-    await page.keyboard.press('Tab');
+    await page.keyboard.press('Shift+Tab');
+    await expect(
+      recoveryDialog.getByRole('button', { name: 'Discard save and start over' }),
+    ).toBeFocused();
     await page.keyboard.press('Enter');
     const recoveredHeading = page.getByRole('heading', { name: 'Choose an adventure' });
     await expect(recoveredHeading).toBeVisible();

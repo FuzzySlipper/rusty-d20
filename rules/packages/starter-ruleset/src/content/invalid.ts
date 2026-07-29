@@ -12,9 +12,21 @@ export const invalidSemanticsModule = defineD20Module(
     actions: [
       action(14, {
         id: 'broken-strike',
-        ability: 'missing-ability',
-        defense: 'armor',
-        damage: { kind: 'slashing', dice: 1, sides: 8, bonus: 0 },
+        tags: ['attack'],
+        activationCosts: [{ budget: 'standard-action', amount: 1 }],
+        target: {
+          kind: 'participant',
+          team: 'hostile',
+          maximumTargets: 1,
+          lineOfEffect: 'required',
+        },
+        attack: {
+          kind: 'fixed',
+          ability: 'missing-ability',
+          defense: 'armor',
+          damage: { kind: 'impact', dice: 1, sides: 8, bonus: 0 },
+          range: 1,
+        },
         effect: null,
       }),
     ],

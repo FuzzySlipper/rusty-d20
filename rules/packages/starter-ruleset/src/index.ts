@@ -108,9 +108,21 @@ export function authorContentOnlyExtension(
       actions: [
         action(65, {
           id: 'shield-bash',
-          ability: 'strength',
-          defense: 'armor',
-          damage: { kind: 'slashing', dice: 1, sides: 4, bonus: 0 },
+          tags: ['attack', 'melee'],
+          activationCosts: [{ budget: 'standard-action', amount: 1 }],
+          target: {
+            kind: 'participant',
+            team: 'hostile',
+            maximumTargets: 1,
+            lineOfEffect: 'required',
+          },
+          attack: {
+            kind: 'fixed',
+            ability: 'might',
+            defense: 'armor',
+            damage: { kind: 'impact', dice: 1, sides: 4, bonus: 0 },
+            range: 1,
+          },
           effect: null,
         }),
       ],

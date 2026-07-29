@@ -49,9 +49,21 @@ export const example = defineD20Module(
     actions: [
       action(7, {
         id: 'example-strike',
-        ability: 'strength',
-        defense: 'armor',
-        damage: { kind: 'slashing', dice: 1, sides: 6, bonus: 0 },
+        tags: ['attack', 'melee'],
+        activationCosts: [{ budget: 'standard-action', amount: 1 }],
+        target: {
+          kind: 'participant',
+          team: 'hostile',
+          maximumTargets: 1,
+          lineOfEffect: 'required',
+        },
+        attack: {
+          kind: 'fixed',
+          ability: 'might',
+          defense: 'armor',
+          damage: { kind: 'impact', dice: 1, sides: 6, bonus: 0 },
+          range: 1,
+        },
         effect: null,
       }),
     ],
@@ -63,6 +75,32 @@ The callback executes immediately during authoring and is not stored. D20
 identity syntax errors fail at the supplied source location. Valid identities
 with invalid references, bounds, dice, durations, or cross-definition meaning
 reach the Rust compiler and retain package/subject/source correlation.
+
+The Ruleweaver foundation additionally exposes `activationBudget`,
+`implement`, and tagged equipment references. An implement-bound action names
+only its implement:
+
+```ts
+action(20, {
+  id: 'training-strike',
+  tags: ['attack', 'melee', 'weapon'],
+  activationCosts: [{ budget: 'standard-action', amount: 1 }],
+  target: {
+    kind: 'participant',
+    team: 'hostile',
+    maximumTargets: 1,
+    lineOfEffect: 'required',
+  },
+  attack: { kind: 'implement', implement: 'training-blade' },
+  effect: null,
+});
+```
+
+Rust resolves its roll and damage facts from the compiled implement and
+canonical equipped item. Authoring never repeats or evaluates that binding.
+Effects may contain the bounded `forbid-movement`, `forbid-action-tag`, and
+`attack-penalty` clauses; these are data for Rust semantic execution, not
+TypeScript predicates.
 
 Compose modules with `authorD20Package`. Use `exactDependencyOn` for fragments
 that require another package's exact fingerprint. Regenerate and inspect:

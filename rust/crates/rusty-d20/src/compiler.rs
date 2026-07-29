@@ -18,9 +18,11 @@ use gameplay_rules::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ActionCandidate, AdventureCandidate, ArmorCandidate, CharacterAffinityKindCandidate,
-    CharacterTemplateCandidate, D20Id, D20RulesCandidate, DamageCandidate, DungeonCandidate,
-    DungeonFacingCandidate, EffectCandidate, EncounterCandidate, EncounterOutcomeCandidate,
+    ActionAttackCandidate, ActionCandidate, ActionLineOfEffectCandidate, ActionTargetKindCandidate,
+    ActionTargetTeamCandidate, ActivationTimingCandidate, AdventureCandidate, ArmorCandidate,
+    CharacterAffinityKindCandidate, CharacterTemplateCandidate, ConditionClauseCandidate, D20Id,
+    D20RulesCandidate, DamageCandidate, DungeonCandidate, DungeonFacingCandidate, EffectCandidate,
+    EncounterCandidate, EncounterOutcomeCandidate, EquipmentReferenceCandidate, ImplementCandidate,
     ItemInstanceCandidate, ItemRarityCandidate, ReactionCandidate, StorageCandidate,
     D20_CANDIDATE_SCHEMA_VERSION,
 };
@@ -36,6 +38,12 @@ pub const MAX_D20_DUNGEON_CELLS: usize =
 pub const MAX_D20_DAMAGE_DICE: u8 = 32;
 pub const MAX_D20_DAMAGE_DIE_SIDES: u16 = 1_000;
 pub const MAX_D20_EFFECT_DURATION_TURNS: u16 = 10_000;
+pub const MAX_D20_ACTION_TAGS: usize = 16;
+pub const MAX_D20_ACTIVATION_COSTS: usize = 4;
+pub const MAX_D20_CONDITION_CLAUSES: usize = 8;
+pub const MAX_D20_IMPLEMENT_TAGS: usize = 16;
+pub const MAX_D20_TACTICAL_RANGE: u16 = 32;
+pub const MAX_D20_ACTION_TARGETS: u16 = 12;
 const VITALITY_TRACK: &str = "vitality";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +57,20 @@ pub struct AbilityDefinition {
 pub struct DefenseDefinition {
     pub id: D20Id,
     pub base: i16,
-    pub ability: D20Id,
+    pub abilities: Vec<D20Id>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActivationTimingDefinition {
+    Action,
+    Reaction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActivationBudgetDefinition {
+    pub id: D20Id,
+    pub timing: ActivationTimingDefinition,
+    pub initial: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,11 +88,30 @@ pub struct ArmorDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImplementDefinition {
+    pub id: D20Id,
+    pub slot: D20Id,
+    pub tags: Vec<D20Id>,
+    pub ability: D20Id,
+    pub defense: D20Id,
+    pub damage: DamageDefinition,
+    pub range: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConditionClauseDefinition {
+    ForbidMovement,
+    ForbidActionTag { tag: D20Id },
+    AttackPenalty { amount: i16 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EffectDefinition {
     pub id: D20Id,
     pub defense: Option<D20Id>,
     pub defense_bonus: i16,
     pub duration_turns: u16,
+    pub conditions: Vec<ConditionClauseDefinition>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,11 +133,59 @@ pub struct DamageDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActivationCostDefinition {
+    pub budget: D20Id,
+    pub amount: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionTargetKindDefinition {
+    Participant,
+    Cell,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionTargetTeamDefinition {
+    Hostile,
+    Ally,
+    SelfOnly,
+    Any,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionLineOfEffectDefinition {
+    Required,
+    Ignored,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionTargetDefinition {
+    pub kind: ActionTargetKindDefinition,
+    pub team: ActionTargetTeamDefinition,
+    pub maximum_targets: u16,
+    pub line_of_effect: ActionLineOfEffectDefinition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionAttackDefinition {
+    Fixed {
+        ability: D20Id,
+        defense: D20Id,
+        damage: DamageDefinition,
+        range: u16,
+    },
+    Implement {
+        implement: D20Id,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionDefinition {
     pub id: D20Id,
-    pub ability: D20Id,
-    pub defense: D20Id,
-    pub damage: DamageDefinition,
+    pub tags: Vec<D20Id>,
+    pub activation_costs: Vec<ActivationCostDefinition>,
+    pub target: ActionTargetDefinition,
+    pub attack: ActionAttackDefinition,
     pub effect: Option<D20Id>,
 }
 
@@ -150,11 +238,17 @@ pub struct ItemInstanceDefinition {
     pub id: D20Id,
     pub entity_id: u64,
     pub name: String,
-    pub armor: D20Id,
+    pub equipment: EquipmentReferenceDefinition,
     pub owner: D20Id,
     pub icon: String,
     pub rarity: ItemRarityDefinition,
     pub equipped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EquipmentReferenceDefinition {
+    Armor { armor: D20Id },
+    Implement { implement: D20Id },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -257,9 +351,11 @@ pub struct D20Ruleset {
     mechanics: MechanicsCatalog,
     abilities: BTreeMap<D20Id, AbilityDefinition>,
     defenses: BTreeMap<D20Id, DefenseDefinition>,
+    activation_budgets: BTreeMap<D20Id, ActivationBudgetDefinition>,
     damage_types: BTreeSet<D20Id>,
     resources: BTreeMap<D20Id, ResourceDefinition>,
     armors: BTreeMap<D20Id, ArmorDefinition>,
+    implements: BTreeMap<D20Id, ImplementDefinition>,
     effects: BTreeMap<D20Id, EffectDefinition>,
     reactions: BTreeMap<D20Id, ReactionDefinition>,
     actions: BTreeMap<D20Id, ActionDefinition>,
@@ -326,12 +422,20 @@ impl D20Ruleset {
         self.defenses.get(id)
     }
 
+    pub fn activation_budget(&self, id: &D20Id) -> Option<&ActivationBudgetDefinition> {
+        self.activation_budgets.get(id)
+    }
+
     pub fn resource(&self, id: &D20Id) -> Option<&ResourceDefinition> {
         self.resources.get(id)
     }
 
     pub fn armor(&self, id: &D20Id) -> Option<&ArmorDefinition> {
         self.armors.get(id)
+    }
+
+    pub fn implement(&self, id: &D20Id) -> Option<&ImplementDefinition> {
+        self.implements.get(id)
     }
 
     pub fn effect(&self, id: &D20Id) -> Option<&EffectDefinition> {
@@ -378,6 +482,14 @@ impl D20Ruleset {
         self.armors.values()
     }
 
+    pub fn implements(&self) -> impl Iterator<Item = &ImplementDefinition> {
+        self.implements.values()
+    }
+
+    pub fn activation_budgets(&self) -> impl Iterator<Item = &ActivationBudgetDefinition> {
+        self.activation_budgets.values()
+    }
+
     pub fn resources(&self) -> impl Iterator<Item = &ResourceDefinition> {
         self.resources.values()
     }
@@ -396,6 +508,36 @@ impl D20Ruleset {
 
     pub fn adventures(&self) -> impl Iterator<Item = &AdventureDefinition> {
         self.adventures.values()
+    }
+
+    pub fn equipment_definition(
+        &self,
+        equipment: &EquipmentReferenceDefinition,
+    ) -> Option<(&D20Id, &D20Id)> {
+        match equipment {
+            EquipmentReferenceDefinition::Armor { armor } => self
+                .armor(armor)
+                .map(|definition| (&definition.id, &definition.slot)),
+            EquipmentReferenceDefinition::Implement { implement } => self
+                .implement(implement)
+                .map(|definition| (&definition.id, &definition.slot)),
+        }
+    }
+}
+
+impl EquipmentReferenceDefinition {
+    pub const fn id(&self) -> &D20Id {
+        match self {
+            Self::Armor { armor } => armor,
+            Self::Implement { implement } => implement,
+        }
+    }
+
+    pub(crate) fn mechanics_item_id(&self) -> gameplay_mechanics::ItemDefinitionId {
+        match self {
+            Self::Armor { armor } => armor_item_id(armor),
+            Self::Implement { implement } => implement_item_id(implement),
+        }
     }
 }
 
@@ -419,9 +561,11 @@ impl std::error::Error for D20CompileError {}
 struct DefinitionCollector {
     abilities: BTreeMap<D20Id, (AbilityDefinition, RulePackageIdentity)>,
     defenses: BTreeMap<D20Id, (DefenseDefinition, RulePackageIdentity)>,
+    activation_budgets: BTreeMap<D20Id, (ActivationBudgetDefinition, RulePackageIdentity)>,
     damage_types: BTreeMap<D20Id, RulePackageIdentity>,
     resources: BTreeMap<D20Id, (ResourceDefinition, RulePackageIdentity)>,
     armors: BTreeMap<D20Id, (ArmorDefinition, RulePackageIdentity)>,
+    implements: BTreeMap<D20Id, (ImplementDefinition, RulePackageIdentity)>,
     effects: BTreeMap<D20Id, (EffectDefinition, RulePackageIdentity)>,
     reactions: BTreeMap<D20Id, (ReactionDefinition, RulePackageIdentity)>,
     actions: BTreeMap<D20Id, (ActionDefinition, RulePackageIdentity)>,
@@ -454,9 +598,15 @@ impl DefinitionCollector {
 
         self.enforce_quota(package, "abilities", candidate.abilities.len());
         self.enforce_quota(package, "defenses", candidate.defenses.len());
+        self.enforce_quota(
+            package,
+            "activationBudgets",
+            candidate.activation_budgets.len(),
+        );
         self.enforce_quota(package, "damageTypes", candidate.damage_types.len());
         self.enforce_quota(package, "resources", candidate.resources.len());
         self.enforce_quota(package, "armors", candidate.armors.len());
+        self.enforce_quota(package, "implements", candidate.implements.len());
         self.enforce_quota(package, "effects", candidate.effects.len());
         self.enforce_quota(package, "reactions", candidate.reactions.len());
         self.enforce_quota(package, "actions", candidate.actions.len());
@@ -517,10 +667,22 @@ impl DefinitionCollector {
                     "defense base must be inside -100..=100".to_owned(),
                 );
             }
+            if value.abilities.is_empty()
+                || value.abilities.len() > 2
+                || value.abilities.iter().collect::<BTreeSet<_>>().len() != value.abilities.len()
+            {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_INVALID_DEFENSE_ABILITIES",
+                    format!("$/payload/defenses/{}/abilities", value.id),
+                    "defense requires one or two distinct governing abilities".to_owned(),
+                );
+            }
             let definition = DefenseDefinition {
                 id: value.id.clone(),
                 base: value.base,
-                ability: value.ability,
+                abilities: value.abilities,
             };
             insert_unique(
                 &mut self.defenses,
@@ -528,6 +690,34 @@ impl DefinitionCollector {
                 definition,
                 package,
                 "defense",
+                &mut self.diagnostics,
+            );
+        }
+        for value in candidate.activation_budgets {
+            let subject = subject("activation-budget", &value.id);
+            if value.initial == 0 || value.initial > 12 {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_INVALID_ACTIVATION_BUDGET",
+                    format!("$/payload/activationBudgets/{}", value.id),
+                    "activation budget initial amount must be inside 1..=12".to_owned(),
+                );
+            }
+            let definition = ActivationBudgetDefinition {
+                id: value.id.clone(),
+                timing: match value.timing {
+                    ActivationTimingCandidate::Action => ActivationTimingDefinition::Action,
+                    ActivationTimingCandidate::Reaction => ActivationTimingDefinition::Reaction,
+                },
+                initial: value.initial,
+            };
+            insert_unique(
+                &mut self.activation_budgets,
+                value.id,
+                definition,
+                package,
+                "activation-budget",
                 &mut self.diagnostics,
             );
         }
@@ -585,6 +775,46 @@ impl DefinitionCollector {
                 &mut self.diagnostics,
             );
         }
+        for value in candidate.implements {
+            let subject = subject("implement", &value.id);
+            self.validate_damage(package, "implement", &value.id, &value.damage);
+            self.validate_bounded_list(
+                package,
+                &subject,
+                "implements",
+                &value.id,
+                "tags",
+                value.tags.len(),
+                MAX_D20_IMPLEMENT_TAGS,
+            );
+            if value.tags.iter().collect::<BTreeSet<_>>().len() != value.tags.len() {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_DUPLICATE_SEMANTIC_ENTRY",
+                    format!("$/payload/implements/{}/tags", value.id),
+                    "implement tags must be distinct".to_owned(),
+                );
+            }
+            if value.range == 0 || value.range > MAX_D20_TACTICAL_RANGE {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_INVALID_TACTICAL_RANGE",
+                    format!("$/payload/implements/{}/range", value.id),
+                    format!("implement range must be inside 1..={MAX_D20_TACTICAL_RANGE}"),
+                );
+            }
+            let definition = implement_definition(value);
+            insert_unique(
+                &mut self.implements,
+                definition.id.clone(),
+                definition,
+                package,
+                "implement",
+                &mut self.diagnostics,
+            );
+        }
         for value in candidate.effects {
             let subject = subject("effect", &value.id);
             if value.duration_turns == 0 || value.duration_turns > MAX_D20_EFFECT_DURATION_TURNS {
@@ -613,6 +843,28 @@ impl DefinitionCollector {
                     format!("$/payload/effects/{}", value.id),
                     "effect defense bonus must be inside -100..=100".to_owned(),
                 );
+            }
+            self.validate_bounded_list(
+                package,
+                &subject,
+                "effects",
+                &value.id,
+                "conditions",
+                value.conditions.len(),
+                MAX_D20_CONDITION_CLAUSES,
+            );
+            for condition in &value.conditions {
+                if let ConditionClauseCandidate::AttackPenalty { amount } = condition {
+                    if !(-100..=-1).contains(amount) {
+                        self.push_diagnostic(
+                            package,
+                            Some(&subject),
+                            "D20_INVALID_CONDITION_PENALTY",
+                            format!("$/payload/effects/{}/conditions", value.id),
+                            "condition attack penalty must be inside -100..=-1".to_owned(),
+                        );
+                    }
+                }
             }
             let definition = effect_definition(value);
             insert_unique(
@@ -646,7 +898,91 @@ impl DefinitionCollector {
             );
         }
         for value in candidate.actions {
-            self.validate_damage(package, &value.id, &value.damage);
+            let subject = subject("action", &value.id);
+            self.validate_bounded_list(
+                package,
+                &subject,
+                "actions",
+                &value.id,
+                "tags",
+                value.tags.len(),
+                MAX_D20_ACTION_TAGS,
+            );
+            self.validate_bounded_list(
+                package,
+                &subject,
+                "actions",
+                &value.id,
+                "activationCosts",
+                value.activation_costs.len(),
+                MAX_D20_ACTIVATION_COSTS,
+            );
+            if value.tags.iter().collect::<BTreeSet<_>>().len() != value.tags.len() {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_DUPLICATE_SEMANTIC_ENTRY",
+                    format!("$/payload/actions/{}/tags", value.id),
+                    "action tags must be distinct".to_owned(),
+                );
+            }
+            if value
+                .activation_costs
+                .iter()
+                .map(|cost| &cost.budget)
+                .collect::<BTreeSet<_>>()
+                .len()
+                != value.activation_costs.len()
+            {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_DUPLICATE_SEMANTIC_ENTRY",
+                    format!("$/payload/actions/{}/activationCosts", value.id),
+                    "an action may charge each activation budget at most once".to_owned(),
+                );
+            }
+            if value.target.maximum_targets == 0
+                || value.target.maximum_targets > MAX_D20_ACTION_TARGETS
+            {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_INVALID_ACTION_TARGET_LIMIT",
+                    format!("$/payload/actions/{}/target/maximumTargets", value.id),
+                    format!("action maximum targets must be inside 1..={MAX_D20_ACTION_TARGETS}"),
+                );
+            }
+            if let ActionAttackCandidate::Fixed { damage, range, .. } = &value.attack {
+                self.validate_damage(package, "action", &value.id, damage);
+                if *range == 0 || *range > MAX_D20_TACTICAL_RANGE {
+                    self.push_diagnostic(
+                        package,
+                        Some(&subject),
+                        "D20_INVALID_TACTICAL_RANGE",
+                        format!("$/payload/actions/{}/attack/range", value.id),
+                        format!("action range must be inside 1..={MAX_D20_TACTICAL_RANGE}"),
+                    );
+                }
+            }
+            if value.activation_costs.is_empty() {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_MISSING_ACTIVATION_COST",
+                    format!("$/payload/actions/{}/activationCosts", value.id),
+                    "combat actions require at least one activation budget cost".to_owned(),
+                );
+            }
+            if value.activation_costs.iter().any(|cost| cost.amount == 0) {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_INVALID_ACTIVATION_COST",
+                    format!("$/payload/actions/{}/activationCosts", value.id),
+                    "activation costs must be positive".to_owned(),
+                );
+            }
             let definition = action_definition(value);
             insert_unique(
                 &mut self.actions,
@@ -1090,13 +1426,36 @@ impl DefinitionCollector {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn validate_bounded_list(
+        &mut self,
+        package: &AdmittedRulePackage,
+        subject: &str,
+        kind: &str,
+        id: &D20Id,
+        field: &str,
+        actual: usize,
+        maximum: usize,
+    ) {
+        if actual > maximum {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_SEMANTIC_ENTRY_QUOTA",
+                format!("$/payload/{kind}/{id}/{field}"),
+                format!("{field} contains {actual} entries; maximum is {maximum}"),
+            );
+        }
+    }
+
     fn validate_damage(
         &mut self,
         package: &AdmittedRulePackage,
-        action: &D20Id,
+        kind: &str,
+        definition: &D20Id,
         damage: &DamageCandidate,
     ) {
-        let subject = subject("action", action);
+        let subject = subject(kind, definition);
         if damage.dice == 0
             || damage.dice > MAX_D20_DAMAGE_DICE
             || damage.sides < 2
@@ -1107,7 +1466,7 @@ impl DefinitionCollector {
                 package,
                 Some(&subject),
                 "D20_INVALID_DAMAGE_DICE",
-                format!("$/payload/actions/{action}/damage"),
+                format!("$/payload/{kind}s/{definition}/damage"),
                 format!(
                     "damage requires 1..={MAX_D20_DAMAGE_DICE} dice, 2..={MAX_D20_DAMAGE_DIE_SIDES} sides, and bonus inside -1000..=1000"
                 ),
@@ -1132,25 +1491,28 @@ impl DefinitionCollector {
     fn validate_references(&mut self) {
         if self.abilities.is_empty()
             || self.defenses.is_empty()
+            || self.activation_budgets.is_empty()
             || self.damage_types.is_empty()
             || self.actions.is_empty()
         {
             self.push_global(
                 "D20_INCOMPLETE_RULESET",
                 "$/payload",
-                "the resolved ruleset requires at least one ability, defense, damage type, and action",
+                "the resolved ruleset requires at least one ability, defense, activation budget, damage type, and action",
             );
         }
 
         for (id, (definition, package_id)) in self.defenses.clone() {
-            if !self.abilities.contains_key(&definition.ability) {
-                self.push_for_identity(
-                    &package_id,
-                    Some(&subject("defense", &id)),
-                    "D20_UNKNOWN_ABILITY",
-                    format!("$/payload/defenses/{id}/ability"),
-                    format!("unknown ability {}", definition.ability),
-                );
+            for ability in &definition.abilities {
+                if !self.abilities.contains_key(ability) {
+                    self.push_for_identity(
+                        &package_id,
+                        Some(&subject("defense", &id)),
+                        "D20_UNKNOWN_ABILITY",
+                        format!("$/payload/defenses/{id}/abilities"),
+                        format!("unknown ability {ability}"),
+                    );
+                }
             }
         }
         for (id, (definition, package_id)) in self.armors.clone() {
@@ -1162,6 +1524,39 @@ impl DefinitionCollector {
                     format!("$/payload/armors/{id}/defense"),
                     format!("unknown defense {}", definition.defense),
                 );
+            }
+        }
+        for (id, (definition, package_id)) in self.implements.clone() {
+            let correlation = subject("implement", &id);
+            for (known, code, path, value) in [
+                (
+                    self.abilities.contains_key(&definition.ability),
+                    "D20_UNKNOWN_ABILITY",
+                    "ability",
+                    definition.ability.to_string(),
+                ),
+                (
+                    self.defenses.contains_key(&definition.defense),
+                    "D20_UNKNOWN_DEFENSE",
+                    "defense",
+                    definition.defense.to_string(),
+                ),
+                (
+                    self.damage_types.contains_key(&definition.damage.kind),
+                    "D20_UNKNOWN_DAMAGE_TYPE",
+                    "damage/kind",
+                    definition.damage.kind.to_string(),
+                ),
+            ] {
+                if !known {
+                    self.push_for_identity(
+                        &package_id,
+                        Some(&correlation),
+                        code,
+                        format!("$/payload/implements/{id}/{path}"),
+                        format!("unknown reference {value}"),
+                    );
+                }
             }
         }
         for (id, (definition, package_id)) in self.effects.clone() {
@@ -1236,33 +1631,77 @@ impl DefinitionCollector {
         }
         for (id, (definition, package_id)) in self.actions.clone() {
             let correlation = subject("action", &id);
-            for (known, code, path, value) in [
-                (
-                    self.abilities.contains_key(&definition.ability),
-                    "D20_UNKNOWN_ABILITY",
-                    "ability",
-                    definition.ability.to_string(),
-                ),
-                (
-                    self.defenses.contains_key(&definition.defense),
-                    "D20_UNKNOWN_DEFENSE",
-                    "defense",
-                    definition.defense.to_string(),
-                ),
-                (
-                    self.damage_types.contains_key(&definition.damage.kind),
-                    "D20_UNKNOWN_DAMAGE_TYPE",
-                    "damage/kind",
-                    definition.damage.kind.to_string(),
-                ),
-            ] {
-                if !known {
+            match &definition.attack {
+                ActionAttackDefinition::Fixed {
+                    ability,
+                    defense,
+                    damage,
+                    ..
+                } => {
+                    for (known, code, path, value) in [
+                        (
+                            self.abilities.contains_key(ability),
+                            "D20_UNKNOWN_ABILITY",
+                            "attack/ability",
+                            ability.to_string(),
+                        ),
+                        (
+                            self.defenses.contains_key(defense),
+                            "D20_UNKNOWN_DEFENSE",
+                            "attack/defense",
+                            defense.to_string(),
+                        ),
+                        (
+                            self.damage_types.contains_key(&damage.kind),
+                            "D20_UNKNOWN_DAMAGE_TYPE",
+                            "attack/damage/kind",
+                            damage.kind.to_string(),
+                        ),
+                    ] {
+                        if !known {
+                            self.push_for_identity(
+                                &package_id,
+                                Some(&correlation),
+                                code,
+                                format!("$/payload/actions/{id}/{path}"),
+                                format!("unknown reference {value}"),
+                            );
+                        }
+                    }
+                }
+                ActionAttackDefinition::Implement { implement } => {
+                    if !self.implements.contains_key(implement) {
+                        self.push_for_identity(
+                            &package_id,
+                            Some(&correlation),
+                            "D20_UNKNOWN_IMPLEMENT",
+                            format!("$/payload/actions/{id}/attack/implement"),
+                            format!("unknown implement {implement}"),
+                        );
+                    }
+                }
+            }
+            for cost in &definition.activation_costs {
+                let Some(budget) = self.activation_budgets.get(&cost.budget) else {
                     self.push_for_identity(
                         &package_id,
                         Some(&correlation),
-                        code,
-                        format!("$/payload/actions/{id}/{path}"),
-                        format!("unknown reference {value}"),
+                        "D20_UNKNOWN_ACTIVATION_BUDGET",
+                        format!("$/payload/actions/{id}/activationCosts"),
+                        format!("unknown activation budget {}", cost.budget),
+                    );
+                    continue;
+                };
+                if cost.amount > budget.0.initial {
+                    self.push_for_identity(
+                        &package_id,
+                        Some(&correlation),
+                        "D20_INCOMPATIBLE_ACTIVATION_COST",
+                        format!("$/payload/actions/{id}/activationCosts"),
+                        format!(
+                            "activation cost {} exceeds {} initial amount {}",
+                            cost.amount, cost.budget, budget.0.initial
+                        ),
                     );
                 }
             }
@@ -1404,14 +1843,29 @@ impl DefinitionCollector {
                 subject("item-instance", &id),
             );
             let correlation = subject("item-instance", &id);
-            if !self.armors.contains_key(&definition.armor) {
-                self.push_for_identity(
-                    &package,
-                    Some(&correlation),
-                    "D20_UNKNOWN_ARMOR",
-                    format!("$/payload/itemInstances/{id}/armor"),
-                    format!("unknown armor {}", definition.armor),
-                );
+            match &definition.equipment {
+                EquipmentReferenceDefinition::Armor { armor } => {
+                    if !self.armors.contains_key(armor) {
+                        self.push_for_identity(
+                            &package,
+                            Some(&correlation),
+                            "D20_UNKNOWN_ARMOR",
+                            format!("$/payload/itemInstances/{id}/equipment/armor"),
+                            format!("unknown armor {armor}"),
+                        );
+                    }
+                }
+                EquipmentReferenceDefinition::Implement { implement } => {
+                    if !self.implements.contains_key(implement) {
+                        self.push_for_identity(
+                            &package,
+                            Some(&correlation),
+                            "D20_UNKNOWN_IMPLEMENT",
+                            format!("$/payload/itemInstances/{id}/equipment/implement"),
+                            format!("unknown implement {implement}"),
+                        );
+                    }
+                }
             }
             let owner_is_character = self.character_templates.contains_key(&definition.owner);
             let owner_is_storage = self.storage.contains_key(&definition.owner);
@@ -1701,8 +2155,10 @@ impl DefinitionCollector {
     fn finish(self, fingerprint: String) -> Result<D20Ruleset, D20CompileError> {
         let abilities = strip_origins(self.abilities);
         let defenses = strip_origins(self.defenses);
+        let activation_budgets = strip_origins(self.activation_budgets);
         let resources = strip_origins(self.resources);
         let armors = strip_origins(self.armors);
+        let implements = strip_origins(self.implements);
         let effects = strip_origins(self.effects);
         let reactions = strip_origins(self.reactions);
         let actions = strip_origins(self.actions);
@@ -1712,16 +2168,19 @@ impl DefinitionCollector {
         let encounters = strip_origins(self.encounters);
         let adventures = strip_origins(self.adventures);
         let damage_types = self.damage_types.into_keys().collect::<BTreeSet<_>>();
-        let mechanics = build_mechanics_catalog(&defenses, &damage_types, &armors, &effects)
-            .map_err(D20CompileError::MechanicsCatalog)?;
+        let mechanics =
+            build_mechanics_catalog(&defenses, &damage_types, &armors, &implements, &effects)
+                .map_err(D20CompileError::MechanicsCatalog)?;
         Ok(D20Ruleset {
             fingerprint,
             mechanics,
             abilities,
             defenses,
+            activation_budgets,
             damage_types,
             resources,
             armors,
+            implements,
             effects,
             reactions,
             actions,
@@ -1887,12 +2346,39 @@ fn armor_definition(value: ArmorCandidate) -> ArmorDefinition {
     }
 }
 
+fn implement_definition(value: ImplementCandidate) -> ImplementDefinition {
+    ImplementDefinition {
+        id: value.id,
+        slot: value.slot,
+        tags: value.tags,
+        ability: value.ability,
+        defense: value.defense,
+        damage: damage_definition(value.damage),
+        range: value.range,
+    }
+}
+
 fn effect_definition(value: EffectCandidate) -> EffectDefinition {
     EffectDefinition {
         id: value.id,
         defense: value.defense,
         defense_bonus: value.defense_bonus,
         duration_turns: value.duration_turns,
+        conditions: value
+            .conditions
+            .into_iter()
+            .map(|condition| match condition {
+                ConditionClauseCandidate::ForbidMovement => {
+                    ConditionClauseDefinition::ForbidMovement
+                }
+                ConditionClauseCandidate::ForbidActionTag { tag } => {
+                    ConditionClauseDefinition::ForbidActionTag { tag }
+                }
+                ConditionClauseCandidate::AttackPenalty { amount } => {
+                    ConditionClauseDefinition::AttackPenalty { amount }
+                }
+            })
+            .collect(),
     }
 }
 
@@ -1910,15 +2396,58 @@ fn reaction_definition(value: ReactionCandidate) -> ReactionDefinition {
 fn action_definition(value: ActionCandidate) -> ActionDefinition {
     ActionDefinition {
         id: value.id,
-        ability: value.ability,
-        defense: value.defense,
-        damage: DamageDefinition {
-            kind: value.damage.kind,
-            dice: value.damage.dice,
-            sides: value.damage.sides,
-            bonus: value.damage.bonus,
+        tags: value.tags,
+        activation_costs: value
+            .activation_costs
+            .into_iter()
+            .map(|cost| ActivationCostDefinition {
+                budget: cost.budget,
+                amount: cost.amount,
+            })
+            .collect(),
+        target: ActionTargetDefinition {
+            kind: match value.target.kind {
+                ActionTargetKindCandidate::Participant => ActionTargetKindDefinition::Participant,
+                ActionTargetKindCandidate::Cell => ActionTargetKindDefinition::Cell,
+            },
+            team: match value.target.team {
+                ActionTargetTeamCandidate::Hostile => ActionTargetTeamDefinition::Hostile,
+                ActionTargetTeamCandidate::Ally => ActionTargetTeamDefinition::Ally,
+                ActionTargetTeamCandidate::SelfOnly => ActionTargetTeamDefinition::SelfOnly,
+                ActionTargetTeamCandidate::Any => ActionTargetTeamDefinition::Any,
+            },
+            maximum_targets: value.target.maximum_targets,
+            line_of_effect: match value.target.line_of_effect {
+                ActionLineOfEffectCandidate::Required => ActionLineOfEffectDefinition::Required,
+                ActionLineOfEffectCandidate::Ignored => ActionLineOfEffectDefinition::Ignored,
+            },
+        },
+        attack: match value.attack {
+            ActionAttackCandidate::Fixed {
+                ability,
+                defense,
+                damage,
+                range,
+            } => ActionAttackDefinition::Fixed {
+                ability,
+                defense,
+                damage: damage_definition(damage),
+                range,
+            },
+            ActionAttackCandidate::Implement { implement } => {
+                ActionAttackDefinition::Implement { implement }
+            }
         },
         effect: value.effect,
+    }
+}
+
+fn damage_definition(value: DamageCandidate) -> DamageDefinition {
+    DamageDefinition {
+        kind: value.kind,
+        dice: value.dice,
+        sides: value.sides,
+        bonus: value.bonus,
     }
 }
 
@@ -1975,7 +2504,14 @@ fn item_instance_definition(value: ItemInstanceCandidate) -> ItemInstanceDefinit
         id: value.id,
         entity_id: value.entity_id,
         name: value.name,
-        armor: value.armor,
+        equipment: match value.equipment {
+            EquipmentReferenceCandidate::Armor { armor } => {
+                EquipmentReferenceDefinition::Armor { armor }
+            }
+            EquipmentReferenceCandidate::Implement { implement } => {
+                EquipmentReferenceDefinition::Implement { implement }
+            }
+        },
         owner: value.owner,
         icon: value.icon,
         rarity: match value.rarity {
@@ -2079,6 +2615,7 @@ fn build_mechanics_catalog(
     defenses: &BTreeMap<D20Id, DefenseDefinition>,
     damage_types: &BTreeSet<D20Id>,
     armors: &BTreeMap<D20Id, ArmorDefinition>,
+    implements: &BTreeMap<D20Id, ImplementDefinition>,
     effects: &BTreeMap<D20Id, EffectDefinition>,
 ) -> Result<MechanicsCatalog, CatalogError> {
     let mut sources = Vec::new();
@@ -2151,6 +2688,7 @@ fn build_mechanics_catalog(
     let slots = armors
         .values()
         .map(|armor| armor.slot.clone())
+        .chain(implements.values().map(|implement| implement.slot.clone()))
         .collect::<BTreeSet<_>>();
     MechanicsCatalog::admit(MechanicsCatalogDefinition {
         version: CatalogVersion::parse("rusty-d20.v2").expect("fixed version is valid"),
@@ -2195,7 +2733,7 @@ fn build_mechanics_catalog(
                 id: armor_item_id(&armor.id),
                 kind: ItemKind::Unique,
                 maximum_quantity: 1,
-                classifications: vec![armor_classification_id(&armor.slot)],
+                classifications: vec![equipment_classification_id(&armor.slot)],
                 capacity_costs: vec![ItemCapacityCost {
                     metric: loadout_capacity_id(),
                     units: 1,
@@ -2206,12 +2744,27 @@ fn build_mechanics_catalog(
                 }),
                 sources: vec![armor_source_id(&armor.id)],
             })
+            .chain(implements.values().map(|implement| ItemDefinition {
+                id: implement_item_id(&implement.id),
+                kind: ItemKind::Unique,
+                maximum_quantity: 1,
+                classifications: vec![equipment_classification_id(&implement.slot)],
+                capacity_costs: vec![ItemCapacityCost {
+                    metric: loadout_capacity_id(),
+                    units: 1,
+                }],
+                equipment: Some(ItemEquipmentPolicy {
+                    required_slots: 1,
+                    exclusive_group: None,
+                }),
+                sources: vec![],
+            }))
             .collect(),
         equipment_slots: slots
             .iter()
             .map(|slot| EquipmentSlotDefinition {
                 id: equipment_slot_id(slot),
-                allowed_classifications: vec![armor_classification_id(slot)],
+                allowed_classifications: vec![equipment_classification_id(slot)],
             })
             .collect(),
     })
@@ -2236,6 +2789,11 @@ pub(crate) fn mechanics_effect_id(id: &D20Id) -> EffectDefinitionId {
 
 pub(crate) fn armor_item_id(id: &D20Id) -> gameplay_mechanics::ItemDefinitionId {
     gameplay_mechanics::ItemDefinitionId::parse(format!("armor.{id}"))
+        .expect("validated d20 identity fits mechanics identity")
+}
+
+pub(crate) fn implement_item_id(id: &D20Id) -> gameplay_mechanics::ItemDefinitionId {
+    gameplay_mechanics::ItemDefinitionId::parse(format!("implement.{id}"))
         .expect("validated d20 identity fits mechanics identity")
 }
 
@@ -2267,8 +2825,8 @@ fn effect_source_id(id: &D20Id) -> SourceDefinitionId {
         .expect("validated d20 identity fits mechanics identity")
 }
 
-fn armor_classification_id(id: &D20Id) -> ItemClassificationId {
-    ItemClassificationId::parse(format!("armor-slot.{id}"))
+fn equipment_classification_id(id: &D20Id) -> ItemClassificationId {
+    ItemClassificationId::parse(format!("equipment-slot.{id}"))
         .expect("validated d20 identity fits mechanics identity")
 }
 

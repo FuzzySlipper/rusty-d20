@@ -16,7 +16,7 @@ export const wardensGateModule = defineD20Module(
         introductionSource: 'Encounter',
         introductionText: 'Mara Venn faces the Iron Warden.',
         introductionDetails: [
-          "Iron Warden's chain armor and slashing resistance are active sources.",
+          "Iron Warden's chain armor, impact resistance, and equipped implements are active sources.",
         ],
         victory: {
           title: 'The Iron Warden defeated',
@@ -105,6 +105,10 @@ export const wardensGateModule = defineD20Module(
           'mara-chain',
           'mara-buckler',
           'spare-buckler',
+          'warden-blade',
+          'mara-blade',
+          'warden-bow',
+          'mara-bow',
         ],
         encounters: ['iron-warden', 'wardens-reckoning'],
         dungeon: {
@@ -150,7 +154,8 @@ export const wardensGateModule = defineD20Module(
         startSource: 'Adventure',
         startText: "Mara Venn prepares at the Warden's Gate camp.",
         startDetails: [
-          'Starter Core + Steel Guard authored packages compiled by Rust.',
+          'Ruleweaver foundation + Steel Guard authored packages compiled by Rust.',
+          'Mara’s implement-bound training blade and field bow are canonical equipped items.',
           'The Iron Warden and Warden’s Reckoning form an ordered two-encounter campaign.',
         ],
       }),
