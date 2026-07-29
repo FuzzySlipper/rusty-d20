@@ -2,11 +2,13 @@ export * from './generated/api-types';
 
 import type {
   ActionDto,
+  AdventureChoiceDto,
   ApiErrorDto,
   ApiErrorKindDto,
   CampaignDto,
   CampaignOutcomeDto,
   CharacterDto,
+  DefenseReadoutDto,
   EncounterChoiceDto,
   EncounterDto,
   EncounterOutcomeKindDto,
@@ -108,6 +110,7 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
   if (
     !hasExactKeys(value, [
       'campaign',
+      'availableAdventures',
       'encounter',
       'engineRevision',
       'product',
@@ -121,6 +124,7 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
   }
   const campaignValue = value['campaign'];
   const campaign = campaignValue === null ? null : decodeCampaign(campaignValue);
+  const availableAdventures = decodeArray(value['availableAdventures'], 16, decodeAdventureChoice);
   const encounterValue = value['encounter'];
   const encounter = encounterValue === null ? null : decodeEncounter(encounterValue);
   if (
@@ -130,6 +134,9 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
     typeof value['rulesetFingerprint'] !== 'string' ||
     !isSafeNonNegativeInteger(value['revision']) ||
     typeof value['saved'] !== 'boolean' ||
+    availableAdventures === undefined ||
+    availableAdventures.length === 0 ||
+    new Set(availableAdventures.map((choice) => choice.id)).size !== availableAdventures.length ||
     campaign === undefined ||
     encounter === undefined ||
     (campaign === null && encounter !== null) ||
@@ -149,6 +156,7 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
     rulesetFingerprint: value['rulesetFingerprint'],
     revision: value['revision'],
     saved: value['saved'],
+    availableAdventures,
     campaign,
     encounter,
   };
@@ -206,16 +214,7 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
 }
 
 function decodeCampaignOutcome(value: unknown): CampaignOutcomeDto | undefined {
-  if (
-    !hasExactKeys(value, [
-      'encounterId',
-      'kind',
-      'reward',
-      'rewardItemId',
-      'summary',
-      'title',
-    ])
-  ) {
+  if (!hasExactKeys(value, ['encounterId', 'kind', 'reward', 'rewardItemId', 'summary', 'title'])) {
     return undefined;
   }
   const rewardItemId = value['rewardItemId'];
@@ -243,9 +242,8 @@ function decodeCampaignOutcome(value: unknown): CampaignOutcomeDto | undefined {
 function decodeLoadout(value: unknown): LoadoutDto | undefined {
   if (
     !hasExactKeys(value, [
-      'armorDefense',
-      'armorDefenseSources',
       'capacity',
+      'defenses',
       'equipmentSlots',
       'inventorySlots',
       'ownerId',
@@ -259,7 +257,7 @@ function decodeLoadout(value: unknown): LoadoutDto | undefined {
   const equipmentSlots = decodeArray(value['equipmentSlots'], 64, decodeEquipmentSlot);
   const stashItems = decodeArray(value['stashItems'], 256, decodeLoadoutItem);
   const capacity = decodeLoadoutCapacity(value['capacity']);
-  const armorDefenseSources = decodeStrings(value['armorDefenseSources'], 256);
+  const defenses = decodeArray(value['defenses'], 64, decodeDefenseReadout);
   if (
     !isSafePositiveInteger(value['ownerId']) ||
     !isSafePositiveInteger(value['stashOwnerId']) ||
@@ -268,8 +266,9 @@ function decodeLoadout(value: unknown): LoadoutDto | undefined {
     equipmentSlots === undefined ||
     stashItems === undefined ||
     capacity === undefined ||
-    !isSafeInteger(value['armorDefense']) ||
-    armorDefenseSources === undefined ||
+    defenses === undefined ||
+    defenses.length === 0 ||
+    new Set(defenses.map((defense) => defense.id)).size !== defenses.length ||
     capacity.maximum !== inventorySlots.length ||
     capacity.used !== inventorySlots.filter((item) => item !== null).length ||
     capacity.used > capacity.maximum
@@ -310,9 +309,28 @@ function decodeLoadout(value: unknown): LoadoutDto | undefined {
     equipmentSlots,
     stashItems,
     capacity,
-    armorDefense: value['armorDefense'],
-    armorDefenseSources,
+    defenses,
   };
+}
+
+function decodeDefenseReadout(value: unknown): DefenseReadoutDto | undefined {
+  if (!hasExactKeys(value, ['id', 'label', 'sources', 'value'])) {
+    return undefined;
+  }
+  const sources = decodeStrings(value['sources'], 256);
+  return typeof value['id'] === 'string' &&
+    value['id'].length > 0 &&
+    typeof value['label'] === 'string' &&
+    value['label'].length > 0 &&
+    isSafeInteger(value['value']) &&
+    sources !== undefined
+    ? {
+        id: value['id'],
+        label: value['label'],
+        value: value['value'],
+        sources,
+      }
+    : undefined;
 }
 
 function decodeLoadoutItem(value: unknown): LoadoutItemDto | undefined {
@@ -392,6 +410,27 @@ function decodeEncounterChoice(value: unknown): EncounterChoiceDto | undefined {
     typeof value['title'] === 'string' &&
     typeof value['summary'] === 'string'
     ? { id: value['id'], title: value['title'], summary: value['summary'] }
+    : undefined;
+}
+
+function decodeAdventureChoice(value: unknown): AdventureChoiceDto | undefined {
+  if (!hasExactKeys(value, ['details', 'id', 'summary', 'title'])) {
+    return undefined;
+  }
+  const details = decodeStrings(value['details'], 32);
+  return typeof value['id'] === 'string' &&
+    value['id'].length > 0 &&
+    typeof value['title'] === 'string' &&
+    value['title'].length > 0 &&
+    typeof value['summary'] === 'string' &&
+    value['summary'].length > 0 &&
+    details !== undefined
+    ? {
+        id: value['id'],
+        title: value['title'],
+        summary: value['summary'],
+        details,
+      }
     : undefined;
 }
 

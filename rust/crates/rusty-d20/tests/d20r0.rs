@@ -431,6 +431,7 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
             id: id("broken-adventure"),
             title: "Broken adventure".to_owned(),
             default: true,
+            selectable: true,
             hero: id("hero"),
             characters,
             camp_storage: id("camp"),
@@ -553,6 +554,7 @@ fn otherwise_valid_adventure_candidate(
             id: id("duel-adventure"),
             title: "Duel adventure".to_owned(),
             default: true,
+            selectable: true,
             hero: id("hero"),
             characters: vec![id("hero"), id("opponent")],
             camp_storage: id("camp"),
@@ -634,6 +636,23 @@ fn adventure_combat_participants_require_actions_at_semantic_admission() {
     );
     let correlation = diagnostic.correlation().expect("source correlation");
     assert_eq!(correlation.source().as_str(), "actionless-hero-source");
+    assert_eq!(correlation.line(), Some(5));
+
+    let mut hidden_default =
+        otherwise_valid_adventure_candidate(vec![id("strike")], vec![id("strike")]);
+    hidden_default.adventures[0].selectable = false;
+    let report = compile("hidden-default", hidden_default);
+    let diagnostic = report
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "D20_INVALID_DEFAULT_ADVENTURE")
+        .expect("hidden default diagnostic");
+    assert_eq!(
+        diagnostic.logical_path(),
+        "$/payload/adventures/duel-adventure/selectable"
+    );
+    let correlation = diagnostic.correlation().expect("source correlation");
+    assert_eq!(correlation.source().as_str(), "hidden-default-source");
     assert_eq!(correlation.line(), Some(5));
 }
 

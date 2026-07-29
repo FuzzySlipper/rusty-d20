@@ -182,6 +182,7 @@ pub struct AdventureDefinition {
     pub id: D20Id,
     pub title: String,
     pub default: bool,
+    pub selectable: bool,
     pub hero: D20Id,
     pub characters: Vec<D20Id>,
     pub camp_storage: D20Id,
@@ -1310,6 +1311,15 @@ impl DefinitionCollector {
                         .to_owned(),
                 );
             }
+            if definition.default && !definition.selectable {
+                self.push_for_identity(
+                    &package,
+                    Some(&correlation),
+                    "D20_INVALID_DEFAULT_ADVENTURE",
+                    format!("$/payload/adventures/{id}/selectable"),
+                    "the default adventure must be selectable".to_owned(),
+                );
+            }
             if let Some((hero, _)) = self.character_templates.get(&definition.hero) {
                 if hero.actions.is_empty() {
                     self.push_for_identity(
@@ -1779,6 +1789,7 @@ fn adventure_definition(value: AdventureCandidate) -> AdventureDefinition {
         id: value.id,
         title: value.title,
         default: value.default,
+        selectable: value.selectable,
         hero: value.hero,
         characters: value.characters,
         camp_storage: value.camp_storage,

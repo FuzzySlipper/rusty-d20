@@ -11,6 +11,9 @@ import { fundamentalsModule } from './content/fundamentals.js';
 import { invalidSemanticsModule } from './content/invalid.js';
 import { steelGuardModule } from './content/steel_guard.js';
 import { catalogProbeModule } from './content/adventures/catalog_probe.js';
+import { emberCastModule } from './content/adventures/ember_cast.js';
+import { emberLoadoutModule } from './content/adventures/ember_loadout.js';
+import { embersWakeModule } from './content/adventures/embers_wake.js';
 import { wardenCastModule } from './content/adventures/warden_cast.js';
 import { wardenLoadoutModule } from './content/adventures/warden_loadout.js';
 import { wardensGateModule } from './content/adventures/wardens_gate.js';
@@ -19,6 +22,7 @@ export interface StarterArtifacts {
   readonly core: D20CanonicalArtifact;
   readonly steelGuard: D20CanonicalArtifact;
   readonly emberWard: D20CanonicalArtifact;
+  readonly embersWake: D20CanonicalArtifact;
   readonly wardensGate: D20CanonicalArtifact;
   readonly catalogProbe: D20CanonicalArtifact;
   readonly invalidSemantics: D20CanonicalArtifact;
@@ -39,6 +43,13 @@ export function authorStarterArtifacts(): StarterArtifacts {
     dependencies: [exactCore],
     modules: [steelGuardModule],
   });
+  const emberWard = authorD20Package({
+    domain: 'rusty-d20',
+    package: 'ember-ward',
+    version: 1,
+    dependencies: [exactCore],
+    modules: [emberWardModule],
+  });
   const wardensGate = authorD20Package({
     domain: 'rusty-d20',
     package: 'wardens-gate',
@@ -46,16 +57,18 @@ export function authorStarterArtifacts(): StarterArtifacts {
     dependencies: [exactDependencyOn(steelGuard)],
     modules: [wardenCastModule, wardenLoadoutModule, wardensGateModule],
   });
+  const embersWake = authorD20Package({
+    domain: 'rusty-d20',
+    package: 'embers-wake',
+    version: 1,
+    dependencies: [exactDependencyOn(emberWard)],
+    modules: [emberCastModule, emberLoadoutModule, embersWakeModule],
+  });
   return Object.freeze({
     core,
     steelGuard,
-    emberWard: authorD20Package({
-      domain: 'rusty-d20',
-      package: 'ember-ward',
-      version: 1,
-      dependencies: [exactCore],
-      modules: [emberWardModule],
-    }),
+    emberWard,
+    embersWake,
     wardensGate,
     catalogProbe: authorD20Package({
       domain: 'rusty-d20',

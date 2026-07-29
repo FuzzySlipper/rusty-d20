@@ -150,6 +150,26 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
         justify-self: center;
       }
 
+      .adventure-catalog {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        text-align: left;
+      }
+
+      .adventure-choice {
+        align-content: start;
+        border: 1px solid var(--rusty-engine-border);
+        border-radius: var(--rusty-engine-radius);
+        display: grid;
+        gap: 10px;
+        padding: 16px;
+      }
+
+      .adventure-choice button {
+        justify-self: start;
+      }
+
       .encounter-meta {
         color: var(--rusty-engine-muted);
         font-size: 0.78rem;
@@ -386,6 +406,7 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
       @media (max-width: 760px) {
         .characters,
         .camp__layout,
+        .adventure-catalog,
         .loadout__widgets,
         .workspace,
         .action-catalog {
@@ -473,7 +494,7 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                   [disabled]="store.busy()"
                   (click)="beginOppositionTurn()"
                 >
-                  Begin Iron Warden turn
+                  Begin {{ opponentName() }} turn
                 </button>
               }
             </div>
@@ -518,24 +539,37 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
 
           @if (game()?.campaign === null) {
             <section class="rusty-engine-panel empty" aria-label="New adventure">
-              <p class="eyebrow">Starter Core · Steel Guard</p>
-              <h2>The Warden's Gate</h2>
+              <p class="eyebrow">Rust-compiled authored catalog</p>
+              <h2>Choose an adventure</h2>
               <p class="lede">
-                Begin a durable authored adventure. Rust owns campaign phase, every roll and
-                mutation, and the Engine-backed save you can continue in a fresh process.
+                Each path has its own authored cast, loadout, actions, defenses, effects,
+                opposition, and reward. Selection becomes immutable when the Rust campaign starts.
               </p>
-              <button
-                class="primary"
-                type="button"
-                [disabled]="store.busy()"
-                (click)="newAdventure()"
-              >
-                New Adventure
-              </button>
-              <p class="muted">
-                Engine {{ game()?.engineRevisionShort }} · rules
-                <span [title]="game()?.rulesetFingerprint">Starter + Steel</span>
-              </p>
+              <div class="adventure-catalog">
+                @for (choice of game()?.availableAdventures ?? []; track choice.id) {
+                  <article class="adventure-choice">
+                    <div>
+                      <p class="meta-label">Authored path · {{ choice.id }}</p>
+                      <h3>{{ choice.title }}</h3>
+                    </div>
+                    <p>{{ choice.summary }}</p>
+                    <ul class="detail-list">
+                      @for (detail of choice.details; track detail) {
+                        <li>{{ detail }}</li>
+                      }
+                    </ul>
+                    <button
+                      class="primary"
+                      type="button"
+                      [disabled]="store.busy()"
+                      (click)="newAdventure(choice.id)"
+                    >
+                      New Adventure · {{ choice.title }}
+                    </button>
+                  </article>
+                }
+              </div>
+              <p class="muted">Engine {{ game()?.engineRevisionShort }} · exact checked catalog</p>
             </section>
           } @else if (!campaignEntered()) {
             <section class="rusty-engine-panel empty" aria-label="Continue adventure">
@@ -556,10 +590,11 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                 <header class="rusty-engine-panel camp__header">
                   <div>
                     <p class="eyebrow">Rust-owned camp · Engine-backed loadout</p>
-                    <h2>Warden's Gate Camp</h2>
+                    <h2>{{ campaign.title }} Camp</h2>
                     <p class="lede">
-                      Equip Mara from canonical inventory state, move spare gear through the camp
-                      stash, and inspect the attributed defense before entering the encounter.
+                      Equip {{ campaign.hero.name }} from canonical inventory state, move spare gear
+                      through the camp stash, and inspect every attributed defense before entering
+                      the encounter.
                     </p>
                   </div>
                   <span class="capacity">
@@ -581,7 +616,8 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                     <p>{{ outcome.summary }}</p>
                     @if (outcome.reward !== null) {
                       <p class="muted">
-                        Reward: {{ outcome.reward }} · entity {{ outcome.rewardItemId }}
+                        Reward: {{ outcome.reward }} · entity
+                        {{ outcome.rewardItemId }}
                       </p>
                     }
                   </section>
@@ -593,19 +629,26 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                       <aui-character-status [status]="characterStatus(campaign.hero)" />
                     </article>
 
-                    <section class="defense-readout" aria-label="Armor defense readout">
-                      <div>
-                        <p class="meta-label">Derived armor defense</p>
-                        <strong>{{ campaign.loadout.armorDefense }}</strong>
-                      </div>
-                      <details>
-                        <summary>Attributed sources</summary>
-                        <ul class="source-list">
-                          @for (source of campaign.loadout.armorDefenseSources; track source) {
-                            <li>{{ source }}</li>
-                          }
-                        </ul>
-                      </details>
+                    <section class="loadout" aria-label="Defense readout">
+                      @for (defense of campaign.loadout.defenses; track defense.id) {
+                        <article
+                          class="defense-readout"
+                          [attr.aria-label]="defense.label + ' defense readout'"
+                        >
+                          <div>
+                            <p class="meta-label">Derived {{ defense.label }} defense</p>
+                            <strong>{{ defense.value }}</strong>
+                          </div>
+                          <details>
+                            <summary>Attributed sources</summary>
+                            <ul class="source-list">
+                              @for (source of defense.sources; track source) {
+                                <li>{{ source }}</li>
+                              }
+                            </ul>
+                          </details>
+                        </article>
+                      }
                     </section>
 
                     <div class="loadout__widgets">
@@ -709,21 +752,23 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
               <span>
                 {{
                   encounter().turnOwner === 'player'
-                    ? 'Mara acting'
+                    ? encounter().player.name + ' acting'
                     : encounter().turnOwner === 'opposition'
-                      ? 'Iron Warden acting'
+                      ? opponentName() + ' acting'
                       : 'Encounter resolved'
                 }}
               </span>
               <span>Next deterministic roll {{ encounter().nextRoll }}</span>
               <span>State revision {{ game()?.revision }}</span>
-              <span>Armor defense {{ game()?.campaign?.loadout?.armorDefense }}</span>
+              @for (defense of game()?.campaign?.loadout?.defenses ?? []; track defense.id) {
+                <span>{{ defense.label }} defense {{ defense.value }}</span>
+              }
               <span
                 >Engine <code>{{ game()?.engineRevisionShort }}</code></span
               >
               <span>
                 Rules
-                <code [title]="game()?.rulesetFingerprint">Starter + Steel</code>
+                <code [title]="game()?.rulesetFingerprint">{{ game()?.campaign?.title }}</code>
               </span>
             </section>
 
@@ -755,7 +800,8 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                     @if (outcome.reward !== null) {
                       <p>
                         <strong>Reward admitted:</strong>
-                        {{ outcome.reward }} · canonical entity {{ outcome.rewardItemId }}
+                        {{ outcome.reward }} · canonical entity
+                        {{ outcome.rewardItemId }}
                       </p>
                     } @else {
                       <p class="muted">
@@ -768,7 +814,7 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                       [disabled]="store.busy()"
                       (click)="returnToCamp()"
                     >
-                      Return to Warden's Gate Camp
+                      Return to {{ game()?.campaign?.title }} Camp
                     </button>
                   </article>
                   <aside class="rusty-engine-panel outcome">
@@ -806,8 +852,8 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                           encounter().turnOwner === 'player'
                             ? 'Choose an action'
                             : encounter().pendingAction === null
-                              ? 'Iron Warden is ready'
-                              : 'Respond to the Iron Warden'
+                              ? opponentName() + ' is ready'
+                              : 'Respond to ' + opponentName()
                         }}
                       </h2>
                     </div>
@@ -842,9 +888,9 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                     </div>
                   } @else if (encounter().pendingAction === null) {
                     <p class="lede">
-                      Begin the explicit opposition phase to let Rust choose the Iron Warden's
-                      action from admitted definitions. You can inspect and answer its preview
-                      before the roll.
+                      Begin the explicit opposition phase to let Rust choose
+                      {{ opponentName() }}'s action from admitted definitions. You can inspect and
+                      answer its preview before the roll.
                     </p>
                     <button
                       class="primary resolve"
@@ -852,7 +898,7 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                       [disabled]="store.busy()"
                       (click)="beginOppositionTurn()"
                     >
-                      Begin Iron Warden turn
+                      Begin {{ opponentName() }} turn
                     </button>
                   }
                 </section>
@@ -1063,8 +1109,8 @@ export class MainMenuScreenComponent implements OnInit {
     }
   }
 
-  protected async newAdventure(): Promise<void> {
-    await this.store.newAdventure();
+  protected async newAdventure(adventureId: string): Promise<void> {
+    await this.store.newAdventure(adventureId);
     if (this.game()?.campaign !== null) {
       this.campaignEntered.set(true);
     }
@@ -1155,6 +1201,10 @@ export class MainMenuScreenComponent implements OnInit {
       this.encounter().characters.find((character) => character.id === actorId)?.name ??
       `Entity ${actorId}`
     );
+  }
+
+  protected opponentName(): string {
+    return this.encounter().targets[0]?.name ?? 'Opposition';
   }
 
   private inventoryItem(item: LoadoutItemDto): InventoryItemView {

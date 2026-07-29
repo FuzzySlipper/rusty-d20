@@ -21,8 +21,17 @@ struct AuthoredCatalogArtifact {
 #[derive(Debug, Clone)]
 pub(crate) struct AuthoredAdventureCatalog {
     packages: BTreeMap<RulePackageIdentity, AdmittedRulePackage>,
-    adventure_packages: BTreeMap<D20Id, RulePackageIdentity>,
+    adventures: BTreeMap<D20Id, AuthoredAdventureEntry>,
     default_adventure: D20Id,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct AuthoredAdventureEntry {
+    pub(crate) package: RulePackageIdentity,
+    pub(crate) title: String,
+    pub(crate) summary: String,
+    pub(crate) details: Vec<String>,
+    pub(crate) selectable: bool,
 }
 
 impl AuthoredAdventureCatalog {
@@ -52,7 +61,7 @@ impl AuthoredAdventureCatalog {
         }
 
         let mut packages = BTreeMap::new();
-        let mut adventure_packages = BTreeMap::new();
+        let mut adventures = BTreeMap::new();
         let mut default_adventure = None;
         for canonical in artifact.packages {
             let package = decode_canonical_rule_package(canonical.as_bytes())
@@ -71,16 +80,23 @@ impl AuthoredAdventureCatalog {
                 ));
             }
             for adventure in candidate.adventures {
-                if adventure_packages
-                    .insert(adventure.id.clone(), package.identity().clone())
+                let id = adventure.id.clone();
+                if adventures
+                    .insert(
+                        id.clone(),
+                        AuthoredAdventureEntry {
+                            package: package.identity().clone(),
+                            title: adventure.title,
+                            summary: adventure.start_text,
+                            details: adventure.start_details,
+                            selectable: adventure.selectable,
+                        },
+                    )
                     .is_some()
                 {
-                    return Err(format!(
-                        "duplicate authored adventure identity {}",
-                        adventure.id
-                    ));
+                    return Err(format!("duplicate authored adventure identity {}", id));
                 }
-                if adventure.default && default_adventure.replace(adventure.id.clone()).is_some() {
+                if adventure.default && default_adventure.replace(id).is_some() {
                     return Err("authored catalog contains multiple default adventures".to_owned());
                 }
             }
@@ -89,7 +105,7 @@ impl AuthoredAdventureCatalog {
             .ok_or_else(|| "authored catalog has no default adventure".to_owned())?;
         Ok(Self {
             packages,
-            adventure_packages,
+            adventures,
             default_adventure,
         })
     }
@@ -98,12 +114,16 @@ impl AuthoredAdventureCatalog {
         &self.default_adventure
     }
 
+    pub(crate) fn adventures(&self) -> impl Iterator<Item = (&D20Id, &AuthoredAdventureEntry)> {
+        self.adventures.iter()
+    }
+
     pub(crate) fn rules_for(&self, adventure: &D20Id) -> Result<D20Ruleset, String> {
-        let package = self
-            .adventure_packages
+        let entry = self
+            .adventures
             .get(adventure)
             .ok_or_else(|| format!("unknown authored adventure {adventure}"))?;
-        let packages = self.package_closure(package)?;
+        let packages = self.package_closure(&entry.package)?;
         let rules = D20Ruleset::compile(packages).map_err(|error| error.to_string())?;
         if rules.adventure(adventure).is_none() {
             return Err(format!(
@@ -172,9 +192,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builtin_catalog_compiles_default_and_content_only_probe() {
+    fn builtin_catalog_compiles_selectable_paths_and_content_only_probe() {
         let catalog = AuthoredAdventureCatalog::builtin().unwrap();
         assert_eq!(catalog.default_adventure().as_str(), "wardens-gate");
+        assert_eq!(
+            catalog
+                .adventures()
+                .filter(|(_, entry)| entry.selectable)
+                .map(|(id, _)| id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["embers-wake", "wardens-gate"]
+        );
         let default = catalog.rules_for(catalog.default_adventure()).unwrap();
         assert!(default
             .adventure(&D20Id::parse("wardens-gate").unwrap())
@@ -184,6 +212,12 @@ mod tests {
             .unwrap();
         assert!(probe
             .adventure(&D20Id::parse("catalog-probe").unwrap())
+            .is_some());
+        let ember = catalog
+            .rules_for(&D20Id::parse("embers-wake").unwrap())
+            .unwrap();
+        assert!(ember
+            .adventure(&D20Id::parse("embers-wake").unwrap())
             .is_some());
     }
 }

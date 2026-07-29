@@ -38,6 +38,20 @@ describe('decodeGameSnapshot', () => {
     rulesetFingerprint: 'rules',
     revision: 0,
     saved: false,
+    availableAdventures: [
+      {
+        id: 'wardens-gate',
+        title: "The Warden's Gate",
+        summary: "Mara Venn prepares at the Warden's Gate camp.",
+        details: ['Steel path'],
+      },
+      {
+        id: 'embers-wake',
+        title: "Ember's Wake",
+        summary: 'Sera Vale prepares beside the ember reliquary.',
+        details: ['Ember path'],
+      },
+    ],
     campaign: null,
     encounter: null,
   };
@@ -51,6 +65,9 @@ describe('decodeGameSnapshot', () => {
       ok: false,
     });
     expect(decodeGameSnapshot({ ...empty, revision: Number.MAX_SAFE_INTEGER + 1 })).toMatchObject({
+      ok: false,
+    });
+    expect(decodeGameSnapshot({ ...empty, availableAdventures: [] })).toMatchObject({
       ok: false,
     });
   });
@@ -105,8 +122,20 @@ describe('decodeGameSnapshot', () => {
         ],
         stashItems: [],
         capacity: { metric: 'carried-items', used: 1, maximum: 2 },
-        armorDefense: 16,
-        armorDefenseSources: ['Equipped item 202: +4 defense (applied)'],
+        defenses: [
+          {
+            id: 'armor',
+            label: 'Armor',
+            value: 16,
+            sources: ['Equipped item 202: +4 defense (applied)'],
+          },
+          {
+            id: 'resolve',
+            label: 'Resolve',
+            value: 11,
+            sources: [],
+          },
+        ],
       },
       activeEncounterId: null,
       latestOutcome: null,

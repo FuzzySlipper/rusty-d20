@@ -259,6 +259,7 @@ pub struct AdventureCandidate {
     pub id: D20Id,
     pub title: String,
     pub default: bool,
+    pub selectable: bool,
     pub hero: D20Id,
     pub characters: Vec<D20Id>,
     pub camp_storage: D20Id,

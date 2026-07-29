@@ -17,6 +17,20 @@ const snapshot = {
   rulesetFingerprint: 'rules',
   revision: 0,
   saved: false,
+  availableAdventures: [
+    {
+      id: 'wardens-gate',
+      title: "The Warden's Gate",
+      summary: "Mara Venn prepares at the Warden's Gate camp.",
+      details: [],
+    },
+    {
+      id: 'embers-wake',
+      title: "Ember's Wake",
+      summary: 'Sera Vale prepares beside the ember reliquary.',
+      details: [],
+    },
+  ],
   campaign: null,
   encounter: null,
 };
@@ -27,12 +41,16 @@ function http(response: () => Promise<HttpResponse>): HttpPort {
 
 describe('createHttpRustyD20Transport', () => {
   it('decodes successful Rust readout and session responses', async () => {
+    const posts: Array<{ path: string; body: unknown }> = [];
     const port: HttpPort = {
       getJson: async (path) => ({
         status: 200,
         body: path.endsWith('readout') ? readout : snapshot,
       }),
-      postJson: async () => ({ status: 200, body: snapshot }),
+      postJson: async (path, body) => {
+        posts.push({ path, body });
+        return { status: 200, body: snapshot };
+      },
     };
     const transport = createHttpRustyD20Transport(port);
     await expect(transport.loadReadout()).resolves.toEqual({
@@ -43,9 +61,21 @@ describe('createHttpRustyD20Transport', () => {
       ok: true,
       value: snapshot,
     });
-    await expect(transport.newAdventure(0)).resolves.toEqual({
+    await expect(
+      transport.newAdventure({
+        expectedRevision: 0,
+        adventureId: 'embers-wake',
+      }),
+    ).resolves.toEqual({
       ok: true,
       value: snapshot,
+    });
+    expect(posts[0]).toEqual({
+      path: '/api/v1/session/new',
+      body: {
+        expectedRevision: 0,
+        adventureId: 'embers-wake',
+      },
     });
     await expect(
       transport.enterEncounter({

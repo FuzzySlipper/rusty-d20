@@ -11,6 +11,7 @@ export const catalogProbeModule = defineD20Module(
         id: 'catalog-probe',
         title: 'Authored Catalog Probe',
         default: false,
+        selectable: false,
         hero: 'mara-venn',
         characters: ['iron-warden', 'mara-venn'],
         campStorage: 'camp-stash',

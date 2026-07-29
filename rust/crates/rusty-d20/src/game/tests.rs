@@ -26,6 +26,123 @@ fn start_test_encounter(runtime: &mut GameRuntime) -> GameSnapshotDto {
         .unwrap()
 }
 
+fn defense_value(loadout: &LoadoutDto, defense: &str) -> i64 {
+    loadout
+        .defenses
+        .iter()
+        .find(|readout| readout.id == defense)
+        .unwrap_or_else(|| panic!("missing {defense} defense readout"))
+        .value
+}
+
+#[test]
+fn alternate_ember_adventure_selection_is_atomic_distinct_and_persistent() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    let empty = runtime.snapshot().unwrap();
+    assert_eq!(
+        empty
+            .available_adventures
+            .iter()
+            .map(|choice| choice.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["embers-wake", "wardens-gate"]
+    );
+
+    assert!(matches!(
+        runtime.new_adventure_for(NewAdventureRequestDto {
+            expected_revision: 1,
+            adventure_id: "embers-wake".to_owned(),
+        }),
+        Err(GameRuntimeError::StaleCommand(_))
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), empty);
+    assert!(matches!(
+        runtime.new_adventure_for(NewAdventureRequestDto {
+            expected_revision: 0,
+            adventure_id: "unknown-path".to_owned(),
+        }),
+        Err(GameRuntimeError::InvalidCommand(_))
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), empty);
+    assert!(matches!(
+        runtime.new_adventure_for(NewAdventureRequestDto {
+            expected_revision: 0,
+            adventure_id: "catalog-probe".to_owned(),
+        }),
+        Err(GameRuntimeError::InvalidCommand(_))
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), empty);
+
+    let camp = runtime
+        .new_adventure_for(NewAdventureRequestDto {
+            expected_revision: 0,
+            adventure_id: "embers-wake".to_owned(),
+        })
+        .unwrap();
+    assert_ne!(camp.ruleset_fingerprint, empty.ruleset_fingerprint);
+    let campaign = camp.campaign.as_ref().unwrap();
+    assert_eq!(campaign.id, "embers-wake");
+    assert_eq!(campaign.title, "Ember's Wake");
+    assert_eq!(campaign.hero.id, 111);
+    assert_eq!(campaign.hero.name, "Sera Vale");
+    let resolve = campaign
+        .loadout
+        .defenses
+        .iter()
+        .find(|defense| defense.id == "resolve")
+        .unwrap();
+    assert!(resolve.sources.iter().any(|source| source.contains("212")));
+    assert!(resolve.sources.iter().any(|source| source.contains("213")));
+
+    let before_reselection = runtime.snapshot().unwrap();
+    assert!(matches!(
+        runtime.new_adventure_for(NewAdventureRequestDto {
+            expected_revision: camp.revision,
+            adventure_id: "wardens-gate".to_owned(),
+        }),
+        Err(GameRuntimeError::InvalidCommand(_))
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), before_reselection);
+
+    let encounter = runtime
+        .enter_encounter(EnterEncounterRequestDto {
+            expected_revision: camp.revision,
+            encounter_id: "ash-seer".to_owned(),
+        })
+        .unwrap();
+    assert_eq!(
+        encounter
+            .encounter
+            .as_ref()
+            .unwrap()
+            .actions
+            .iter()
+            .map(|action| action.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["fire-bolt", "mind-spike"]
+    );
+    assert_eq!(
+        encounter.encounter.as_ref().unwrap().characters[1].name,
+        "Ash Seer"
+    );
+
+    let encoded = runtime.encode_save().unwrap();
+    let reopened = GameRuntime::decode_save(&encoded).unwrap();
+    assert_eq!(reopened.encode_save().unwrap(), encoded);
+    assert_eq!(reopened.snapshot().unwrap(), {
+        let mut saved = encounter;
+        saved.saved = true;
+        saved
+    });
+
+    let mut mismatched: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    mismatched["campaign"]["adventureId"] = json!("wardens-gate");
+    assert!(matches!(
+        GameRuntime::decode_save(&serde_json::to_string(&mismatched).unwrap()),
+        Err(GameRuntimeError::CompositionFingerprintMismatch { .. })
+    ));
+}
+
 #[test]
 fn content_only_adventure_uses_shared_orchestration_and_exact_composition() {
     let default_fingerprint = GameRuntime::empty()
@@ -86,7 +203,7 @@ fn camp_loadout_is_engine_backed_typed_atomic_and_persistent() {
     let loadout = &camp.campaign.as_ref().unwrap().loadout;
     assert_eq!(loadout.capacity.used, 2);
     assert_eq!(loadout.capacity.maximum, 2);
-    assert_eq!(loadout.armor_defense, 16);
+    assert_eq!(defense_value(loadout, "armor"), 16);
     assert_eq!(
         loadout
             .equipment_slots
@@ -140,12 +257,7 @@ fn camp_loadout_is_engine_backed_typed_atomic_and_persistent() {
         })
         .unwrap();
     assert_eq!(
-        chain_removed
-            .campaign
-            .as_ref()
-            .unwrap()
-            .loadout
-            .armor_defense,
+        defense_value(&chain_removed.campaign.as_ref().unwrap().loadout, "armor",),
         14
     );
     let chain_restored = runtime
@@ -156,12 +268,7 @@ fn camp_loadout_is_engine_backed_typed_atomic_and_persistent() {
         })
         .unwrap();
     assert_eq!(
-        chain_restored
-            .campaign
-            .as_ref()
-            .unwrap()
-            .loadout
-            .armor_defense,
+        defense_value(&chain_restored.campaign.as_ref().unwrap().loadout, "armor",),
         16
     );
 
@@ -1009,7 +1116,7 @@ fn campaign_phases_and_legacy_migration_are_strict_and_fail_atomic() {
     let migrated_v2 = GameRuntime::decode_save(&legacy_v2).unwrap();
     let migrated_loadout = migrated_v2.snapshot().unwrap().campaign.unwrap().loadout;
     assert_eq!(migrated_loadout.capacity.used, 2);
-    assert_eq!(migrated_loadout.armor_defense, 16);
+    assert_eq!(defense_value(&migrated_loadout, "armor"), 16);
     assert_eq!(migrated_loadout.stash_items.len(), 1);
 
     let mut wrong_legacy_catalog: serde_json::Value = serde_json::from_str(&legacy_v2).unwrap();

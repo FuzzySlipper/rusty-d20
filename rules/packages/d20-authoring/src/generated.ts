@@ -53,6 +53,6 @@ export type EncounterOutcomeCandidate = { title: string, summary: string, logSou
 
 export type EncounterCandidate = { id: D20Id, title: string, summary: string, opponent: D20Id, availableFromCamp: boolean, introductionSource: string, introductionText: string, introductionDetails: Array<string>, victory: EncounterOutcomeCandidate, defeat: EncounterOutcomeCandidate, };
 
-export type AdventureCandidate = { id: D20Id, title: string, default: boolean, hero: D20Id, characters: Array<D20Id>, campStorage: D20Id, storage: Array<D20Id>, items: Array<D20Id>, encounters: Array<D20Id>, startSource: string, startText: string, startDetails: Array<string>, };
+export type AdventureCandidate = { id: D20Id, title: string, default: boolean, selectable: boolean, hero: D20Id, characters: Array<D20Id>, campStorage: D20Id, storage: Array<D20Id>, items: Array<D20Id>, encounters: Array<D20Id>, startSource: string, startText: string, startDetails: Array<string>, };
 
 export type D20RulesCandidate = { schemaVersion: number, abilities: Array<AbilityCandidate>, defenses: Array<DefenseCandidate>, damageTypes: Array<DamageTypeCandidate>, resources: Array<ResourceCandidate>, armors: Array<ArmorCandidate>, effects: Array<EffectCandidate>, reactions: Array<ReactionCandidate>, actions: Array<ActionCandidate>, characterTemplates: Array<CharacterTemplateCandidate>, storage: Array<StorageCandidate>, itemInstances: Array<ItemInstanceCandidate>, encounters: Array<EncounterCandidate>, adventures: Array<AdventureCandidate>, };

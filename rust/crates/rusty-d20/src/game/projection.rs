@@ -155,15 +155,38 @@ impl GameRuntime {
             .iter()
             .map(|item| self.project_loadout_item(session, item.entity, None))
             .collect::<Result<Vec<_>, _>>()?;
-        let defense = StatService::evaluate(
-            session.entities(),
-            self.rules.mechanics(),
-            hero,
-            &defense_stat_id(&id("armor")?),
-            &operation("project-loadout")?,
-            &[],
-        )
-        .map_err(D20SessionError::from)?;
+        let defenses = self
+            .rules
+            .defenses()
+            .map(|definition| {
+                let defense = StatService::evaluate(
+                    session.entities(),
+                    self.rules.mechanics(),
+                    hero,
+                    &defense_stat_id(&definition.id),
+                    &operation(&format!("project-loadout-{}", definition.id))?,
+                    &[],
+                )
+                .map_err(D20SessionError::from)?;
+                Ok(DefenseReadoutDto {
+                    id: definition.id.to_string(),
+                    label: humanize(definition.id.as_str()),
+                    value: defense.value.get(),
+                    sources: defense
+                        .decisions
+                        .iter()
+                        .map(|decision| {
+                            format!(
+                                "{}: {} ({})",
+                                source_label(&decision.source),
+                                stat_contribution_label(decision.contribution.as_ref()),
+                                outcome_label(decision.outcome)
+                            )
+                        })
+                        .collect(),
+                })
+            })
+            .collect::<Result<Vec<_>, GameRuntimeError>>()?;
         Ok(LoadoutDto {
             owner_id: hero.raw(),
             stash_owner_id: stash.raw(),
@@ -175,19 +198,7 @@ impl GameRuntime {
                 used: capacity.used,
                 maximum,
             },
-            armor_defense: defense.value.get(),
-            armor_defense_sources: defense
-                .decisions
-                .iter()
-                .map(|decision| {
-                    format!(
-                        "{}: {} ({})",
-                        source_label(&decision.source),
-                        stat_contribution_label(decision.contribution.as_ref()),
-                        outcome_label(decision.outcome)
-                    )
-                })
-                .collect(),
+            defenses,
         })
     }
 

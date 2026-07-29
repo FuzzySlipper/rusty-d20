@@ -5,10 +5,10 @@
 | `rust/crates/rusty-d20/src/lib.rs` | Public Rust surface, bootstrap runtime, DTOs, Engine pin readout | `cargo test -p rusty-d20 --locked` |
 | `rust/crates/rusty-d20/src/candidate.rs` | Strict versioned d20 candidate types and neutral gameplay-rules envelope admission | `cargo test -p rusty-d20 --test d20r0 candidate --locked` |
 | `rust/crates/rusty-d20/src/compiler.rs` | Downstream semantic validation, correlated diagnostics, immutable definitions, mechanics catalog compilation | `cargo test -p rusty-d20 --test d20r0 compiler --locked` |
-| `rust/crates/rusty-d20/src/adventure.rs` | Strict embedded authored catalog, default selection, and exact dependency-closure compilation | `cargo test -p rusty-d20 --lib adventure --locked` |
+| `rust/crates/rusty-d20/src/adventure.rs` | Strict embedded authored catalog, selectable projection, default identity, and exact dependency-closure compilation | `cargo test -p rusty-d20 --lib adventure --locked` |
 | `rust/crates/rusty-d20/src/component.rs` | Durable d20 ability, resource, and caller-owned effect-schedule components | `cargo test -p rusty-d20 --test d20r0 --locked` |
 | `rust/crates/rusty-d20/src/session.rs` | Atomic preview/reaction/apply, Engine inventory/equipment service adapter, deterministic rolls, explicit turn expiry, complete saves | `cargo test -p rusty-d20 --test d20r0 --locked` |
-| `rust/crates/rusty-d20/src/game.rs` | Product command orchestration: campaign phases, deterministic opposition/turn policy, outcomes, opaque preview custody, and optimistic revisions | `cargo test -p rusty-d20 --lib --locked` |
+| `rust/crates/rusty-d20/src/game.rs` | Product command orchestration: atomic adventure selection, campaign phases, deterministic opposition/turn policy, outcomes, opaque preview custody, and optimistic revisions | `cargo test -p rusty-d20 --lib --locked` |
 | `rust/crates/rusty-d20/src/game/dto.rs` | Generated-protocol DTO ownership | `pnpm run protocol:check` |
 | `rust/crates/rusty-d20/src/game/content.rs` | Admitted content-to-session seeds, loadout/reward adaptation, and product-state validation | `cargo test -p rusty-d20 --lib --locked` |
 | `rust/crates/rusty-d20/src/game/persistence.rs` | Strict schema-5 save/reopen, exact composition binding, and schemas 1–4 migration | `cargo test -p rusty-d20 --lib --locked` |

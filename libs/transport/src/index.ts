@@ -9,6 +9,7 @@ import {
   type EnterEncounterRequestDto,
   type EquipItemRequestDto,
   type GameSnapshotDto,
+  type NewAdventureRequestDto,
   type PreviewActionRequestDto,
   type Result,
   type RuntimeReadoutDto,
@@ -19,7 +20,7 @@ import {
 export interface RustyD20Transport {
   readonly loadReadout: () => Promise<Result<RuntimeReadoutDto>>;
   readonly loadSession: () => Promise<Result<GameSnapshotDto>>;
-  readonly newAdventure: (expectedRevision: number) => Promise<Result<GameSnapshotDto>>;
+  readonly newAdventure: (request: NewAdventureRequestDto) => Promise<Result<GameSnapshotDto>>;
   readonly enterEncounter: (request: EnterEncounterRequestDto) => Promise<Result<GameSnapshotDto>>;
   readonly equipItem: (request: EquipItemRequestDto) => Promise<Result<GameSnapshotDto>>;
   readonly unequipItem: (request: UnequipItemRequestDto) => Promise<Result<GameSnapshotDto>>;
@@ -44,8 +45,7 @@ export function createHttpRustyD20Transport(http: HttpPort): RustyD20Transport {
   return {
     loadReadout: () => get('/api/v1/readout', decodeRuntimeReadout),
     loadSession: () => get('/api/v1/session', decodeGameSnapshot),
-    newAdventure: (expectedRevision) =>
-      post('/api/v1/session/new', { expectedRevision }, decodeGameSnapshot),
+    newAdventure: (body) => post('/api/v1/session/new', body, decodeGameSnapshot),
     enterEncounter: (body) => post('/api/v1/session/encounter', body, decodeGameSnapshot),
     equipItem: (body) => post('/api/v1/session/loadout/equip', body, decodeGameSnapshot),
     unequipItem: (body) => post('/api/v1/session/loadout/unequip', body, decodeGameSnapshot),

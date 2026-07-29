@@ -28,6 +28,7 @@ export interface GameSnapshotView {
   readonly rulesetFingerprintShort: string;
   readonly revision: number;
   readonly saved: boolean;
+  readonly availableAdventures: GameSnapshotDto['availableAdventures'];
   readonly campaign: CampaignView | null;
   readonly encounter: EncounterView | null;
 }
@@ -77,6 +78,7 @@ export function projectGameSnapshot(snapshot: GameSnapshotDto): GameSnapshotView
     rulesetFingerprintShort: snapshot.rulesetFingerprint.slice(0, 12),
     revision: snapshot.revision,
     saved: snapshot.saved,
+    availableAdventures: snapshot.availableAdventures,
     campaign: snapshot.campaign === null ? null : projectCampaign(snapshot.campaign),
     encounter: snapshot.encounter === null ? null : projectEncounter(snapshot.encounter),
   };

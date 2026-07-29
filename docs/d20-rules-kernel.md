@@ -35,7 +35,8 @@ twin.
 - storage and concrete item instances with authored containment/equipment;
 - encounters with availability, presentation, terminal consequences, and
   rewards;
-- adventures that select their hero, cast, storage, items, and encounters.
+- adventures that declare product selectability and select their hero, cast,
+  storage, items, and encounters.
 
 Package dependencies, canonical bytes, fingerprints, sources, and provenance
 come from `gameplay-rules`. Provenance subjects use stable names such as
@@ -51,7 +52,7 @@ dependency failures, and package cycles. Direct Rust
 candidate admission and canonical artifact decode converge on the same compiled
 ruleset and mechanics catalog fingerprints.
 
-The runtime catalog demonstrates exact package dependencies with five
+The runtime catalog demonstrates exact package dependencies with six
 canonical packages:
 
 - `starter-core` contributes four abilities, three defenses, four damage
@@ -62,8 +63,10 @@ canonical packages:
   ward, and two fire/psychic actions;
 - `wardens-gate` contributes its cast, concrete loadout/storage, encounter,
   consequences, reward, and default adventure;
-- `catalog-probe` contributes a non-default content-only adventure over the
-  exact Warden's Gate closure.
+- `embers-wake` contributes its distinct cast, Resolve loadout/storage, Ash
+  Seer encounter, consequences, reward, and selectable adventure;
+- `catalog-probe` contributes a non-default, non-selectable content-only
+  adventure over the exact Warden's Gate closure.
 
 Module and definition order are normalized before canonical emission. Moving
 definitions between TypeScript helpers or reordering source modules therefore

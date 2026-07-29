@@ -29,6 +29,7 @@ impl GameRuntime {
             }
             let campaign = validate_campaign_save(&rules, &adventure_id, save.campaign)?;
             return Self::restore(
+                catalog,
                 rules,
                 adventure_id,
                 RestoreData {
@@ -65,6 +66,7 @@ impl GameRuntime {
             1 => {
                 let save: LegacyGameSave = serde_json::from_value(value)?;
                 Self::restore(
+                    catalog,
                     rules,
                     adventure_id,
                     RestoreData {
@@ -89,6 +91,7 @@ impl GameRuntime {
                 let save: LegacyCampaignGameSave = serde_json::from_value(value)?;
                 let campaign = validate_legacy_campaign_save(&rules, &adventure_id, save.campaign)?;
                 Self::restore(
+                    catalog,
                     rules,
                     adventure_id,
                     RestoreData {
@@ -108,6 +111,7 @@ impl GameRuntime {
                 let campaign =
                     validate_schema_four_campaign_save(&rules, &adventure_id, save.campaign)?;
                 Self::restore(
+                    catalog,
                     rules,
                     adventure_id,
                     RestoreData {
@@ -127,6 +131,7 @@ impl GameRuntime {
     }
 
     fn restore(
+        catalog: AuthoredAdventureCatalog,
         rules: D20Ruleset,
         adventure_id: D20Id,
         mut data: RestoreData,
@@ -200,6 +205,7 @@ impl GameRuntime {
             ));
         }
         let runtime = Self {
+            catalog,
             rules,
             adventure_id,
             campaign: Some(campaign),

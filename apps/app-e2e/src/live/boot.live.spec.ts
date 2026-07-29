@@ -4,14 +4,18 @@ liveScenario(
   'Rust-owned authored encounter live evidence @live',
   async ({ page, collector, liveBaseUrl }) => {
     collector.addNonClaim(
-      'This certifies the D20G1C landing, Engine-backed camp loadout, and one complete player/opposition round. The aggregate real-host gate separately proves terminal victory and defeat; alternate content and navigation remain later work.',
+      'This live scenario certifies the Warden path landing, Engine-backed camp loadout, and one complete player/opposition round. The aggregate real-host browser gate separately proves Warden victory/defeat and the full selectable Ember path through fresh-process persistence; broader navigation remains later work.',
     );
 
     await page.goto(liveBaseUrl);
-    if (await page.getByRole('button', { name: 'New Adventure' }).isVisible()) {
+    const newWardensGate = page.getByRole('button', {
+      name: "New Adventure · The Warden's Gate",
+      exact: true,
+    });
+    if (await newWardensGate.isVisible()) {
       await collector.milestone('empty game ready', { screenshot: true });
-      await page.getByRole('button', { name: 'New Adventure' }).click();
-      await expect(page.getByRole('heading', { name: "Warden's Gate Camp" })).toBeVisible();
+      await newWardensGate.click();
+      await expect(page.getByRole('heading', { name: "The Warden's Gate Camp" })).toBeVisible();
       await expect(page.getByLabel('Armor defense readout')).toContainText('16');
       await collector.milestone('durable adventure camp loadout', {
         screenshot: true,
@@ -68,7 +72,7 @@ liveScenario(
     });
     await page.getByRole('button', { name: /Parry · 1 Guard/ }).click();
     await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
-    await expect(page.getByLabel('Encounter identity')).toContainText('Mara acting');
+    await expect(page.getByLabel('Encounter identity')).toContainText('Mara Venn acting');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     await collector.milestone('opposition receipt advanced round and saved state', {

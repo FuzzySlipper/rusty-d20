@@ -15,16 +15,12 @@ test.describe.serial('complete deterministic encounter outcomes', () => {
     const host = await startIsolatedHost('victory');
     try {
       await page.goto(host.baseUrl);
-      await page.getByRole('button', { name: 'New Adventure' }).click();
+      await startAdventure(page, "The Warden's Gate");
       await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
-      await playToOutcome(page, 'Precise Shot', false, true);
+      await playToOutcome(page, 'Precise Shot', 'Iron Warden', false, true);
 
-      await expect(page.getByLabel('Encounter victory')).toContainText(
-        'The Iron Warden defeated',
-      );
-      await expect(page.getByLabel('Encounter victory')).toContainText(
-        'Warden chain armor',
-      );
+      await expect(page.getByLabel('Encounter victory')).toContainText('The Iron Warden defeated');
+      await expect(page.getByLabel('Encounter victory')).toContainText('Warden chain armor');
       await page.getByRole('button', { name: 'Save', exact: true }).click();
       const outcome = await sessionSnapshot(request, host.baseUrl);
       expect(outcome.campaign.phase).toBe('outcome');
@@ -41,11 +37,9 @@ test.describe.serial('complete deterministic encounter outcomes', () => {
       await page.goto(host.baseUrl);
       await page.getByRole('button', { name: 'Continue Adventure' }).click();
       await expect(page.getByLabel('Encounter victory')).toBeVisible();
-      await page.getByRole('button', { name: "Return to Warden's Gate Camp" }).click();
-      await expect(page.getByRole('heading', { name: "Warden's Gate Camp" })).toBeVisible();
-      await expect(page.getByLabel('Latest encounter victory')).toContainText(
-        'Warden chain armor',
-      );
+      await page.getByRole('button', { name: "Return to The Warden's Gate Camp" }).click();
+      await expect(page.getByRole('heading', { name: "The Warden's Gate Camp" })).toBeVisible();
+      await expect(page.getByLabel('Latest encounter victory')).toContainText('Warden chain armor');
       await expect(page.getByLabel('Camp stash')).toContainText('Warden chain armor');
       await page.getByRole('button', { name: 'Save', exact: true }).click();
 
@@ -70,7 +64,7 @@ test.describe.serial('complete deterministic encounter outcomes', () => {
     try {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.goto(host.baseUrl);
-      await page.getByRole('button', { name: 'New Adventure' }).click();
+      await startAdventure(page, "The Warden's Gate");
       await page
         .getByLabel('Equipment')
         .getByRole('button', { name: /Body: Mara's chain armor/ })
@@ -81,7 +75,7 @@ test.describe.serial('complete deterministic encounter outcomes', () => {
         .click();
       await expect(page.getByLabel('Armor defense readout')).toContainText('12');
       await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
-      await playToOutcome(page, 'Longsword Strike', true, false);
+      await playToOutcome(page, 'Longsword Strike', 'Iron Warden', true, false);
 
       await expect(page.getByLabel('Encounter defeat')).toContainText('Mara was defeated');
       expect(
@@ -100,7 +94,7 @@ test.describe.serial('complete deterministic encounter outcomes', () => {
       await page.goto(host.baseUrl);
       await page.getByRole('button', { name: 'Continue Adventure' }).click();
       await expect(page.getByLabel('Encounter defeat')).toBeVisible();
-      await page.getByRole('button', { name: "Return to Warden's Gate Camp" }).click();
+      await page.getByRole('button', { name: "Return to The Warden's Gate Camp" }).click();
       await page.getByRole('button', { name: 'Save', exact: true }).click();
       const recovered = await sessionSnapshot(request, host.baseUrl);
       expect(recovered.campaign.phase).toBe('camp');
@@ -113,13 +107,90 @@ test.describe.serial('complete deterministic encounter outcomes', () => {
       await host.stop();
     }
   });
+
+  test('Ember path exposes distinct authored mechanics and survives a complete fresh-process victory', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000);
+    const host = await startIsolatedHost('ember-victory');
+    try {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(host.baseUrl);
+      await startAdventure(page, "Ember's Wake");
+      await expect(page.getByRole('heading', { name: "Ember's Wake Camp" })).toBeVisible();
+      await expect(page.getByText('Sera Vale', { exact: true })).toBeVisible();
+      await expect(page.getByLabel('Resolve defense readout')).toContainText('16');
+      await expect(page.getByLabel('Resolve defense readout')).toContainText('Equipped item 212');
+      await expect(page.getByLabel('Resolve defense readout')).toContainText('Equipped item 213');
+      await expect(page.getByLabel('Resolve defense readout')).toContainText('suppressed');
+      await expect(page.getByLabel('Camp stash')).toContainText('Spare runed robe');
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+      const camp = await sessionSnapshot(request, host.baseUrl);
+      expect(camp.campaign).toMatchObject({
+        id: 'embers-wake',
+        title: "Ember's Wake",
+        phase: 'camp',
+      });
+      const emberFingerprint = camp.rulesetFingerprint;
+
+      await host.restart();
+      expect(await sessionSnapshot(request, host.baseUrl)).toEqual(camp);
+      await page.goto(host.baseUrl);
+      await page.getByRole('button', { name: 'Continue Adventure' }).click();
+      await expect(page.getByRole('heading', { name: "Ember's Wake Camp" })).toBeVisible();
+      await page.getByRole('button', { name: 'Enter The Ash Seer' }).click();
+      await expect(
+        page.locator('aui-character-status').nth(1).getByText('Ash Seer', { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByText('Focus 3/3', { exact: true })).toHaveCount(2);
+      await expect(page.getByRole('button', { name: 'Fire Bolt', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Mind Spike', exact: true })).toBeVisible();
+
+      await playToOutcome(page, 'Fire Bolt', 'Ash Seer', false, true, /Fire Bolt|fire|Scorched/i);
+      await expect(page.getByLabel('Encounter victory')).toContainText('The Ash Seer defeated');
+      await expect(page.getByLabel('Encounter victory')).toContainText("Ash Seer's mindward charm");
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      const outcome = await sessionSnapshot(request, host.baseUrl);
+      expect(outcome.rulesetFingerprint).toBe(emberFingerprint);
+      expect(outcome.campaign.latestOutcome).toMatchObject({
+        kind: 'victory',
+        rewardItemId: 211,
+      });
+
+      await host.restart();
+      expect(await sessionSnapshot(request, host.baseUrl)).toEqual(outcome);
+      await page.goto(host.baseUrl);
+      await page.getByRole('button', { name: 'Continue Adventure' }).click();
+      await expect(page.getByLabel('Encounter victory')).toBeVisible();
+      await page.getByRole('button', { name: "Return to Ember's Wake Camp" }).click();
+      await expect(page.getByLabel('Camp stash')).toContainText("Ash Seer's mindward charm");
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+      await host.restart();
+      const reopened = await sessionSnapshot(request, host.baseUrl);
+      expect(reopened.campaign.id).toBe('embers-wake');
+      expect(reopened.rulesetFingerprint).toBe(emberFingerprint);
+      expect(
+        reopened.campaign.loadout.stashItems.filter((item) => item.entityId === 211),
+      ).toHaveLength(1);
+    } finally {
+      await host.stop();
+    }
+  });
 });
 
 async function playToOutcome(
   page: Page,
   playerAction: string,
+  oppositionName: string,
   oppositionReacts: boolean,
   playerReacts: boolean,
+  expectedPlayerReceipt?: RegExp,
 ): Promise<void> {
   for (let round = 0; round < 64; round += 1) {
     await page.getByRole('button', { name: playerAction, exact: true }).click();
@@ -127,11 +198,22 @@ async function playToOutcome(
       await applyFirstReactionIfAvailable(page);
     }
     await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
-    if (await waitForOutcomeOr(page, 'Begin Iron Warden turn')) {
+    if (round === 0 && expectedPlayerReceipt !== undefined) {
+      await expect(page.getByLabel('Latest outcome explanation')).toContainText(
+        expectedPlayerReceipt,
+      );
+    }
+    if (await waitForOutcomeOr(page, `Begin ${oppositionName} turn`)) {
       return;
     }
 
-    await page.getByRole('button', { name: 'Begin Iron Warden turn' }).first().click();
+    await page
+      .getByRole('button', {
+        name: `Begin ${oppositionName} turn`,
+        exact: true,
+      })
+      .first()
+      .click();
     if (playerReacts) {
       await applyFirstReactionIfAvailable(page);
     }
@@ -144,14 +226,14 @@ async function playToOutcome(
 }
 
 async function applyFirstReactionIfAvailable(page: Page): Promise<void> {
-  const reaction = page.getByRole('button', { name: /Parry · 1 Guard/ });
+  const reaction = page.getByRole('button', { name: /· 1 (Guard|Focus) ·/ });
   if ((await reaction.count()) > 0 && (await reaction.first().isVisible())) {
     await reaction.first().click();
   }
 }
 
 async function waitForOutcomeOr(page: Page, nextControl: string): Promise<boolean> {
-  const outcome = page.getByRole('button', { name: "Return to Warden's Gate Camp" });
+  const outcome = page.getByRole('button', { name: /^Return to .+ Camp$/ });
   const next = page.getByRole('button', { name: nextControl, exact: true });
   await expect
     .poll(async () => (await outcome.isVisible()) || (await next.first().isVisible()), {
@@ -161,11 +243,26 @@ async function waitForOutcomeOr(page: Page, nextControl: string): Promise<boolea
   return outcome.isVisible();
 }
 
+async function startAdventure(page: Page, title: string): Promise<void> {
+  await page
+    .getByRole('button', {
+      name: `New Adventure · ${title}`,
+      exact: true,
+    })
+    .click();
+}
+
 interface SessionSnapshot {
+  rulesetFingerprint: string;
   campaign: {
+    id: string;
+    title: string;
     phase: 'camp' | 'encounter' | 'outcome';
     hero: { healthCurrent: number };
-    latestOutcome: { kind: 'victory' | 'defeat'; rewardItemId: number | null } | null;
+    latestOutcome: {
+      kind: 'victory' | 'defeat';
+      rewardItemId: number | null;
+    } | null;
     loadout: {
       stashItems: Array<{ entityId: number; name: string }>;
     };

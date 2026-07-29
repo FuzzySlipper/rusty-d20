@@ -71,19 +71,21 @@ These decisions are recorded in
 [ADR 0001](adr/0001-ui-donor-and-real-rust-shell.md) and
 `template-manifest.json`.
 
-## GM7 product composition
+## GM7 product compositions
 
-The interactive reference slice resolves the default Warden's Gate adventure
-from checked `catalog.json`, then compiles the exact `starter-core`,
-`steel-guard`, and `wardens-gate` dependency closure into the Rust-owned
-runtime. Canonical package fingerprints and exact source paths remain recorded
-by `rules/artifacts/starter/manifest.json` and the artifacts themselves. The
-browser receives the compiled ruleset fingerprint, not authored TypeScript or
-an executable rules representation.
+The interactive reference slice resolves its selected adventure from checked
+`catalog.json`. Warden's Gate compiles the exact `starter-core`,
+`steel-guard`, and `wardens-gate` closure; Ember's Wake compiles the exact
+`starter-core`, `ember-ward`, and `embers-wake` closure. Canonical package
+fingerprints and exact source paths remain recorded by
+`rules/artifacts/starter/manifest.json` and the artifacts themselves. The
+browser receives the compiled ruleset fingerprint and immutable selectable
+catalog projection, not authored TypeScript or an executable rules
+representation.
 
 This composition continues to use Rusty Engine revision
 `fb608e323a8b44a55195f5720101224ff37fd5db` and the UI donor revision
-`68ddfa5430ec3bc2cf7ca96963982db9511e79ba`; D20G0 does not change either pin.
+`68ddfa5430ec3bc2cf7ca96963982db9511e79ba`; D20G1D does not change either pin.
 
 ## D20G1 campaign-shell disposition
 
@@ -106,3 +108,10 @@ terminal outcome without importing donor gameplay authority. Rusty D20 owns
 the deterministic opponent choice, outcome, reward, recovery, and save policy;
 the reward transfer and recovery use the already pinned Engine equipment,
 inventory, and track services. No reusable gap or pin change was required.
+
+D20G1D also keeps both pins unchanged. The selectable Ember's Wake composition
+was added through the existing public authoring pipeline and uses the same
+Rust semantic compiler, campaign/session orchestration, Engine mechanics, host,
+and UI surfaces as Warden's Gate. The generic downstream additions are bounded
+adventure selection and multi-defense projection; no Engine change, sibling
+checkout, Node gameplay path, or alternate UI authority was introduced.

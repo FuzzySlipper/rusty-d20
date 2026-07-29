@@ -15,8 +15,8 @@ use tower_http::trace::TraceLayer;
 use crate::{
     ApiErrorDto, ApiErrorKindDto, ApplyActionRequestDto, ApplyReactionRequestDto,
     EnterEncounterRequestDto, EquipItemRequestDto, ExpectedRevisionDto, GameRuntime,
-    GameRuntimeError, GameSnapshotDto, HealthDto, PreviewActionRequestDto, RuntimeReadoutDto,
-    TransferItemRequestDto, UnequipItemRequestDto,
+    GameRuntimeError, GameSnapshotDto, HealthDto, NewAdventureRequestDto, PreviewActionRequestDto,
+    RuntimeReadoutDto, TransferItemRequestDto, UnequipItemRequestDto,
 };
 
 #[derive(Clone)]
@@ -121,11 +121,9 @@ async fn session(State(state): State<HostState>) -> ApiResult {
 
 async fn new_adventure(
     State(state): State<HostState>,
-    Json(request): Json<ExpectedRevisionDto>,
+    Json(request): Json<NewAdventureRequestDto>,
 ) -> ApiResult {
-    mutate(&state, |runtime| {
-        runtime.new_adventure(request.expected_revision)
-    })
+    mutate(&state, |runtime| runtime.new_adventure_for(request))
 }
 
 async fn enter_encounter(
@@ -330,12 +328,26 @@ mod tests {
     #[tokio::test]
     async fn typed_commands_reject_stale_mutation_and_persist_reopenable_state() {
         let (app, save_path) = test_state();
+        let (_, before_invalid) = get_json(&app, "/api/v1/session").await;
+        let (invalid_status, invalid_body) = post_json(
+            &app,
+            "/api/v1/session/new",
+            r#"{"expectedRevision":0,"adventureId":"unknown-path"}"#,
+        )
+        .await;
+        assert_eq!(invalid_status, StatusCode::UNPROCESSABLE_ENTITY);
+        let invalid: ApiErrorDto = serde_json::from_slice(&invalid_body).unwrap();
+        assert_eq!(invalid.kind, ApiErrorKindDto::Invalid);
+        assert_eq!(get_json(&app, "/api/v1/session").await.1, before_invalid);
+
         let start_response = app
             .clone()
             .oneshot(
                 Request::post("/api/v1/session/new")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"expectedRevision":0}"#))
+                    .body(Body::from(
+                        r#"{"expectedRevision":0,"adventureId":"wardens-gate"}"#,
+                    ))
                     .unwrap(),
             )
             .await
@@ -391,8 +403,12 @@ mod tests {
 
     async fn assert_pending_save_rejection(apply_reaction: bool) {
         let (app, save_path) = test_state();
-        let (_, camp_body) =
-            post_json(&app, "/api/v1/session/new", r#"{"expectedRevision":0}"#).await;
+        let (_, camp_body) = post_json(
+            &app,
+            "/api/v1/session/new",
+            r#"{"expectedRevision":0,"adventureId":"wardens-gate"}"#,
+        )
+        .await;
         let camp: GameSnapshotDto = serde_json::from_slice(&camp_body).unwrap();
         let (_, start_body) = post_json(
             &app,

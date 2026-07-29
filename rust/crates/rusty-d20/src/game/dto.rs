@@ -161,6 +161,16 @@ pub struct EncounterChoiceDto {
     pub summary: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct AdventureChoiceDto {
+    pub id: String,
+    pub title: String,
+    pub summary: String,
+    pub details: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 #[ts(rename_all = "kebab-case")]
@@ -210,6 +220,17 @@ pub struct LoadoutCapacityDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
+pub struct DefenseReadoutDto {
+    pub id: String,
+    pub label: String,
+    #[ts(type = "number")]
+    pub value: i64,
+    pub sources: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct LoadoutDto {
     #[ts(type = "number")]
     pub owner_id: u64,
@@ -219,9 +240,7 @@ pub struct LoadoutDto {
     pub equipment_slots: Vec<EquipmentSlotDto>,
     pub stash_items: Vec<LoadoutItemDto>,
     pub capacity: LoadoutCapacityDto,
-    #[ts(type = "number")]
-    pub armor_defense: i64,
-    pub armor_defense_sources: Vec<String>,
+    pub defenses: Vec<DefenseReadoutDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -249,6 +268,7 @@ pub struct GameSnapshotDto {
     #[ts(type = "number")]
     pub revision: u64,
     pub saved: bool,
+    pub available_adventures: Vec<AdventureChoiceDto>,
     pub campaign: Option<CampaignDto>,
     pub encounter: Option<EncounterDto>,
 }
@@ -259,6 +279,15 @@ pub struct GameSnapshotDto {
 pub struct ExpectedRevisionDto {
     #[ts(type = "number")]
     pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct NewAdventureRequestDto {
+    #[ts(type = "number")]
+    pub expected_revision: u64,
+    pub adventure_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

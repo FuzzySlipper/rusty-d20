@@ -48,6 +48,19 @@ test('starter catalog keeps rules, adventure content, and content-only extension
     starter.wardensGate.package.payload.adventures?.[0]?.id,
     'wardens-gate',
   );
+  assert.deepEqual(
+    starter.embersWake.package.sources.map(({ path }) => path),
+    [
+      'rules/packages/starter-ruleset/src/content/adventures/ember_cast.ts',
+      'rules/packages/starter-ruleset/src/content/adventures/ember_loadout.ts',
+      'rules/packages/starter-ruleset/src/content/adventures/embers_wake.ts',
+    ],
+  );
+  assert.equal(starter.embersWake.package.payload.adventures?.[0]?.id, 'embers-wake');
+  assert.equal(
+    starter.embersWake.package.dependencies[0]?.fingerprint,
+    starter.emberWard.fingerprint,
+  );
   assert.equal(
     starter.catalogProbe.package.payload.adventures?.[0]?.id,
     'catalog-probe',
@@ -64,6 +77,18 @@ test('starter catalog keeps rules, adventure content, and content-only extension
       {
         subject: 'adventure:wardens-gate',
         source: 'wardens-gate-adventure',
+        line: 52,
+      },
+    ],
+  );
+  assert.deepEqual(
+    starter.embersWake.package.provenance
+      .filter(({ subject }) => subject.startsWith('adventure:'))
+      .map(({ subject, source, line }) => ({ subject, source, line })),
+    [
+      {
+        subject: 'adventure:embers-wake',
+        source: 'embers-wake-adventure',
         line: 52,
       },
     ],

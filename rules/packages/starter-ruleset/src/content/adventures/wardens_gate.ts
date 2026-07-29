@@ -53,6 +53,7 @@ export const wardensGateModule = defineD20Module(
         id: 'wardens-gate',
         title: "The Warden's Gate",
         default: true,
+        selectable: true,
         hero: 'mara-venn',
         characters: ['mara-venn', 'iron-warden'],
         campStorage: 'camp-stash',

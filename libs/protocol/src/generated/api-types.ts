@@ -32,6 +32,8 @@ export type CampaignOutcomeDto = { kind: EncounterOutcomeKindDto, encounterId: s
 
 export type EncounterChoiceDto = { id: string, title: string, summary: string, };
 
+export type AdventureChoiceDto = { id: string, title: string, summary: string, details: Array<string>, };
+
 export type LoadoutRarityDto = "common" | "uncommon" | "rare" | "epic";
 
 export type LoadoutItemDto = { entityId: number, definitionId: string, name: string, icon: string, rarity: LoadoutRarityDto, quantity: number, equipmentSlotId: string, equippedSlotId: string | null, };
@@ -40,13 +42,17 @@ export type EquipmentSlotDto = { id: string, label: string, equipped: LoadoutIte
 
 export type LoadoutCapacityDto = { metric: string, used: number, maximum: number, };
 
-export type LoadoutDto = { ownerId: number, stashOwnerId: number, inventorySlots: Array<LoadoutItemDto | null>, equipmentSlots: Array<EquipmentSlotDto>, stashItems: Array<LoadoutItemDto>, capacity: LoadoutCapacityDto, armorDefense: number, armorDefenseSources: Array<string>, };
+export type DefenseReadoutDto = { id: string, label: string, value: number, sources: Array<string>, };
+
+export type LoadoutDto = { ownerId: number, stashOwnerId: number, inventorySlots: Array<LoadoutItemDto | null>, equipmentSlots: Array<EquipmentSlotDto>, stashItems: Array<LoadoutItemDto>, capacity: LoadoutCapacityDto, defenses: Array<DefenseReadoutDto>, };
 
 export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, hero: CharacterDto, loadout: LoadoutDto, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, latestOutcome: CampaignOutcomeDto | null, };
 
-export type GameSnapshotDto = { product: string, version: string, engineRevision: string, rulesetFingerprint: string, revision: number, saved: boolean, campaign: CampaignDto | null, encounter: EncounterDto | null, };
+export type GameSnapshotDto = { product: string, version: string, engineRevision: string, rulesetFingerprint: string, revision: number, saved: boolean, availableAdventures: Array<AdventureChoiceDto>, campaign: CampaignDto | null, encounter: EncounterDto | null, };
 
 export type ExpectedRevisionDto = { expectedRevision: number, };
+
+export type NewAdventureRequestDto = { expectedRevision: number, adventureId: string, };
 
 export type EnterEncounterRequestDto = { expectedRevision: number, encounterId: string, };
 

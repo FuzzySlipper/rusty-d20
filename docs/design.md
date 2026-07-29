@@ -18,14 +18,17 @@ TypeScript authoring source
   -> Angular store, features, and presentation
 ```
 
-The isolated `rules/` workspace, semantic kernel, and bounded Warden's Gate
-adventure implement this path end to end. TypeScript emits an exact package
-catalog from a Rust-generated d20 contract; committed canonical artifacts are
-decoded and compiled by Rust without Node. The selected adventure's exact
-dependency closure supplies character templates, item instances, storage,
-encounters, presentation, availability, outcomes, and rewards. The product
-runtime constructs canonical Engine-backed entities from those definitions and
-projects only typed observations and command inputs to the browser.
+The isolated `rules/` workspace, semantic kernel, and bounded Warden's Gate and
+Ember's Wake adventures implement this path end to end. TypeScript emits an
+exact package catalog from a Rust-generated d20 contract; committed canonical
+artifacts are decoded and compiled by Rust without Node. Rust projects the
+selectable catalog entries, validates one optimistic selection before
+mutation, and admits only that adventure's immutable dependency closure. The
+closure supplies character templates, item instances, storage, encounters,
+presentation, availability, outcomes, and rewards. The product runtime
+constructs canonical Engine-backed entities from those definitions and
+projects only typed observations and command inputs to the browser. A running
+campaign cannot switch compositions.
 
 ## Runtime state
 
@@ -49,16 +52,17 @@ effects, stats, tracks, and attributed sources remain Engine mechanisms.
 Ability modifiers, candidate meaning, attack checks, reactions, effect
 deadlines, turn advancement, and save policy remain Rusty D20 meaning.
 
-The bounded Iron Warden policy selects from admitted authored actions with the
-Rust-owned deterministic session seed, then uses the same opaque
-preview/reaction/apply path as a player action. After the opposition resolves,
-Rusty D20 advances the caller-owned round and expires due Engine effect
-instances before publishing the next player turn. Authoritative vitality
-selects victory or defeat exactly once. Victory unequips and transfers the
-authored reward through Engine equipment and inventory services; defeat leaves
-inventory untouched and returning to camp restores a bounded vitality amount
-through the Engine track service. None of this policy is promoted into an
-Engine scheduler, AI graph, or event bus.
+The bounded opposition policy selects from the active encounter participant's
+admitted authored actions with the Rust-owned deterministic session seed, then
+uses the same opaque preview/reaction/apply path as a player action. After the
+opposition resolves, Rusty D20 advances the caller-owned round and expires due
+Engine effect instances before publishing the next player turn. Authoritative
+vitality selects victory or defeat exactly once. Victory unequips and
+transfers the active encounter's authored reward through Engine equipment and
+inventory services; defeat leaves inventory untouched and returning to camp
+restores its authored bounded vitality amount through the Engine track
+service. None of this policy is promoted into an Engine scheduler, AI graph,
+or event bus.
 
 The camp loadout uses the same canonical `EntityState`: characters and the camp
 stash carry `InventoryComponent`, unique armor entities use containment plus
@@ -91,23 +95,25 @@ dependencies, and canonical artifact emission.
 
 `rules/packages/starter-ruleset` owns concrete content. The checked starter
 artifacts contain a shared core, distinct steel/armor and ember/resolve rule
-packages, the multi-file Warden's Gate adventure, and a non-default
-content-only catalog probe. `catalog.json` embeds canonical package bytes; Rust
-selects only the exact dependency closure that owns the requested adventure.
-These packages are build-time inputs, not UI or runtime dependencies. See
+packages, the multi-file Warden's Gate and Ember's Wake adventures, and a
+non-selectable content-only catalog probe. `catalog.json` embeds canonical
+package bytes; Rust selects only the exact dependency closure that owns the
+requested adventure. These packages are build-time inputs, not UI or runtime
+dependencies. See
 [rules authoring](rules-authoring.md).
 
 ## Transport and protocol
 
 `rusty-d20-host` serves the Angular build plus read-only session projection and
-typed new-adventure, loadout equip/unequip/transfer, enter-encounter, preview,
-reaction, action, begin-opposition, return-to-camp, and save commands from one
-origin. Rust DTOs generate `libs/protocol/src/generated/api-types.ts`. The
-protocol layer strictly decodes unknown JSON with collection bounds; transport
-preserves typed HTTP rejection; domain projects a view; store owns async UI
-state and rejects late responses by request generation; features render it.
-Continue is a local presentation choice over an already loaded Rust
-projection; it does not mutate or duplicate campaign authority.
+typed adventure selection, loadout equip/unequip/transfer, enter-encounter,
+preview, reaction, action, begin-opposition, return-to-camp, and save commands
+from one origin. Rust DTOs generate
+`libs/protocol/src/generated/api-types.ts`. The protocol layer strictly decodes
+unknown JSON with collection bounds; transport preserves typed HTTP rejection;
+domain projects a view; store owns async UI state and rejects late responses
+by request generation; features render it. Continue is a local presentation
+choice over an already loaded Rust projection; it does not mutate or duplicate
+campaign authority.
 
 The combat log is a bounded receipt explanation. It observes committed facts
 and is not a second authority, persistence replay mechanism, or command source.

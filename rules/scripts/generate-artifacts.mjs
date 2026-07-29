@@ -13,6 +13,7 @@ const entries = [
   ['starter-core.json', artifacts.core],
   ['steel-guard.json', artifacts.steelGuard],
   ['ember-ward.json', artifacts.emberWard],
+  ['embers-wake.json', artifacts.embersWake],
   ['wardens-gate.json', artifacts.wardensGate],
   ['catalog-probe.json', artifacts.catalogProbe],
   ['invalid-semantics.json', artifacts.invalidSemantics],
@@ -21,6 +22,7 @@ const runtimeArtifacts = [
   artifacts.core,
   artifacts.steelGuard,
   artifacts.emberWard,
+  artifacts.embersWake,
   artifacts.wardensGate,
   artifacts.catalogProbe,
 ];

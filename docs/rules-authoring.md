@@ -81,18 +81,22 @@ facts in separate modules, as the current example does:
 content/adventures/warden_cast.ts       character templates
 content/adventures/warden_loadout.ts    storage and item instances
 content/adventures/wardens_gate.ts      encounter, outcomes, reward, adventure
+content/adventures/ember_cast.ts        alternate character templates
+content/adventures/ember_loadout.ts     alternate storage and item instances
+content/adventures/embers_wake.ts       alternate encounter, reward, adventure
 content/adventures/catalog_probe.ts     content-only composition proof
 ```
 
 Register the modules in a concrete package in
 `starter-ruleset/src/index.ts`, use `exactDependencyOn` for its prerequisite
 rules package, add the artifact to `generate-artifacts.mjs`, and regenerate.
-Rust discovers the adventure owner from the catalog and compiles only its exact
-dependency closure. Adding another adventure or changing names, character
-scores, inventory, equipment, explanations, availability, or outcome content
-does not require edits to `game.rs`, `session.rs`, the semantic compiler, or
-Rusty Engine. New semantic behavior still belongs in the Rust candidate and
-compiler.
+Rust discovers the adventure owner from the catalog, exposes only entries
+authored as selectable, and compiles only the requested exact dependency
+closure before campaign publication. Adding another adventure with the
+existing vocabulary, or changing names, character scores, inventory,
+equipment, explanations, availability, or outcome content, does not require
+edits to `game.rs`, `session.rs`, the semantic compiler, or Rusty Engine. New
+semantic behavior still belongs in the Rust candidate and compiler.
 
 The focused gate checks generated-contract freshness, package isolation,
 deterministic goldens, TypeScript tests, strict Rust canonical decode, package

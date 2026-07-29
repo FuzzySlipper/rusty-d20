@@ -17,8 +17,13 @@ test.describe.serial('real Rust encounter shell', () => {
       page.getByRole('heading', { level: 1, name: 'Rusty D20', exact: true }),
     ).toBeVisible();
     await expect(page.getByRole('heading', { name: "The Warden's Gate" })).toBeVisible();
-    await page.getByRole('button', { name: 'New Adventure' }).click();
-    await expect(page.getByRole('heading', { name: "Warden's Gate Camp" })).toBeVisible();
+    await page
+      .getByRole('button', {
+        name: "New Adventure · The Warden's Gate",
+        exact: true,
+      })
+      .click();
+    await expect(page.getByRole('heading', { name: "The Warden's Gate Camp" })).toBeVisible();
     await expect(page.getByLabel('Armor defense readout')).toContainText('16');
     await expect(page.getByRole('region', { name: 'Inventory', exact: true })).toBeVisible();
     await expect(page.getByLabel('Equipment')).toBeVisible();
@@ -81,7 +86,7 @@ test.describe.serial('real Rust encounter shell', () => {
     await expect(page.getByLabel('Combat log')).toContainText('Mara Venn raised a reaction');
     await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
     await expect(page.getByLabel('Encounter identity')).toContainText('Turn 1');
-    await expect(page.getByLabel('Encounter identity')).toContainText('Mara acting');
+    await expect(page.getByLabel('Encounter identity')).toContainText('Mara Venn acting');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
   });
@@ -112,7 +117,9 @@ test.describe.serial('real Rust encounter shell', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
     await continueIfNeeded(page);
-    await expect(page.getByRole('button', { name: 'Begin Iron Warden turn' }).first()).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Begin Iron Warden turn' }).first(),
+    ).toBeVisible();
     await expect(page.locator('aui-character-status')).toHaveCount(2);
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),

@@ -20,6 +20,20 @@ export function makeGameSnapshot(overrides: Partial<GameSnapshotDto> = {}): Game
     rulesetFingerprint: 'starter-core=fingerprint|steel-guard=fingerprint',
     revision: 0,
     saved: false,
+    availableAdventures: [
+      {
+        id: 'wardens-gate',
+        title: "The Warden's Gate",
+        summary: "Mara Venn prepares at the Warden's Gate camp.",
+        details: ['Starter Core + Steel Guard authored packages compiled by Rust.'],
+      },
+      {
+        id: 'embers-wake',
+        title: "Ember's Wake",
+        summary: 'Sera Vale prepares beside the ember reliquary.',
+        details: ['Starter Core + Ember Ward authored packages compiled by Rust.'],
+      },
+    ],
     campaign: null,
     encounter: null,
     ...overrides,

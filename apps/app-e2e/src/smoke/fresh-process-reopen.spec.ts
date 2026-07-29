@@ -21,7 +21,12 @@ test('pending saves reject atomically and completed state survives a fresh Rust 
     host = startHost(port, savePath);
     await waitForHealth(baseUrl, host);
     await page.goto(baseUrl);
-    await page.getByRole('button', { name: 'New Adventure' }).click();
+    await page
+      .getByRole('button', {
+        name: "New Adventure · The Warden's Gate",
+        exact: true,
+      })
+      .click();
     await page
       .getByLabel('Equipment')
       .getByRole('button', { name: "Off Hand: Mara's buckler" })

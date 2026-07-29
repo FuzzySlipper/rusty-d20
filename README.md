@@ -8,18 +8,17 @@ repository.
 
 The current product is a deliberately bounded but real adventure shell. An
 Angular/Nx application is served by a Rust process and reaches Rust-owned state
-through a strict generated same-origin contract. The browser can begin or
-continue **The Warden's Gate**, save in camp, enter the Steel Guard encounter,
-manage Mara's Engine-backed inventory/equipment and camp stash, inspect
-attributed armor defense, choose an authored action and target, apply an
-optional reaction, resolve deterministic source-attributed damage/effects,
-face an explicit deterministic opposition turn, and play through victory or
-defeat. Victory transfers one canonical reward into the camp stash; defeat
-applies bounded recovery when Mara returns to camp. A fresh Rust process
-continues the exact campaign phase, turn owner, outcome, loadout, and
-authoritative state without replay. The
-checked starter catalog also includes the separate ember/resolve composition
-for headless and authoring proof plus a content-only adventure composition.
+through a strict generated same-origin contract. The browser can choose either
+the Steel-oriented **The Warden's Gate** or Ember-oriented **Ember's Wake**,
+save in camp, enter the authored encounter, manage Engine-backed
+inventory/equipment and camp storage, inspect every attributed defense, choose
+authored actions and targets, apply optional reactions, resolve deterministic
+source-attributed damage/effects, face an explicit deterministic opposition
+turn, and play through victory or defeat. Victory transfers the path's
+canonical reward into camp storage; defeat applies its authored bounded
+recovery. A fresh Rust process continues the exact selected composition,
+campaign phase, turn owner, outcome, loadout, and authoritative state without
+replay.
 Characters, loadouts, storage, encounter presentation, outcomes, and rewards
 are defined in multi-file TypeScript authoring modules and compiled by Rust
 from checked canonical artifacts; the running host does not need Node. Fake
@@ -32,12 +31,13 @@ pnpm install --frozen-lockfile
 pnpm run serve:local
 ```
 
-Open the printed `BASE_URL`. With no prior save, choose **New Adventure**, save
-or leave Warden's Gate Camp, then enter **The Iron Warden**. The host writes an
-explicit save to `target/rusty-d20/save.json`; after restart, **Continue
-Adventure** resumes the exact camp or encounter phase and canonical loadout.
-Resolve any pending action before saving; the Rust host rejects pending saves
-before changing the existing save file.
+Open the printed `BASE_URL`. With no prior save, choose **The Warden's Gate**
+or **Ember's Wake**, inspect its camp and loadout, then enter the offered
+encounter. The host writes an explicit save to
+`target/rusty-d20/save.json`; after restart, **Continue Adventure** resumes the
+exact selected path, camp or encounter phase, and canonical loadout. Resolve
+any pending action before saving; the Rust host rejects pending saves before
+changing the existing save file.
 
 For a managed LAN-visible instance, use:
 
@@ -59,10 +59,10 @@ start at [docs/design.md](docs/design.md) and
 ## Current phase boundary
 
 The GM7 reference slice is connected end to end and the D20G1 campaign shell is
-underway. It is not yet a broad d20 product: initiative order beyond the
-bounded two-combatant loop, movement, spellcasting, advancement, content
-publication, broader item/content catalogs, and additional encounters remain
-later milestones. See
+underway. It is not yet a broad d20 product: initiative order beyond each
+bounded two-combatant encounter, movement, spellcasting, advancement, content
+publication, broader item/content catalogs, and multi-encounter adventure
+progression remain later milestones. See
 [docs/known-limitations.md](docs/known-limitations.md).
 
 ## Provenance

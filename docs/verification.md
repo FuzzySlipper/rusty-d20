@@ -81,11 +81,13 @@ click activation plus visible capacity rejection without mutation. The
 fresh-process case also proves preview-only and reacted-pending saves reject
 without changing either authoritative in-memory state or the last durable save.
 A two-page scenario proves a stale optimistic revision is rejected through a
-normal action control. Dedicated real-host scenarios complete a victory and a
-defeat through ordinary controls, reopen the terminal outcome, return to camp,
-and reopen the exact reward or recovery consequence. Those terminal scenarios
-are part of `verify:browser`, not a non-idempotent requirement on an arbitrary
-already-running live save.
+normal action control. Dedicated real-host scenarios complete Warden victory
+and defeat plus an Ember victory through ordinary controls. The Ember scenario
+starts on mobile, inspects distinct Resolve/Focus/Fire content and attribution,
+reopens its pre-encounter camp, completes the Ash Seer encounter, reopens the
+terminal outcome, returns to camp, and reopens the exactly-once reward. Those
+terminal scenarios are part of `verify:browser`, not a non-idempotent
+requirement on an arbitrary already-running live save.
 
 ## Standalone clone
 

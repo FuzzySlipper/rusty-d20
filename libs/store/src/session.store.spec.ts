@@ -18,6 +18,20 @@ const snapshot: GameSnapshotDto = {
   rulesetFingerprint: 'rules',
   revision: 1,
   saved: false,
+  availableAdventures: [
+    {
+      id: 'wardens-gate',
+      title: "The Warden's Gate",
+      summary: "Mara Venn prepares at the Warden's Gate camp.",
+      details: [],
+    },
+    {
+      id: 'embers-wake',
+      title: "Ember's Wake",
+      summary: 'Sera Vale prepares beside the ember reliquary.',
+      details: [],
+    },
+  ],
   campaign: null,
   encounter: null,
 };
@@ -44,6 +58,7 @@ function transport(overrides: Partial<RustyD20Transport> = {}): RustyD20Transpor
 
 describe('SessionStore', () => {
   it('publishes Rust-owned camp and encounter phases through named commands', async () => {
+    let selectedAdventure: string | undefined;
     const hero = {
       id: 101,
       name: 'Mara Venn',
@@ -66,8 +81,10 @@ describe('SessionStore', () => {
         equipmentSlots: [],
         stashItems: [],
         capacity: { metric: 'carried-items', used: 0, maximum: 0 },
-        armorDefense: 12,
-        armorDefenseSources: [],
+        defenses: [
+          { id: 'armor', label: 'Armor', value: 12, sources: [] },
+          { id: 'resolve', label: 'Resolve', value: 11, sources: [] },
+        ],
       },
       activeEncounterId: null,
       latestOutcome: null,
@@ -105,13 +122,17 @@ describe('SessionStore', () => {
     };
     const store = new SessionStore(
       transport({
-        newAdventure: async () => ({ ok: true, value: camp }),
+        newAdventure: async (request) => {
+          selectedAdventure = request.adventureId;
+          return { ok: true, value: camp };
+        },
         enterEncounter: async () => ({ ok: true, value: encounter }),
       }),
     );
 
     await store.load();
-    await store.newAdventure();
+    await store.newAdventure('wardens-gate');
+    expect(selectedAdventure).toBe('wardens-gate');
     expect(store.session()).toMatchObject({
       kind: 'data',
       value: { revision: 2, campaign: { phase: 'camp' }, encounter: null },

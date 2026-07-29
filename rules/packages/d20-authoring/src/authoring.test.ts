@@ -118,6 +118,7 @@ test('authored adventure payloads are deeply immutable and retain provenance', (
         id: 'test-adventure',
         title: 'Test Adventure',
         default: true,
+        selectable: true,
         hero: 'hero',
         characters: ['hero', 'opponent'],
         campStorage: 'camp',

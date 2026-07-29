@@ -53,7 +53,7 @@ fn generated_contract_and_artifact_manifest_match_rust_owners() {
     let manifest: ArtifactManifest =
         serde_json::from_slice(&fs::read(artifact_root().join("manifest.json")).unwrap()).unwrap();
     assert_eq!(manifest.schema_version, 1);
-    assert_eq!(manifest.artifacts.len(), 6);
+    assert_eq!(manifest.artifacts.len(), 7);
     for entry in manifest.artifacts {
         let package = load(&entry.path);
         assert_eq!(package.identity().domain().as_str(), entry.domain);
@@ -65,7 +65,7 @@ fn generated_contract_and_artifact_manifest_match_rust_owners() {
     let catalog: CatalogArtifact =
         serde_json::from_slice(&fs::read(artifact_root().join("catalog.json")).unwrap()).unwrap();
     assert_eq!(catalog.schema_version, 1);
-    assert_eq!(catalog.packages.len(), 5);
+    assert_eq!(catalog.packages.len(), 6);
     let package_names = catalog
         .packages
         .iter()
@@ -84,6 +84,7 @@ fn generated_contract_and_artifact_manifest_match_rust_owners() {
             "starter-core",
             "steel-guard",
             "ember-ward",
+            "embers-wake",
             "wardens-gate",
             "catalog-probe",
         ]
@@ -91,10 +92,11 @@ fn generated_contract_and_artifact_manifest_match_rust_owners() {
 }
 
 #[test]
-fn checked_artifacts_drive_two_node_free_rust_compositions() {
+fn checked_artifacts_drive_distinct_node_free_rust_compositions() {
     let core = load("starter-core.json");
     let steel = load("steel-guard.json");
     let ember = load("ember-ward.json");
+    let ember_adventure = load("embers-wake.json");
     let warden = load("wardens-gate.json");
     let probe = load("catalog-probe.json");
 
@@ -111,6 +113,21 @@ fn checked_artifacts_drive_two_node_free_rust_compositions() {
     assert!(ember_rules.armor(&id("runed-robe")).is_some());
     assert!(ember_rules.reaction(&id("ward-flare")).is_some());
     assert!(ember_rules.effect(&id("scorched")).is_some());
+
+    let ember_adventure_rules =
+        D20Ruleset::compile(vec![ember_adventure, ember.clone(), core.clone()]).unwrap();
+    assert!(ember_adventure_rules
+        .adventure(&id("embers-wake"))
+        .is_some());
+    assert_eq!(
+        ember_adventure_rules
+            .adventure(&id("embers-wake"))
+            .unwrap()
+            .hero
+            .as_str(),
+        "sera-vale"
+    );
+    assert!(ember_adventure_rules.encounter(&id("ash-seer")).is_some());
 
     let combined = D20Ruleset::compile(vec![ember, core, steel]).unwrap();
     for action in [

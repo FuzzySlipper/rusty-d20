@@ -86,6 +86,7 @@ struct CampaignState {
 
 #[derive(Debug, Clone)]
 pub struct GameRuntime {
+    catalog: AuthoredAdventureCatalog,
     rules: D20Ruleset,
     adventure_id: D20Id,
     campaign: Option<CampaignState>,
@@ -105,7 +106,7 @@ impl GameRuntime {
         let rules = catalog
             .rules_for(&adventure)
             .map_err(GameRuntimeError::Catalog)?;
-        Self::empty_with_rules(rules, adventure)
+        Self::empty_with_rules(catalog, rules, adventure)
     }
 
     pub fn empty_for(adventure: &str) -> Result<Self, GameRuntimeError> {
@@ -114,16 +115,21 @@ impl GameRuntime {
         let rules = catalog
             .rules_for(&adventure)
             .map_err(GameRuntimeError::Catalog)?;
-        Self::empty_with_rules(rules, adventure)
+        Self::empty_with_rules(catalog, rules, adventure)
     }
 
-    fn empty_with_rules(rules: D20Ruleset, adventure_id: D20Id) -> Result<Self, GameRuntimeError> {
+    fn empty_with_rules(
+        catalog: AuthoredAdventureCatalog,
+        rules: D20Ruleset,
+        adventure_id: D20Id,
+    ) -> Result<Self, GameRuntimeError> {
         if rules.adventure(&adventure_id).is_none() {
             return Err(GameRuntimeError::Catalog(format!(
                 "compiled rules do not define adventure {adventure_id}"
             )));
         }
         Ok(Self {
+            catalog,
             rules,
             adventure_id,
             campaign: None,
@@ -172,9 +178,58 @@ impl GameRuntime {
             ruleset_fingerprint: self.rules.fingerprint().to_owned(),
             revision: self.revision,
             saved: self.saved_revision == Some(self.revision),
+            available_adventures: self
+                .catalog
+                .adventures()
+                .filter(|(_, entry)| entry.selectable)
+                .map(|(id, entry)| AdventureChoiceDto {
+                    id: id.to_string(),
+                    title: entry.title.clone(),
+                    summary: entry.summary.clone(),
+                    details: entry.details.clone(),
+                })
+                .collect(),
             campaign,
             encounter,
         })
+    }
+
+    pub fn new_adventure_for(
+        &mut self,
+        request: NewAdventureRequestDto,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        self.ensure_revision(request.expected_revision)?;
+        if self.campaign.is_some() {
+            return Err(GameRuntimeError::InvalidCommand(
+                "an adventure is already active".to_owned(),
+            ));
+        }
+        let adventure_id = id(&request.adventure_id)?;
+        let entry = self
+            .catalog
+            .adventures()
+            .find(|(id, _)| **id == adventure_id)
+            .map(|(_, entry)| entry)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidCommand(format!(
+                    "unknown authored adventure {}",
+                    request.adventure_id
+                ))
+            })?;
+        if !entry.selectable {
+            return Err(GameRuntimeError::InvalidCommand(format!(
+                "authored adventure {} is not selectable",
+                request.adventure_id
+            )));
+        }
+        let rules = self
+            .catalog
+            .rules_for(&adventure_id)
+            .map_err(GameRuntimeError::InvalidCommand)?;
+        let mut staged = Self::empty_with_rules(self.catalog.clone(), rules, adventure_id)?;
+        let snapshot = staged.new_adventure(0)?;
+        *self = staged;
+        Ok(snapshot)
     }
 
     pub fn new_adventure(
