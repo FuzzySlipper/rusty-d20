@@ -7,19 +7,19 @@ complete saves. Warden's Gate has two ordered encounters and Ember's Wake has
 one. This is the exploration foundation for the planned Ruleweaver game, not
 yet that complete game.
 
-- The live slice has one player and one target per path. Warden's Gate uses
+- The live slice has an authored four-person Warden company, two opponents,
+  canonical initiative and activation budgets, and a bounded overhead tactical
+  board. Warden's Gate uses
   Steel Guard armor, canonical Training Blade/Field Bow implements, Guard
   reactions, physical/control actions, and its Warden reward; Ember's Wake
   uses Nerve equipment, Focus reactions, energy/resolve actions, and its Ash
   Seer reward. Both expose vitality, attributed affinities,
   scheduled effects, explicit player/opposition turns, deterministic opponent
-  policy, terminal outcomes, bounded defeat recovery, ordered campaign
-  completion, and exactly-once rewards. Combat is still the earlier
-  non-spatial one-hero/one-target presentation; it does not yet define the
-  overhead tactical grid, multiple-combatant initiative and live activation
-  budget consumption/reset,
-  combat movement, spellcasting, advancement, branching/repeatable campaign
-  graphs, generated rewards, or broader Ruleweaver content.
+  policy, Engine-routed combat movement, range and line of effect, conditions,
+  forced movement, terminal outcomes, bounded defeat recovery, ordered
+  campaign completion, and exactly-once rewards. It does not yet define
+  spellcasting, advancement, branching/repeatable campaign graphs, generated
+  rewards, or broader Ruleweaver content.
 - Each path has one bounded floor with step-forward/backward and turn-left/right
   movement, collision, one or two hidden triggers, one landmark, a three-depth
   corridor projection, compass, and discovered-cell map. There are no doors,
@@ -29,10 +29,8 @@ yet that complete game.
   defenses, Standard/Bonus/Reaction/Movement budget definitions, shaped
   actions, Held/Unsettled condition clauses, and explicit armor/implement
   binding. This remains deliberately bounded. There is no bulk-imported class,
-  talent, power, monster, item, scenario, or D&D 4e catalog. Party semantics,
-  live per-actor budget reset/consumption, tactical-grid range/line-of-effect,
-  forced movement, and the first bounded Ruleweaver adventure remain owned by
-  the following milestones.
+  talent, power, monster, item, scenario, or D&D 4e catalog. The first broader
+  bounded Ruleweaver adventure remains owned by the following milestones.
 - Selection admits only the chosen exact package closure. Warden's Gate does
   not silently load Ember rules, Ember's Wake does not silently load Steel
   rules, and the non-selectable catalog probe never appears as a product path.
@@ -42,13 +40,10 @@ yet that complete game.
 - The host uses one explicit local save path, defaulting to
   `target/rusty-d20/save.json`. There is no save-slot UI, cloud/storage policy,
   authentication, TLS, multi-user coordination, or general migration between
-  Engine or ruleset revisions. Product schemas 1 through 6 have explicit
-  migrations into schema 7, including deterministic installation of the
-  starter loadout and a
-  defined legacy encounter turn or vitality-derived terminal outcome; this is
-  not a general migration framework. Schema 7 binds saves to the exact authored
-  adventure package composition, dungeon progress, and completed encounter
-  prefix. The host can
+  Engine or ruleset revisions. Product schemas 1 through 8 and session schemas
+  before 4 are rejected; this is not a general migration framework. Schema 9
+  binds saves to the exact authored adventure package composition, dungeon
+  progress, tactical positions, and completed encounter prefix. The host can
   discard one malformed or obsolete save through a guarded visible reset, but
   it cannot repair arbitrary content.
 - Opaque action previews are process-local and intentionally not saved. Save is
@@ -64,6 +59,5 @@ yet that complete game.
   Rust-projected facing and discovered cells. The complete dungeon topology and
   hidden trigger coordinates never enter browser state.
 
-The authoritative party/initiative model, overhead combat view, and first
-bounded Ruleweaver adventure are tracked as downstream milestones rather than
-being implied complete by this foundation translation.
+The first broader bounded Ruleweaver adventure remains a downstream milestone
+rather than being implied complete by this tactical slice.

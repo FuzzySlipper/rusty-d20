@@ -34,6 +34,9 @@ import type {
   ResourceDto,
   RuntimeReadoutDto,
   SaveStatusDto,
+  TacticalBoardDto,
+  TacticalCellDto,
+  TacticalMoveDto,
 } from "./generated/api-types";
 
 export type ClassifiedError =
@@ -789,6 +792,7 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
   if (
     !hasExactKeys(value, [
       "actions",
+      "board",
       "currentActorId",
       "legalTargets",
       "log",
@@ -805,6 +809,7 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
     D20_PROTOCOL_LIMITS.maxEncounterParticipants,
     decodeEncounterParticipant,
   );
+  const board = decodeTacticalBoard(value["board"]);
   const actions = decodeArray(value["actions"], 64, decodeAction);
   const legalTargets = decodeArray(
     value["legalTargets"],
@@ -822,6 +827,7 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
     (currentActorId !== null && !isSafePositiveInteger(currentActorId)) ||
     participants === undefined ||
     participants.length === 0 ||
+    board === undefined ||
     actions === undefined ||
     legalTargets === undefined ||
     pendingAction === undefined ||
@@ -836,8 +842,18 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
   const legalActionIds = new Set(legalTargets.map((entry) => entry.actionId));
   const currentActor =
     currentActorId === null ? undefined : participantById.get(currentActorId);
+  const occupied = new Set(
+    participants.map((participant) => `${participant.x}:${participant.y}`),
+  );
   if (
     participantById.size !== participants.length ||
+    occupied.size !== participants.length ||
+    participants.some(
+      (participant) =>
+        participant.x >= board.width ||
+        participant.y >= board.height ||
+        board.rows[participant.y]?.[participant.x] !== ".",
+    ) ||
     new Set(participants.map((participant) => participant.faction)).size !==
       2 ||
     actionIds.size !== actions.length ||
@@ -866,7 +882,20 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
         pendingAction.actorId === pendingAction.targetId ||
         currentActorId === null ||
         pendingAction.actorId !== currentActorId)) ||
-    (currentActorId === null && pendingAction !== null)
+    (currentActorId === null && pendingAction !== null) ||
+    (board.legalMoves.length > 0 &&
+      (currentActor?.faction !== "party" ||
+        pendingAction !== null ||
+        board.legalMoves.some((move) => {
+          const start = move.route[0];
+          return (
+            start?.x !== currentActor.x ||
+            start.y !== currentActor.y ||
+            move.route
+              .slice(1)
+              .some((cell) => occupied.has(`${cell.x}:${cell.y}`))
+          );
+        })))
   ) {
     return undefined;
   }
@@ -874,6 +903,7 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
     round: value["round"],
     nextRoll: value["nextRoll"],
     currentActorId,
+    board,
     participants,
     actions,
     legalTargets,
@@ -886,7 +916,14 @@ function decodeEncounterParticipant(
   value: unknown,
 ): EncounterParticipantDto | undefined {
   if (
-    !hasExactKeys(value, ["character", "defeated", "faction", "initiative"])
+    !hasExactKeys(value, [
+      "character",
+      "defeated",
+      "faction",
+      "initiative",
+      "x",
+      "y",
+    ])
   ) {
     return undefined;
   }
@@ -894,6 +931,8 @@ function decodeEncounterParticipant(
   return character !== undefined &&
     isEncounterFaction(value["faction"]) &&
     isSafeInteger(value["initiative"]) &&
+    isSafeNonNegativeInteger(value["x"]) &&
+    isSafeNonNegativeInteger(value["y"]) &&
     typeof value["defeated"] === "boolean" &&
     value["defeated"] === (character.healthCurrent === 0)
     ? {
@@ -901,7 +940,111 @@ function decodeEncounterParticipant(
         faction: value["faction"],
         initiative: value["initiative"],
         defeated: value["defeated"],
+        x: value["x"],
+        y: value["y"],
       }
+    : undefined;
+}
+
+function decodeTacticalBoard(value: unknown): TacticalBoardDto | undefined {
+  if (!hasExactKeys(value, ["height", "legalMoves", "rows", "width"])) {
+    return undefined;
+  }
+  const width = value["width"];
+  const height = value["height"];
+  const rows = decodeStrings(
+    value["rows"],
+    D20_PROTOCOL_LIMITS.maxTacticalBoardHeight,
+  );
+  const legalMoves = decodeArray(
+    value["legalMoves"],
+    D20_PROTOCOL_LIMITS.maxTacticalBoardCells,
+    decodeTacticalMove,
+  );
+  if (
+    !isSafePositiveInteger(width) ||
+    !isSafePositiveInteger(height) ||
+    width < 5 ||
+    height < 5 ||
+    width > D20_PROTOCOL_LIMITS.maxTacticalBoardWidth ||
+    height > D20_PROTOCOL_LIMITS.maxTacticalBoardHeight ||
+    width * height > D20_PROTOCOL_LIMITS.maxTacticalBoardCells ||
+    rows === undefined ||
+    rows.length !== height ||
+    rows.some(
+      (row) =>
+        row.length !== width ||
+        [...row].some((cell) => cell !== "#" && cell !== "."),
+    ) ||
+    rows[0]?.split("").some((cell) => cell !== "#") ||
+    rows
+      .at(-1)
+      ?.split("")
+      .some((cell) => cell !== "#") ||
+    rows.some((row) => row[0] !== "#" || row.at(-1) !== "#") ||
+    legalMoves === undefined
+  ) {
+    return undefined;
+  }
+  const destinations = new Set(legalMoves.map((move) => `${move.x}:${move.y}`));
+  return destinations.size === legalMoves.length &&
+    legalMoves.every(
+      (move) =>
+        move.x < width &&
+        move.y < height &&
+        rows[move.y]?.[move.x] === "." &&
+        move.route.every(
+          (cell) =>
+            cell.x < width && cell.y < height && rows[cell.y]?.[cell.x] === ".",
+        ),
+    )
+    ? { width, height, rows, legalMoves }
+    : undefined;
+}
+
+function decodeTacticalMove(value: unknown): TacticalMoveDto | undefined {
+  if (!hasExactKeys(value, ["cost", "route", "x", "y"])) {
+    return undefined;
+  }
+  const route = decodeArray(
+    value["route"],
+    D20_PROTOCOL_LIMITS.maxTacticalBoardCells,
+    decodeTacticalCell,
+  );
+  if (
+    !isSafeNonNegativeInteger(value["x"]) ||
+    !isSafeNonNegativeInteger(value["y"]) ||
+    !isSafePositiveInteger(value["cost"]) ||
+    route === undefined ||
+    route.length !== value["cost"] + 1 ||
+    new Set(route.map((cell) => `${cell.x}:${cell.y}`)).size !== route.length ||
+    route.at(-1)?.x !== value["x"] ||
+    route.at(-1)?.y !== value["y"] ||
+    route.some((cell, index) => {
+      const previous = route[index - 1];
+      return (
+        previous !== undefined &&
+        (Math.abs(cell.x - previous.x) > 1 ||
+          Math.abs(cell.y - previous.y) > 1 ||
+          (cell.x === previous.x && cell.y === previous.y))
+      );
+    })
+  ) {
+    return undefined;
+  }
+  return {
+    x: value["x"],
+    y: value["y"],
+    cost: value["cost"],
+    route,
+  };
+}
+
+function decodeTacticalCell(value: unknown): TacticalCellDto | undefined {
+  return hasExactKeys(value, ["x", "y"]) &&
+    isSafeNonNegativeInteger(value["x"]) &&
+    isSafeNonNegativeInteger(value["y"])
+    ? { x: value["x"], y: value["y"] }
     : undefined;
 }
 
@@ -997,6 +1140,7 @@ function decodeAction(value: unknown): ActionDto | undefined {
       "damage",
       "defense",
       "effect",
+      "forcedMovement",
       "id",
       "implement",
       "label",
@@ -1021,7 +1165,8 @@ function decodeAction(value: unknown): ActionDto | undefined {
     isSafeNonNegativeInteger(value["range"]) &&
     (typeof implement === "string" || implement === null) &&
     tags !== undefined &&
-    (typeof effect === "string" || effect === null)
+    (typeof effect === "string" || effect === null) &&
+    isSafeNonNegativeInteger(value["forcedMovement"])
     ? {
         id: value["id"],
         label: value["label"],
@@ -1034,6 +1179,7 @@ function decodeAction(value: unknown): ActionDto | undefined {
         implement,
         tags,
         effect,
+        forcedMovement: value["forcedMovement"],
       }
     : undefined;
 }

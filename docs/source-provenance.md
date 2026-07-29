@@ -198,6 +198,6 @@ Warden's Gate encounter equips both selected implements and exposes
 implement-bound attacks plus Held/Unsettled control actions. The browser
 receives only resolved presentation facts, target/range/cost metadata, and
 strict command inputs; it does not evaluate the translated rules. Live
-per-actor activation-budget consumption/reset remains owned by the following
-party/turn milestone, and spatial range/line-of-effect enforcement remains
-owned by the tactical-grid milestone.
+per-actor activation-budget consumption/reset, Engine-routed tactical movement,
+spatial range/line-of-effect enforcement, and forced movement are now owned by
+the Rust gameplay runtime and projected as strict presentation facts.

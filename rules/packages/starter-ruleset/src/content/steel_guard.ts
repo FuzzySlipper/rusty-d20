@@ -97,6 +97,7 @@ export const steelGuardModule = defineD20Module(
         },
         attack: { kind: 'implement', implement: 'training-blade' },
         effect: 'bleeding',
+        forcedMovement: 0,
       }),
       action(55, {
         id: 'precise-shot',
@@ -110,6 +111,7 @@ export const steelGuardModule = defineD20Module(
         },
         attack: { kind: 'implement', implement: 'field-bow' },
         effect: null,
+        forcedMovement: 0,
       }),
       action(62, {
         id: 'pin-in-place',
@@ -129,6 +131,7 @@ export const steelGuardModule = defineD20Module(
           range: 1,
         },
         effect: 'held',
+        forcedMovement: 0,
       }),
       action(76, {
         id: 'disrupt',
@@ -148,6 +151,7 @@ export const steelGuardModule = defineD20Module(
           range: 8,
         },
         effect: 'unsettled',
+        forcedMovement: 2,
       }),
     ],
   }),

@@ -115,6 +115,24 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
           await expect(preview).toContainText("Iron Warden");
           await expect(preview).toContainText(/Longsword Strike|Precise Shot/);
           await expect(preview).not.toContainText(/Pin In Place|Disrupt/);
+          await expect(
+            page
+              .getByRole("region", {
+                name: "Authoritative tactical combat board",
+              })
+              .getByRole("gridcell", {
+                name: /Iron Warden, opposition, at 10, 4/,
+              }),
+          ).toBeVisible();
+          expect(
+            selected.encounter?.log.some((entry) =>
+              entry.details.some((detail) =>
+                detail.includes(
+                  "Iron Warden was forced from (8, 4) to (10, 4) without spending movement",
+                ),
+              ),
+            ),
+          ).toBe(true);
           await testInfo.attach("legal-opposition-after-unsettled.png", {
             body: await page.screenshot({ fullPage: true }),
             contentType: "image/png",
@@ -703,6 +721,8 @@ interface SessionSnapshot {
         effects: string[];
       };
       faction: "party" | "opposition";
+      x: number;
+      y: number;
     }>;
     actions: Array<{ id: string; label: string }>;
     legalTargets: Array<{ actionId: string; targetIds: number[] }>;

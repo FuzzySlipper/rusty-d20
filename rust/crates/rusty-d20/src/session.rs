@@ -29,10 +29,10 @@ use crate::{
     ActivationBudgetsComponent, ActivationCostDefinition, ConditionClauseDefinition,
     D20ComponentDataError, D20Id, D20Ruleset, DamageDefinition, EncounterFaction,
     EncounterParticipationComponent, EquipmentReferenceDefinition, ScheduledEffect,
-    ScheduledEffectsComponent, ENGINE_REVISION,
+    ScheduledEffectsComponent, TacticalPosition, ENGINE_REVISION,
 };
 
-const D20_SAVE_SCHEMA_VERSION: u32 = 3;
+const D20_SAVE_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,6 +102,7 @@ pub struct EncounterParticipationSeed {
     pub entity: EntityId,
     pub faction: EncounterFaction,
     pub initiative: i16,
+    pub position: TacticalPosition,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -539,6 +540,7 @@ impl D20Session {
                     encounter.clone(),
                     participant.faction,
                     participant.initiative,
+                    participant.position,
                 ),
             )?;
         }
@@ -593,6 +595,86 @@ impl D20Session {
                 entity,
                 component: ActivationBudgetsComponent::LABEL,
             })
+    }
+
+    pub fn relocate_encounter_participant(
+        &mut self,
+        entity: EntityId,
+        destination: TacticalPosition,
+        movement_cost: u16,
+    ) -> Result<(), D20SessionError> {
+        let participation = self
+            .entities
+            .component::<EncounterParticipationComponent>(entity)?
+            .ok_or(D20SessionError::MissingComponent {
+                entity,
+                component: EncounterParticipationComponent::LABEL,
+            })?
+            .clone();
+        if movement_cost > 0 {
+            if let Some(effect) = self.active_movement_prohibition(entity)? {
+                return Err(D20SessionError::MovementForbidden { entity, effect });
+            }
+        }
+        let mut staged = self.entities.clone();
+        if movement_cost > 0 {
+            let movement = D20Id::parse("movement").expect("movement is a valid d20 identity");
+            let budgets = staged
+                .component::<ActivationBudgetsComponent>(entity)?
+                .ok_or(D20SessionError::MissingComponent {
+                    entity,
+                    component: ActivationBudgetsComponent::LABEL,
+                })?
+                .clone();
+            let available = budgets.current(&movement).unwrap_or(0);
+            let after = budgets.spend(&movement, movement_cost).ok_or({
+                D20SessionError::ActivationBudgetUnavailable {
+                    entity,
+                    budget: movement,
+                    required: movement_cost,
+                    available,
+                }
+            })?;
+            let revision = staged.component_revision::<ActivationBudgetsComponent>(entity)?;
+            EntityAuthoringService.replace_component(&mut staged, revision, entity, after)?;
+        }
+        let revision = staged.component_revision::<EncounterParticipationComponent>(entity)?;
+        EntityAuthoringService.replace_component(
+            &mut staged,
+            revision,
+            entity,
+            participation.with_position(destination),
+        )?;
+        self.entities = staged;
+        Ok(())
+    }
+
+    pub fn active_movement_prohibition(
+        &self,
+        entity: EntityId,
+    ) -> Result<Option<D20Id>, D20SessionError> {
+        let schedule = self
+            .entities
+            .component::<ScheduledEffectsComponent>(entity)?
+            .ok_or(D20SessionError::MissingComponent {
+                entity,
+                component: ScheduledEffectsComponent::LABEL,
+            })?;
+        Ok(schedule
+            .effects()
+            .iter()
+            .filter(|effect| effect.expires_at_turn() > self.current_turn)
+            .find_map(|scheduled| {
+                let definition = self
+                    .rules
+                    .effect(scheduled.definition())
+                    .expect("validated schedules reference compiled effects");
+                definition
+                    .conditions
+                    .iter()
+                    .any(|condition| matches!(condition, ConditionClauseDefinition::ForbidMovement))
+                    .then(|| definition.id.clone())
+            }))
     }
 
     pub fn reset_activation_budgets(&mut self, entity: EntityId) -> Result<(), D20SessionError> {
@@ -1500,6 +1582,10 @@ pub enum D20SessionError {
     ActionForbidden {
         entity: EntityId,
         action: D20Id,
+        effect: D20Id,
+    },
+    MovementForbidden {
+        entity: EntityId,
         effect: D20Id,
     },
     ActivationBudgetUnavailable {

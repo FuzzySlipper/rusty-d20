@@ -15,9 +15,9 @@ use tower_http::trace::TraceLayer;
 use crate::{
     ApiErrorDto, ApiErrorKindDto, ApplyActionRequestDto, ApplyReactionRequestDto,
     EquipItemRequestDto, ExpectedRevisionDto, ExplorationCommandRequestDto, GameRuntime,
-    GameRuntimeError, GameSnapshotDto, HealthDto, NewAdventureRequestDto, PreviewActionRequestDto,
-    ResetSessionRequestDto, RuntimeReadoutDto, SaveStateDto, SaveStatusDto, TransferItemRequestDto,
-    UnequipItemRequestDto,
+    GameRuntimeError, GameSnapshotDto, HealthDto, MoveActorRequestDto, NewAdventureRequestDto,
+    PreviewActionRequestDto, ResetSessionRequestDto, RuntimeReadoutDto, SaveStateDto,
+    SaveStatusDto, TransferItemRequestDto, UnequipItemRequestDto,
 };
 
 #[derive(Clone)]
@@ -64,6 +64,7 @@ fn router_with_recovery(
         .route("/api/v1/session/loadout/equip", post(equip_item))
         .route("/api/v1/session/loadout/unequip", post(unequip_item))
         .route("/api/v1/session/loadout/transfer", post(transfer_item))
+        .route("/api/v1/session/move", post(move_actor))
         .route("/api/v1/session/preview", post(preview))
         .route("/api/v1/session/reaction", post(reaction))
         .route("/api/v1/session/action", post(action))
@@ -281,6 +282,13 @@ async fn preview(
     Json(request): Json<PreviewActionRequestDto>,
 ) -> ApiResult {
     mutate(&state, |runtime| runtime.preview_action(request))
+}
+
+async fn move_actor(
+    State(state): State<HostState>,
+    Json(request): Json<MoveActorRequestDto>,
+) -> ApiResult {
+    mutate(&state, |runtime| runtime.move_actor(request))
 }
 
 async fn reaction(

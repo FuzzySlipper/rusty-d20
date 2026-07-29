@@ -62,6 +62,12 @@ fn subset_party_catalog() -> AuthoredAdventureCatalog {
             participant.faction == crate::EncounterFactionCandidate::Opposition
                 || participant.character.as_str() == "mara-venn"
         });
+        encounter.board.placements.retain(|placement| {
+            encounter
+                .roster
+                .iter()
+                .any(|participant| participant.character == placement.character)
+        });
         let admitted = crate::admit_d20_candidate(
             crate::D20PackageEnvelope {
                 domain: package.identity().domain().clone(),
@@ -134,10 +140,19 @@ fn multi_party_roster_initiative_and_activation_budgets_are_canonical() {
     );
     assert_eq!(encounter.current_actor_id, Some(101));
     assert_eq!(encounter.actions.len(), 4);
+    assert_eq!(
+        encounter
+            .legal_targets
+            .iter()
+            .find(|entry| entry.action_id == "longsword-strike")
+            .unwrap()
+            .target_ids,
+        vec![102]
+    );
     assert!(encounter
         .legal_targets
         .iter()
-        .all(|entry| entry.target_ids == vec![107, 102]));
+        .all(|entry| !entry.target_ids.is_empty()));
     let standard_action = id("standard-action").unwrap();
     assert_eq!(
         runtime
@@ -153,7 +168,7 @@ fn multi_party_roster_initiative_and_activation_budgets_are_canonical() {
         .preview_action(PreviewActionRequestDto {
             expected_revision: started.revision,
             actor_id: PLAYER.raw(),
-            target_id: 107,
+            target_id: OPPONENT.raw(),
             action_id: "longsword-strike".to_owned(),
         })
         .unwrap();
@@ -189,6 +204,206 @@ fn multi_party_roster_initiative_and_activation_budgets_are_canonical() {
 }
 
 #[test]
+fn tactical_movement_is_engine_routed_atomic_stale_safe_and_persistent() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    let started = start_test_encounter(&mut runtime);
+    let encounter = started.encounter.as_ref().unwrap();
+    let movement = id("movement").unwrap();
+    let initial_budget = runtime
+        .session()
+        .unwrap()
+        .activation_budgets(PLAYER)
+        .unwrap()
+        .current(&movement)
+        .unwrap();
+    let route = encounter
+        .board
+        .legal_moves
+        .iter()
+        .find(|route| route.cost > 1)
+        .unwrap()
+        .clone();
+    assert_eq!(
+        route.route.first().unwrap(),
+        &TacticalCellDto { x: 7, y: 4 }
+    );
+    assert_eq!(
+        route.route.last().unwrap(),
+        &TacticalCellDto {
+            x: route.x,
+            y: route.y
+        }
+    );
+
+    let before_stale = runtime.encode_save().unwrap();
+    assert!(matches!(
+        runtime.move_actor(MoveActorRequestDto {
+            expected_revision: started.revision - 1,
+            actor_id: PLAYER.raw(),
+            x: route.x,
+            y: route.y,
+        }),
+        Err(GameRuntimeError::StaleCommand(_))
+    ));
+    assert_eq!(runtime.encode_save().unwrap(), before_stale);
+
+    assert!(matches!(
+        runtime.move_actor(MoveActorRequestDto {
+            expected_revision: started.revision,
+            actor_id: PLAYER.raw(),
+            x: 6,
+            y: 4,
+        }),
+        Err(GameRuntimeError::InvalidCommand(_))
+    ));
+    assert_eq!(runtime.encode_save().unwrap(), before_stale);
+
+    let moved = runtime
+        .move_actor(MoveActorRequestDto {
+            expected_revision: started.revision,
+            actor_id: PLAYER.raw(),
+            x: route.x,
+            y: route.y,
+        })
+        .unwrap();
+    let participant = moved
+        .encounter
+        .as_ref()
+        .unwrap()
+        .participants
+        .iter()
+        .find(|participant| participant.character.id == PLAYER.raw())
+        .unwrap();
+    assert_eq!((participant.x, participant.y), (route.x, route.y));
+    assert_eq!(
+        runtime
+            .session()
+            .unwrap()
+            .activation_budgets(PLAYER)
+            .unwrap()
+            .current(&movement),
+        Some(initial_budget - route.cost)
+    );
+    assert!(moved
+        .encounter
+        .as_ref()
+        .unwrap()
+        .log
+        .last()
+        .unwrap()
+        .details
+        .iter()
+        .any(|detail| detail.contains("Engine pathfinding admitted")));
+
+    let encoded = runtime.encode_save().unwrap();
+    let reopened = GameRuntime::decode_save(&encoded).unwrap();
+    assert_eq!(reopened.encode_save().unwrap(), encoded);
+    let reopened_position = reopened
+        .snapshot()
+        .unwrap()
+        .encounter
+        .unwrap()
+        .participants
+        .into_iter()
+        .find(|participant| participant.character.id == PLAYER.raw())
+        .unwrap();
+    assert_eq!(
+        (reopened_position.x, reopened_position.y),
+        (route.x, route.y)
+    );
+}
+
+#[test]
+fn held_condition_forbids_voluntary_tactical_movement_without_mutation() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    let started = start_test_encounter(&mut runtime);
+    let destination = started
+        .encounter
+        .as_ref()
+        .unwrap()
+        .board
+        .legal_moves
+        .first()
+        .unwrap()
+        .clone();
+    let pin = id("pin-in-place").unwrap();
+    let mut held = false;
+    for attempt in 0..24 {
+        let preview = runtime
+            .session()
+            .unwrap()
+            .preview_action(
+                OPPONENT,
+                PLAYER,
+                &pin,
+                operation(&format!("held-movement-preview-{attempt}")).unwrap(),
+            )
+            .unwrap();
+        let receipt = runtime
+            .session_mut()
+            .unwrap()
+            .apply_action(ApplyActionRequest {
+                preview,
+                effect_instance: Some(
+                    effect_instance(&format!("held-movement-effect-{attempt}")).unwrap(),
+                ),
+            })
+            .unwrap();
+        if receipt.hit {
+            held = true;
+            break;
+        }
+        runtime
+            .session_mut()
+            .unwrap()
+            .reset_activation_budgets(OPPONENT)
+            .unwrap();
+    }
+    assert!(held, "the deterministic pin sequence must apply Held");
+    assert!(runtime
+        .snapshot()
+        .unwrap()
+        .encounter
+        .unwrap()
+        .participants
+        .into_iter()
+        .find(|participant| participant.character.id == PLAYER.raw())
+        .unwrap()
+        .character
+        .effects
+        .iter()
+        .any(|effect| effect.starts_with("Held")));
+
+    assert!(runtime
+        .snapshot()
+        .unwrap()
+        .encounter
+        .unwrap()
+        .board
+        .legal_moves
+        .is_empty());
+    assert_eq!(
+        runtime
+            .session()
+            .unwrap()
+            .active_movement_prohibition(PLAYER)
+            .unwrap(),
+        Some(id("held").unwrap())
+    );
+    let before = runtime.encode_save().unwrap();
+    assert!(matches!(
+        runtime.move_actor(MoveActorRequestDto {
+            expected_revision: started.revision,
+            actor_id: PLAYER.raw(),
+            x: destination.x,
+            y: destination.y,
+        }),
+        Err(GameRuntimeError::InvalidCommand(_))
+    ));
+    assert_eq!(runtime.encode_save().unwrap(), before);
+}
+
+#[test]
 fn encounter_projection_rejects_a_current_actor_without_canonical_participation() {
     let mut runtime = GameRuntime::empty().unwrap();
     start_test_encounter(&mut runtime);
@@ -202,7 +417,7 @@ fn encounter_projection_rejects_a_current_actor_without_canonical_participation(
 }
 
 #[test]
-fn schema_eight_fresh_save_round_trips_and_old_product_or_session_schemas_reject() {
+fn schema_nine_fresh_save_round_trips_and_old_product_or_session_schemas_reject() {
     let mut runtime = GameRuntime::empty().unwrap();
     start_test_encounter(&mut runtime);
     let encoded = runtime.encode_save().unwrap();
@@ -215,18 +430,18 @@ fn schema_eight_fresh_save_round_trips_and_old_product_or_session_schemas_reject
     );
 
     let mut old_product: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    old_product["schemaVersion"] = json!(7);
+    old_product["schemaVersion"] = json!(8);
     assert!(matches!(
         GameRuntime::decode_save(&serde_json::to_string(&old_product).unwrap()),
-        Err(GameRuntimeError::UnsupportedSaveSchema { actual: 7 })
+        Err(GameRuntimeError::UnsupportedSaveSchema { actual: 8 })
     ));
 
     let mut old_session: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    old_session["session"]["schemaVersion"] = json!(2);
+    old_session["session"]["schemaVersion"] = json!(3);
     assert!(matches!(
         GameRuntime::decode_save(&serde_json::to_string(&old_session).unwrap()),
         Err(GameRuntimeError::Save(
-            SessionSaveError::UnsupportedSchema { actual: 2 }
+            SessionSaveError::UnsupportedSchema { actual: 3 }
         ))
     ));
 }
@@ -955,6 +1170,116 @@ fn opposition_filters_condition_forbidden_actions_without_retry_deadlock() {
     }
 
     panic!("the deterministic Disrupt sequence never applied Unsettled");
+}
+
+#[test]
+fn disrupt_forces_the_target_without_spending_its_movement_budget() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    start_test_encounter(&mut runtime);
+    let movement = id("movement").unwrap();
+
+    for _ in 0..96 {
+        let current = runtime.snapshot().unwrap();
+        let encounter = current.encounter.as_ref().unwrap();
+        let current_actor = encounter.current_actor_id.unwrap();
+        let participant = encounter
+            .participants
+            .iter()
+            .find(|participant| participant.character.id == current_actor)
+            .unwrap();
+
+        if participant.faction == EncounterFactionDto::Party {
+            if current_actor != PLAYER.raw() {
+                runtime.end_activation(current.revision).unwrap();
+                continue;
+            }
+            let before_position = encounter
+                .participants
+                .iter()
+                .find(|participant| participant.character.id == OPPONENT.raw())
+                .map(|participant| (participant.x, participant.y))
+                .unwrap();
+            let before_budget = runtime
+                .session()
+                .unwrap()
+                .activation_budgets(OPPONENT)
+                .unwrap()
+                .current(&movement);
+            let previewed = runtime
+                .preview_action(PreviewActionRequestDto {
+                    expected_revision: current.revision,
+                    actor_id: PLAYER.raw(),
+                    target_id: OPPONENT.raw(),
+                    action_id: "disrupt".to_owned(),
+                })
+                .unwrap();
+            let token = previewed
+                .encounter
+                .as_ref()
+                .unwrap()
+                .pending_action
+                .as_ref()
+                .unwrap()
+                .token
+                .clone();
+            let resolved = runtime
+                .apply_action(ApplyActionRequestDto {
+                    expected_revision: previewed.revision,
+                    preview_token: token,
+                })
+                .unwrap();
+            let after_position = resolved
+                .encounter
+                .as_ref()
+                .unwrap()
+                .participants
+                .iter()
+                .find(|participant| participant.character.id == OPPONENT.raw())
+                .map(|participant| (participant.x, participant.y))
+                .unwrap();
+            if after_position != before_position {
+                assert_eq!(before_position, (8, 4));
+                assert_eq!(after_position, (10, 4));
+                assert_eq!(
+                    runtime
+                        .session()
+                        .unwrap()
+                        .activation_budgets(OPPONENT)
+                        .unwrap()
+                        .current(&movement),
+                    before_budget
+                );
+                assert!(resolved
+                    .encounter
+                    .as_ref()
+                    .unwrap()
+                    .log
+                    .iter()
+                    .flat_map(|entry| &entry.details)
+                    .any(|detail| detail.contains("without spending movement")));
+                return;
+            }
+            continue;
+        }
+
+        let opposition = runtime.begin_opposition_turn(current.revision).unwrap();
+        if let Some(pending) = opposition
+            .encounter
+            .as_ref()
+            .unwrap()
+            .pending_action
+            .as_ref()
+        {
+            runtime
+                .apply_action(ApplyActionRequestDto {
+                    expected_revision: opposition.revision,
+                    preview_token: pending.token.clone(),
+                })
+                .unwrap();
+        }
+    }
+
+    panic!("the deterministic Disrupt sequence never exercised forced movement");
 }
 
 #[test]

@@ -23,7 +23,7 @@ pub const SCHEDULED_EFFECTS_COMPONENT_CODEC_ID: &str = "rusty-d20.scheduled-effe
 pub const ABILITY_SCORES_COMPONENT_CODEC_VERSION: u32 = 1;
 pub const ACTION_RESOURCES_COMPONENT_CODEC_VERSION: u32 = 1;
 pub const ACTIVATION_BUDGETS_COMPONENT_CODEC_VERSION: u32 = 1;
-pub const ENCOUNTER_PARTICIPATION_COMPONENT_CODEC_VERSION: u32 = 1;
+pub const ENCOUNTER_PARTICIPATION_COMPONENT_CODEC_VERSION: u32 = 2;
 pub const SCHEDULED_EFFECTS_COMPONENT_CODEC_VERSION: u32 = 1;
 
 pub const MAX_D20_ABILITIES_PER_ENTITY: usize = 64;
@@ -225,22 +225,50 @@ pub enum EncounterFaction {
     Opposition,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct TacticalPosition {
+    x: u16,
+    y: u16,
+}
+
+impl TacticalPosition {
+    pub const fn new(x: u16, y: u16) -> Self {
+        Self { x, y }
+    }
+
+    pub const fn x(self) -> u16 {
+        self.x
+    }
+
+    pub const fn y(self) -> u16 {
+        self.y
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct EncounterParticipationComponent {
     encounter: D20Id,
     faction: EncounterFaction,
     initiative: i16,
+    position: TacticalPosition,
 }
 
 impl EncounterParticipationComponent {
     pub const LABEL: &'static str = "EncounterParticipationComponent";
 
-    pub const fn new(encounter: D20Id, faction: EncounterFaction, initiative: i16) -> Self {
+    pub const fn new(
+        encounter: D20Id,
+        faction: EncounterFaction,
+        initiative: i16,
+        position: TacticalPosition,
+    ) -> Self {
         Self {
             encounter,
             faction,
             initiative,
+            position,
         }
     }
 
@@ -254,6 +282,17 @@ impl EncounterParticipationComponent {
 
     pub const fn initiative(&self) -> i16 {
         self.initiative
+    }
+
+    pub const fn position(&self) -> TacticalPosition {
+        self.position
+    }
+
+    pub(crate) fn with_position(&self, position: TacticalPosition) -> Self {
+        Self {
+            position,
+            ..self.clone()
+        }
     }
 }
 
@@ -502,22 +541,19 @@ mod tests {
 
         let state = EntityState::with_registry(registry);
         let inspection = state.component_inspection();
-        for type_id in [
-            ABILITY_SCORES_COMPONENT_TYPE_ID,
-            ACTION_RESOURCES_COMPONENT_TYPE_ID,
-            ACTIVATION_BUDGETS_COMPONENT_TYPE_ID,
-            ENCOUNTER_PARTICIPATION_COMPONENT_TYPE_ID,
-            SCHEDULED_EFFECTS_COMPONENT_TYPE_ID,
+        for (type_id, version) in [
+            (ABILITY_SCORES_COMPONENT_TYPE_ID, 1),
+            (ACTION_RESOURCES_COMPONENT_TYPE_ID, 1),
+            (ACTIVATION_BUDGETS_COMPONENT_TYPE_ID, 1),
+            (ENCOUNTER_PARTICIPATION_COMPONENT_TYPE_ID, 2),
+            (SCHEDULED_EFFECTS_COMPONENT_TYPE_ID, 1),
         ] {
             let kind = inspection
                 .kinds
                 .iter()
                 .find(|kind| kind.type_id.as_str() == type_id)
                 .unwrap();
-            assert_eq!(
-                kind.persistence,
-                ComponentPersistence::Durable { version: 1 }
-            );
+            assert_eq!(kind.persistence, ComponentPersistence::Durable { version });
         }
     }
 }

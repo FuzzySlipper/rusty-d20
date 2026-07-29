@@ -6,6 +6,9 @@ maxAdventureDetails: 64,
 maxCampaignEncounters: 64,
 maxPartyMembers: 4,
 maxEncounterParticipants: 12,
+maxTacticalBoardWidth: 16,
+maxTacticalBoardHeight: 16,
+maxTacticalBoardCells: 256,
 maxDungeonCells: 576,
 maxDungeonViewDepth: 3,
 } as const);
@@ -24,7 +27,7 @@ export type ResourceDto = { id: string, label: string, current: number, maximum:
 
 export type CharacterDto = { id: number, name: string, title: string, level: number, healthCurrent: number, healthMaximum: number, resources: Array<ResourceDto>, effects: Array<string>, };
 
-export type ActionDto = { id: string, label: string, ability: string, defense: string, damage: string, activation: Array<string>, target: string, range: number, implement: string | null, tags: Array<string>, effect: string | null, };
+export type ActionDto = { id: string, label: string, ability: string, defense: string, damage: string, activation: Array<string>, target: string, range: number, implement: string | null, tags: Array<string>, effect: string | null, forcedMovement: number, };
 
 export type ReactionDto = { id: string, label: string, resource: string, cost: number, available: number, bonus: number, effect: string, };
 
@@ -34,9 +37,15 @@ export type ActionTargetsDto = { actionId: string, targetIds: number[], };
 
 export type EncounterFactionDto = "party" | "opposition";
 
-export type EncounterParticipantDto = { character: CharacterDto, faction: EncounterFactionDto, initiative: number, defeated: boolean, };
+export type EncounterParticipantDto = { character: CharacterDto, faction: EncounterFactionDto, initiative: number, defeated: boolean, x: number, y: number, };
 
-export type EncounterDto = { round: number, nextRoll: number, currentActorId: number | null, participants: Array<EncounterParticipantDto>, actions: Array<ActionDto>, legalTargets: Array<ActionTargetsDto>, pendingAction: PendingActionDto | null, log: Array<GameLogEntryDto>, };
+export type TacticalCellDto = { x: number, y: number, };
+
+export type TacticalMoveDto = { x: number, y: number, cost: number, route: Array<TacticalCellDto>, };
+
+export type TacticalBoardDto = { width: number, height: number, rows: Array<string>, legalMoves: Array<TacticalMoveDto>, };
+
+export type EncounterDto = { round: number, nextRoll: number, currentActorId: number | null, board: TacticalBoardDto, participants: Array<EncounterParticipantDto>, actions: Array<ActionDto>, legalTargets: Array<ActionTargetsDto>, pendingAction: PendingActionDto | null, log: Array<GameLogEntryDto>, };
 
 export type CampaignPhaseDto = "camp" | "exploration" | "encounter" | "outcome";
 
@@ -99,6 +108,8 @@ export type EquipItemRequestDto = { expectedRevision: number, itemId: number, sl
 export type UnequipItemRequestDto = { expectedRevision: number, itemId: number, };
 
 export type TransferItemRequestDto = { expectedRevision: number, itemId: number, fromOwnerId: number, toOwnerId: number, };
+
+export type MoveActorRequestDto = { expectedRevision: number, actorId: number, x: number, y: number, };
 
 export type PreviewActionRequestDto = { expectedRevision: number, actorId: number, targetId: number, actionId: string, };
 

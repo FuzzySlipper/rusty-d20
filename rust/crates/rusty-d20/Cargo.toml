@@ -9,12 +9,18 @@ workspace = true
 [dependencies]
 axum = "0.8"
 core-ids = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
+core-space = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
+core-voxel = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
 entity-state = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
 gameplay-mechanics = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
 gameplay-rules = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+svc-collision = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
+svc-pathfinding = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
 svc-rng = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
+svc-spatial = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
+svc-volume = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "fb608e323a8b44a55195f5720101224ff37fd5db" }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
 tower-http = { version = "0.6", features = ["fs", "trace"] }
 tracing = "0.1"

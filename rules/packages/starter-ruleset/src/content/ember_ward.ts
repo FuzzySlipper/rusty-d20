@@ -66,6 +66,7 @@ export const emberWardModule = defineD20Module(
           range: 8,
         },
         effect: 'scorched',
+        forcedMovement: 0,
       }),
       action(55, {
         id: 'mind-spike',
@@ -85,6 +86,7 @@ export const emberWardModule = defineD20Module(
           range: 8,
         },
         effect: null,
+        forcedMovement: 0,
       }),
     ],
   }),

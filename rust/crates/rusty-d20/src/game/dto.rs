@@ -68,6 +68,7 @@ pub struct ActionDto {
     pub implement: Option<String>,
     pub tags: Vec<String>,
     pub effect: Option<String>,
+    pub forced_movement: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -112,11 +113,40 @@ pub struct EncounterDto {
     pub next_roll: u64,
     #[ts(type = "number | null")]
     pub current_actor_id: Option<u64>,
+    pub board: TacticalBoardDto,
     pub participants: Vec<EncounterParticipantDto>,
     pub actions: Vec<ActionDto>,
     pub legal_targets: Vec<ActionTargetsDto>,
     pub pending_action: Option<PendingActionDto>,
     pub log: Vec<GameLogEntryDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct TacticalBoardDto {
+    pub width: u16,
+    pub height: u16,
+    pub rows: Vec<String>,
+    pub legal_moves: Vec<TacticalMoveDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct TacticalMoveDto {
+    pub x: u16,
+    pub y: u16,
+    pub cost: u16,
+    pub route: Vec<TacticalCellDto>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct TacticalCellDto {
+    pub x: u16,
+    pub y: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -144,6 +174,8 @@ pub struct EncounterParticipantDto {
     pub faction: EncounterFactionDto,
     pub initiative: i16,
     pub defeated: bool,
+    pub x: u16,
+    pub y: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -496,6 +528,18 @@ pub struct PreviewActionRequestDto {
     #[ts(type = "number")]
     pub target_id: u64,
     pub action_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct MoveActorRequestDto {
+    #[ts(type = "number")]
+    pub expected_revision: u64,
+    #[ts(type = "number")]
+    pub actor_id: u64,
+    pub x: u16,
+    pub y: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

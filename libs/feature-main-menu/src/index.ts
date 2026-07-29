@@ -17,7 +17,10 @@ import type {
 } from "@rusty-d20/protocol";
 import {
   DungeonViewportComponent,
+  TacticalBoardComponent,
   type DungeonViewportView,
+  type TacticalBoardSelection,
+  type TacticalBoardView,
 } from "@rusty-d20/renderer";
 import { SessionStore } from "@rusty-d20/store";
 import {
@@ -61,6 +64,7 @@ import {
     HotbarComponent,
     InventoryGridComponent,
     MinimapComponent,
+    TacticalBoardComponent,
   ],
   selector: "aui-main-menu-screen",
   standalone: true,
@@ -432,6 +436,10 @@ import {
         align-content: start;
         display: grid;
         gap: 14px;
+      }
+
+      .action-workbench {
+        min-width: 0;
       }
 
       .outcome-banner {
@@ -1336,6 +1344,10 @@ import {
             } @else {
               <section class="workspace">
                 <div class="action-workbench">
+                  <aui-tactical-board
+                    [view]="tacticalBoard()"
+                    (cellSelected)="selectTacticalCell($event)"
+                  />
                   <section class="rusty-engine-panel">
                     <header class="actions__header">
                       <div>
@@ -1408,6 +1420,9 @@ import {
                               }
                               @if (action.effect !== null) {
                                 · {{ action.effect }}
+                              }
+                              @if (action.forcedMovement > 0) {
+                                · pushes {{ action.forcedMovement }}
                               }
                             </span>
                           </div>
@@ -1622,6 +1637,52 @@ export class MainMenuScreenComponent implements OnInit {
       : (exploration.y / Math.max(1, exploration.height - 1)) * 100;
   });
 
+  protected readonly tacticalBoard = computed<TacticalBoardView>(() => {
+    const encounter = this.game()?.encounter;
+    if (encounter === null || encounter === undefined) {
+      throw new Error("Tactical encounter is not available.");
+    }
+    const participants = new Map(
+      encounter.participants.map((participant) => [
+        `${participant.x}:${participant.y}`,
+        participant,
+      ]),
+    );
+    const legalMoves = new Map(
+      encounter.board.legalMoves.map((move) => [
+        `${move.x}:${move.y}`,
+        move.cost,
+      ]),
+    );
+    const cells = encounter.board.rows.flatMap((row, y) =>
+      [...row].map((terrain, x) => {
+        const participant = participants.get(`${x}:${y}`);
+        return {
+          id: `${x}:${y}`,
+          x,
+          y,
+          terrain: terrain === "#" ? ("wall" as const) : ("floor" as const),
+          participantId: participant?.character.id ?? null,
+          participantName: participant?.character.name ?? null,
+          faction: participant?.faction ?? null,
+          defeated: participant?.defeated ?? false,
+          current: participant?.character.id === encounter.currentActorId,
+          selectedTarget: participant?.character.id === this.selectedTarget(),
+          selectable:
+            encounter.currentFaction === "party" &&
+            participant?.faction === "opposition" &&
+            participant.defeated === false,
+          legalMoveCost: legalMoves.get(`${x}:${y}`) ?? null,
+        };
+      }),
+    );
+    return {
+      width: encounter.board.width,
+      height: encounter.board.height,
+      cells,
+    };
+  });
+
   protected readonly inventorySlots = computed<
     readonly (InventoryItemView | null)[]
   >(() =>
@@ -1744,6 +1805,29 @@ export class MainMenuScreenComponent implements OnInit {
     const target = event.target;
     if (target instanceof HTMLSelectElement) {
       this.selectedTarget.set(Number(target.value));
+    }
+  }
+
+  protected selectTacticalCell(selection: TacticalBoardSelection): void {
+    const encounter = this.encounter();
+    if (selection.participantId !== null) {
+      const participant = encounter.participants.find(
+        (entry) => entry.character.id === selection.participantId,
+      );
+      if (participant?.faction === "opposition" && !participant.defeated) {
+        this.selectedTarget.set(participant.character.id);
+      }
+      return;
+    }
+    const actor = encounter.currentActorId;
+    if (
+      actor !== null &&
+      encounter.currentFaction === "party" &&
+      encounter.board.legalMoves.some(
+        (move) => move.x === selection.x && move.y === selection.y,
+      )
+    ) {
+      void this.store.moveActor(actor, selection.x, selection.y);
     }
   }
 

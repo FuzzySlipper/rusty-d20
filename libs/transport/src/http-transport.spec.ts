@@ -135,6 +135,18 @@ describe('createHttpRustyD20Transport', () => {
         toOwnerId: 103,
       }),
     ).resolves.toEqual({ ok: true, value: snapshot });
+    await expect(
+      transport.moveActor({
+        expectedRevision: 0,
+        actorId: 101,
+        x: 2,
+        y: 3,
+      }),
+    ).resolves.toEqual({ ok: true, value: snapshot });
+    expect(posts.at(-1)).toEqual({
+      path: '/api/v1/session/move',
+      body: { expectedRevision: 0, actorId: 101, x: 2, y: 3 },
+    });
   });
 
   it('preserves typed stale errors and classifies network and invalid-body failures', async () => {

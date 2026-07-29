@@ -492,6 +492,10 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
         ...value.roster.map(
           (participant) => ['roster.character', participant.character] as const,
         ),
+        ...value.board.placements.map(
+          (placement) =>
+            ['board.placements.character', placement.character] as const,
+        ),
         ...(value.victory.rewardItem === null
           ? []
           : ([['victory.rewardItem', value.victory.rewardItem]] as const)),

@@ -10,11 +10,12 @@ use crate::{
     D20Id, D20_ID_PATTERN, MAX_D20_ACTION_TAGS, MAX_D20_ACTION_TARGETS, MAX_D20_ACTIVATION_COSTS,
     MAX_D20_ADVENTURES_PER_PACKAGE, MAX_D20_ADVENTURE_ENTRIES, MAX_D20_AUTHORED_TEXT_BYTES,
     MAX_D20_CONDITION_CLAUSES, MAX_D20_DAMAGE_DICE, MAX_D20_DAMAGE_DIE_SIDES,
-    MAX_D20_DEFINITIONS_PER_KIND, MAX_D20_EFFECT_DURATION_TURNS, MAX_D20_ID_BYTES,
-    MAX_D20_IMPLEMENT_TAGS, MAX_D20_TACTICAL_RANGE,
+    MAX_D20_DEFINITIONS_PER_KIND, MAX_D20_EFFECT_DURATION_TURNS, MAX_D20_FORCED_MOVEMENT,
+    MAX_D20_ID_BYTES, MAX_D20_IMPLEMENT_TAGS, MAX_D20_TACTICAL_BOARD_CELLS,
+    MAX_D20_TACTICAL_BOARD_HEIGHT, MAX_D20_TACTICAL_BOARD_WIDTH, MAX_D20_TACTICAL_RANGE,
 };
 
-pub const D20_CANDIDATE_SCHEMA_VERSION: u32 = 3;
+pub const D20_CANDIDATE_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -194,6 +195,7 @@ pub struct ActionCandidate {
     pub target: ActionTargetCandidate,
     pub attack: ActionAttackCandidate,
     pub effect: Option<D20Id>,
+    pub forced_movement: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -450,11 +452,31 @@ pub struct EncounterParticipantCandidate {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
+pub struct TacticalPlacementCandidate {
+    pub character: D20Id,
+    pub x: u16,
+    pub y: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct TacticalBoardCandidate {
+    pub width: u16,
+    pub height: u16,
+    pub rows: Vec<String>,
+    pub placements: Vec<TacticalPlacementCandidate>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct EncounterCandidate {
     pub id: D20Id,
     pub title: String,
     pub summary: String,
     pub roster: Vec<EncounterParticipantCandidate>,
+    pub board: TacticalBoardCandidate,
     pub available_from_camp: bool,
     pub introduction_source: String,
     pub introduction_text: String,
@@ -596,6 +618,8 @@ pub fn generated_d20_candidate_typescript() -> String {
         EncounterOutcomeCandidate::decl(),
         EncounterFactionCandidate::decl(),
         EncounterParticipantCandidate::decl(),
+        TacticalPlacementCandidate::decl(),
+        TacticalBoardCandidate::decl(),
         EncounterCandidate::decl(),
         DungeonFacingCandidate::decl(),
         DungeonEncounterCandidate::decl(),
@@ -624,6 +648,10 @@ export const D20_LIMITS = Object.freeze({{\n\
   maxConditionClauses: {MAX_D20_CONDITION_CLAUSES},\n\
   maxImplementTags: {MAX_D20_IMPLEMENT_TAGS},\n\
   maxTacticalRange: {MAX_D20_TACTICAL_RANGE},\n\
+  maxForcedMovement: {MAX_D20_FORCED_MOVEMENT},\n\
+  maxTacticalBoardWidth: {MAX_D20_TACTICAL_BOARD_WIDTH},\n\
+  maxTacticalBoardHeight: {MAX_D20_TACTICAL_BOARD_HEIGHT},\n\
+  maxTacticalBoardCells: {MAX_D20_TACTICAL_BOARD_CELLS},\n\
   maxActionTargets: {MAX_D20_ACTION_TARGETS},\n\
   maxAdventuresPerPackage: {MAX_D20_ADVENTURES_PER_PACKAGE},\n\
   maxAdventureEntries: {MAX_D20_ADVENTURE_ENTRIES},\n\

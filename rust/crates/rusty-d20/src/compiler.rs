@@ -43,6 +43,11 @@ pub const MAX_D20_ACTIVATION_COSTS: usize = 4;
 pub const MAX_D20_CONDITION_CLAUSES: usize = 8;
 pub const MAX_D20_IMPLEMENT_TAGS: usize = 16;
 pub const MAX_D20_TACTICAL_RANGE: u16 = 32;
+pub const MAX_D20_FORCED_MOVEMENT: u16 = 6;
+pub const MAX_D20_TACTICAL_BOARD_WIDTH: u16 = 16;
+pub const MAX_D20_TACTICAL_BOARD_HEIGHT: u16 = 16;
+pub const MAX_D20_TACTICAL_BOARD_CELLS: usize =
+    MAX_D20_TACTICAL_BOARD_WIDTH as usize * MAX_D20_TACTICAL_BOARD_HEIGHT as usize;
 pub const MAX_D20_ACTION_TARGETS: u16 = 12;
 pub const MAX_D20_PARTY_MEMBERS: usize = 4;
 pub const MAX_D20_ENCOUNTER_PARTICIPANTS: usize = 12;
@@ -190,6 +195,7 @@ pub struct ActionDefinition {
     pub target: ActionTargetDefinition,
     pub attack: ActionAttackDefinition,
     pub effect: Option<D20Id>,
+    pub forced_movement: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -278,12 +284,50 @@ pub struct EncounterParticipantDefinition {
     pub faction: EncounterFactionDefinition,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct TacticalPositionDefinition {
+    pub x: u16,
+    pub y: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TacticalPlacementDefinition {
+    pub character: D20Id,
+    pub position: TacticalPositionDefinition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TacticalBoardDefinition {
+    pub width: u16,
+    pub height: u16,
+    pub rows: Vec<String>,
+    pub placements: Vec<TacticalPlacementDefinition>,
+}
+
+impl TacticalBoardDefinition {
+    pub fn is_floor(&self, position: TacticalPositionDefinition) -> bool {
+        self.rows
+            .get(usize::from(position.y))
+            .and_then(|row| row.as_bytes().get(usize::from(position.x)))
+            .is_some_and(|cell| *cell == b'.')
+    }
+
+    pub fn placement(&self, character: &D20Id) -> Option<TacticalPositionDefinition> {
+        self.placements
+            .iter()
+            .find(|placement| &placement.character == character)
+            .map(|placement| placement.position)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncounterDefinition {
     pub id: D20Id,
     pub title: String,
     pub summary: String,
     pub roster: Vec<EncounterParticipantDefinition>,
+    pub board: TacticalBoardDefinition,
     pub available_from_camp: bool,
     pub introduction_source: String,
     pub introduction_text: String,
@@ -1020,6 +1064,15 @@ impl DefinitionCollector {
                     );
                 }
             }
+            if value.forced_movement > MAX_D20_FORCED_MOVEMENT {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_INVALID_FORCED_MOVEMENT",
+                    format!("$/payload/actions/{}/forcedMovement", value.id),
+                    format!("forced movement must be inside 0..={MAX_D20_FORCED_MOVEMENT} squares"),
+                );
+            }
             if value.activation_costs.is_empty() {
                 self.push_diagnostic(
                     package,
@@ -1276,6 +1329,7 @@ impl DefinitionCollector {
                 ),
             );
         }
+        self.validate_tactical_board_candidate(package, subject, value);
         if value.victory.reward_item.is_some() != value.victory.reward_label.is_some()
             || value.victory.recovery_vitality.is_some()
             || value.defeat.reward_item.is_some()
@@ -1288,6 +1342,127 @@ impl DefinitionCollector {
                 "D20_INVALID_ENCOUNTER_OUTCOME",
                 format!("$/payload/encounters/{}", value.id),
                 "victory reward identity/label must be paired, victory cannot recover vitality, and defeat cannot reward or recover zero vitality".to_owned(),
+            );
+        }
+    }
+
+    fn validate_tactical_board_candidate(
+        &mut self,
+        package: &AdmittedRulePackage,
+        subject: &str,
+        encounter: &EncounterCandidate,
+    ) {
+        let board = &encounter.board;
+        let dimensions_valid = board.width >= 5
+            && board.height >= 5
+            && board.width <= MAX_D20_TACTICAL_BOARD_WIDTH
+            && board.height <= MAX_D20_TACTICAL_BOARD_HEIGHT
+            && usize::from(board.width) * usize::from(board.height) <= MAX_D20_TACTICAL_BOARD_CELLS;
+        let rows_valid = dimensions_valid
+            && board.rows.len() == usize::from(board.height)
+            && board.rows.iter().all(|row| {
+                row.len() == usize::from(board.width)
+                    && row.bytes().all(|cell| matches!(cell, b'#' | b'.'))
+            });
+        let enclosed = rows_valid
+            && board
+                .rows
+                .first()
+                .is_some_and(|row| row.bytes().all(|cell| cell == b'#'))
+            && board
+                .rows
+                .last()
+                .is_some_and(|row| row.bytes().all(|cell| cell == b'#'))
+            && board.rows.iter().all(|row| {
+                row.as_bytes().first() == Some(&b'#') && row.as_bytes().last() == Some(&b'#')
+            });
+        if !rows_valid || !enclosed {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_INVALID_TACTICAL_BOARD",
+                format!("$/payload/encounters/{}/board", encounter.id),
+                format!(
+                    "tactical board must be an enclosed 5..={MAX_D20_TACTICAL_BOARD_WIDTH} by 5..={MAX_D20_TACTICAL_BOARD_HEIGHT} ASCII grid containing only # and ."
+                ),
+            );
+            return;
+        }
+
+        let is_floor = |x: u16, y: u16| {
+            board
+                .rows
+                .get(usize::from(y))
+                .and_then(|row| row.as_bytes().get(usize::from(x)))
+                == Some(&b'.')
+        };
+        let roster = encounter
+            .roster
+            .iter()
+            .map(|participant| &participant.character)
+            .collect::<BTreeSet<_>>();
+        let placed = board
+            .placements
+            .iter()
+            .map(|placement| &placement.character)
+            .collect::<BTreeSet<_>>();
+        let distinct_cells = board
+            .placements
+            .iter()
+            .map(|placement| (placement.x, placement.y))
+            .collect::<BTreeSet<_>>();
+        if board.placements.len() != encounter.roster.len()
+            || placed != roster
+            || placed.len() != board.placements.len()
+            || distinct_cells.len() != board.placements.len()
+            || board
+                .placements
+                .iter()
+                .any(|placement| !is_floor(placement.x, placement.y))
+        {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_INVALID_TACTICAL_PLACEMENTS",
+                format!("$/payload/encounters/{}/board/placements", encounter.id),
+                "tactical placements must name every roster participant exactly once on distinct traversable cells"
+                    .to_owned(),
+            );
+            return;
+        }
+
+        let Some(start) = board
+            .placements
+            .first()
+            .map(|placement| (placement.x, placement.y))
+        else {
+            return;
+        };
+        let mut reachable = BTreeSet::from([start]);
+        let mut queue = VecDeque::from([start]);
+        while let Some((x, y)) = queue.pop_front() {
+            for (next_x, next_y) in [
+                (x.wrapping_sub(1), y),
+                (x.saturating_add(1), y),
+                (x, y.wrapping_sub(1)),
+                (x, y.saturating_add(1)),
+            ] {
+                if is_floor(next_x, next_y) && reachable.insert((next_x, next_y)) {
+                    queue.push_back((next_x, next_y));
+                }
+            }
+        }
+        if board
+            .placements
+            .iter()
+            .any(|placement| !reachable.contains(&(placement.x, placement.y)))
+        {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_UNREACHABLE_TACTICAL_PLACEMENT",
+                format!("$/payload/encounters/{}/board", encounter.id),
+                "every tactical placement must share one traversable board region".to_owned(),
             );
         }
     }
@@ -2594,6 +2769,7 @@ fn action_definition(value: ActionCandidate) -> ActionDefinition {
             }
         },
         effect: value.effect,
+        forced_movement: value.forced_movement,
     }
 }
 
@@ -2708,6 +2884,23 @@ fn encounter_definition(value: EncounterCandidate) -> EncounterDefinition {
                 },
             })
             .collect(),
+        board: TacticalBoardDefinition {
+            width: value.board.width,
+            height: value.board.height,
+            rows: value.board.rows,
+            placements: value
+                .board
+                .placements
+                .into_iter()
+                .map(|placement| TacticalPlacementDefinition {
+                    character: placement.character,
+                    position: TacticalPositionDefinition {
+                        x: placement.x,
+                        y: placement.y,
+                    },
+                })
+                .collect(),
+        },
         available_from_camp: value.available_from_camp,
         introduction_source: value.introduction_source,
         introduction_text: value.introduction_text,

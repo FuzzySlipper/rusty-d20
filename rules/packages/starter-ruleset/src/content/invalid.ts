@@ -28,6 +28,7 @@ export const invalidSemanticsModule = defineD20Module(
           range: 1,
         },
         effect: null,
+        forcedMovement: 0,
       }),
     ],
   }),

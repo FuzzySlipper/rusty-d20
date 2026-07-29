@@ -323,6 +323,22 @@ pub(super) fn validate_campaign_vitality(
             "encounter roster does not match canonical participation facts".to_owned(),
         ));
     }
+    let positions = participation
+        .iter()
+        .map(|(_, component)| component.position())
+        .collect::<BTreeSet<_>>();
+    if positions.len() != participation.len()
+        || positions.iter().any(|position| {
+            !encounter.board.is_floor(crate::TacticalPositionDefinition {
+                x: position.x(),
+                y: position.y(),
+            })
+        })
+    {
+        return Err(GameRuntimeError::InvalidSave(
+            "encounter positions overlap or contradict the authored tactical board".to_owned(),
+        ));
+    }
     let party_alive = actual
         .iter()
         .filter(|(_, (faction, _))| *faction == EncounterFaction::Party)

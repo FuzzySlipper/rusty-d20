@@ -82,10 +82,18 @@ ability, defense, damage, and range from the required implement definition and
 require a matching canonical equipped Engine item at preview time.
 
 Scheduled effects may contribute bounded downstream condition clauses. The
-current non-spatial encounter enforces action-tag prohibitions and attack
-penalties in Rust; movement prohibition is compiled and projected for the
-tactical-grid owner to enforce when live combat movement arrives. TypeScript
-does not execute a condition predicate.
+tactical encounter enforces action-tag prohibitions, attack penalties, and
+movement prohibition in Rust. TypeScript does not execute a condition
+predicate.
+
+Each encounter authors one bounded ASCII tactical board and a unique starting
+placement for every admitted participant. Rust adapts that board into direct
+Engine volume, spatial, pathfinding, and collision services. It owns canonical
+positions and occupancy, per-activation movement budgets, legal destination
+routes, range and line-of-effect admission, deterministic opposition movement,
+and bounded forced movement. The browser receives only the immutable board,
+participant coordinates, legal routes, targets, and receipts needed to render
+the overhead view and issue typed commands.
 
 The bounded opposition policy selects from the active encounter participant's
 admitted authored actions with the Rust-owned deterministic session seed, then
@@ -147,7 +155,7 @@ runtime dependencies. See
 
 `rusty-d20-host` serves the Angular build plus read-only session projection and
 typed adventure selection, loadout equip/unequip/transfer, begin-exploration,
-exploration-command, preview, reaction, action, begin-opposition,
+exploration-command, tactical-move, preview, reaction, action, begin-opposition,
 continue-after-outcome, and save commands from one origin. There is no
 browser-facing command that names an encounter; reaching an authored dungeon
 trigger is the only product transport path into combat. The host also exposes
@@ -175,16 +183,17 @@ graph in `boundaries.json`; production code cannot import testing fixtures.
 
 `D20Session` saves the exact Engine revision, ruleset fingerprint, explicit RNG
 seed/roll position, caller-owned turn, and canonical entity snapshot. Session
-save schema 3 includes the catalog-v2 inventory/equipment state together with
+save schema 4 includes the catalog-v2 inventory/equipment state together with
 the registered party roster, encounter participation facts, and per-character
-activation budgets. Product save schema 8 wraps it with the authored adventure
-identity, exact composition fingerprint, phase, dungeon
+activation budgets and canonical tactical positions. Product save schema 9
+wraps it with the authored adventure identity, exact composition fingerprint,
+phase, dungeon
 position/facing/discovery/inspection state, active and resolved encounter
 identities, ordered completed-encounter history, encounter turn owner, terminal
 outcome, product revision, next operation/log identities, and the bounded
 explanatory log.
 
-Product schemas 1 through 7 and session schemas before 3 are rejected rather
+Product schemas 1 through 8 and session schemas before 4 are rejected rather
 than migrated. Unknown schemas, partial loadouts, missing or extra registered
 party/participation/budget facts, unknown budget identities, above-initial
 budgets, and inconsistent phase/turn/outcome pairs also reject rather than

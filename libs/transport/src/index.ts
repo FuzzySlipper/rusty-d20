@@ -10,6 +10,7 @@ import {
   type EquipItemRequestDto,
   type ExplorationCommandRequestDto,
   type GameSnapshotDto,
+  type MoveActorRequestDto,
   type NewAdventureRequestDto,
   type PreviewActionRequestDto,
   type Result,
@@ -47,6 +48,9 @@ export interface RustyD20Transport {
   ) => Promise<Result<GameSnapshotDto>>;
   readonly previewAction: (
     request: PreviewActionRequestDto,
+  ) => Promise<Result<GameSnapshotDto>>;
+  readonly moveActor: (
+    request: MoveActorRequestDto,
   ) => Promise<Result<GameSnapshotDto>>;
   readonly applyReaction: (
     request: ApplyReactionRequestDto,
@@ -101,6 +105,7 @@ export function createHttpRustyD20Transport(http: HttpPort): RustyD20Transport {
       post("/api/v1/session/loadout/transfer", body, decodeGameSnapshot),
     previewAction: (body) =>
       post("/api/v1/session/preview", body, decodeGameSnapshot),
+    moveActor: (body) => post("/api/v1/session/move", body, decodeGameSnapshot),
     applyReaction: (body) =>
       post("/api/v1/session/reaction", body, decodeGameSnapshot),
     applyAction: (body) =>

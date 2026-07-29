@@ -159,6 +159,47 @@ test.describe.serial("real Rust encounter shell", () => {
       page.getByRole("button", { name: "Pin In Place" }),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Disrupt" })).toBeVisible();
+    const tacticalBoard = page.getByRole("region", {
+      name: "Authoritative tactical combat board",
+    });
+    await expect(tacticalBoard.getByRole("gridcell")).toHaveCount(96);
+    await expect(
+      tacticalBoard.getByRole("gridcell", {
+        name: /Mara Venn, party, at 7, 4, acting/,
+      }),
+    ).toBeVisible();
+    await tacticalBoard
+      .getByRole("gridcell", { name: "Move to 7, 3, cost 1" })
+      .click();
+    await expect(
+      tacticalBoard.getByRole("gridcell", {
+        name: /Mara Venn, party, at 7, 3, acting/,
+      }),
+    ).toBeVisible();
+    const afterMovement = (await (
+      await request.get("/api/v1/session")
+    ).json()) as {
+      encounter: {
+        participants: Array<{
+          character: { id: number };
+          x: number;
+          y: number;
+        }>;
+        log: Array<{ details: string[] }>;
+      };
+    };
+    expect(
+      afterMovement.encounter.participants.find(
+        (participant) => participant.character.id === 101,
+      ),
+    ).toMatchObject({ x: 7, y: 3 });
+    expect(
+      afterMovement.encounter.log.some((entry) =>
+        entry.details.some((detail) =>
+          detail.includes("Engine pathfinding admitted a 1-square route"),
+        ),
+      ),
+    ).toBe(true);
     const translatedStrike = page
       .locator(".action-note")
       .filter({ hasText: "Longsword Strike" });
@@ -204,10 +245,6 @@ test.describe.serial("real Rust encounter shell", () => {
       .first()
       .click();
     await expect(preview).toContainText("Gate Skirmisher");
-    await page.getByRole("button", { name: /Parry · 1 Guard/ }).click();
-    await expect(page.getByLabel("Combat log")).toContainText(
-      "Veyra Quill raised a reaction",
-    );
     await page
       .getByRole("button", { name: "Resolve deterministic roll" })
       .click();

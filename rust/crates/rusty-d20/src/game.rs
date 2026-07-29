@@ -13,16 +13,17 @@ use svc_rng::RngSeed;
 use crate::adventure::AuthoredAdventureCatalog;
 use crate::compiler::defense_stat_id;
 use crate::{
-    AbilityScore, ActionPreview, ActionResource, ActionResourcesComponent, AdventureDefinition,
-    AffinitySeed, ApplyActionRequest, CharacterAffinityKindDefinition, CharacterSeed,
-    CharacterTemplateDefinition, D20CompileError, D20Id, D20Ruleset, D20Session, D20SessionError,
-    DamageAffinity, DungeonFacingDefinition, EncounterDefinition, EncounterFaction,
-    EncounterFactionDefinition, EncounterParticipationSeed, EquipmentItemSeed, InventorySeed,
-    ItemInstanceDefinition, ItemRarityDefinition, ReactionReceipt, ScheduledEffectsComponent,
-    SessionSaveError, StorageSeed, ENGINE_REVISION,
+    AbilityScore, ActionAttackDefinition, ActionDefinition, ActionPreview, ActionResource,
+    ActionResourcesComponent, AdventureDefinition, AffinitySeed, ApplyActionRequest,
+    CharacterAffinityKindDefinition, CharacterSeed, CharacterTemplateDefinition, D20CompileError,
+    D20Id, D20Ruleset, D20Session, D20SessionError, DamageAffinity, DungeonFacingDefinition,
+    EncounterDefinition, EncounterFaction, EncounterFactionDefinition, EncounterParticipationSeed,
+    EquipmentItemSeed, InventorySeed, ItemInstanceDefinition, ItemRarityDefinition,
+    ReactionReceipt, ScheduledEffectsComponent, SessionSaveError, StorageSeed,
+    TacticalBoardDefinition, TacticalPosition, ENGINE_REVISION,
 };
 
-const GAME_SAVE_SCHEMA_VERSION: u32 = 8;
+const GAME_SAVE_SCHEMA_VERSION: u32 = 9;
 const MAX_LOG_ENTRIES: usize = 64;
 const MAX_LOG_DETAILS: usize = 32;
 const MAX_LOG_SOURCE_BYTES: usize = 128;
@@ -35,9 +36,11 @@ mod dto;
 mod exploration;
 mod persistence;
 mod projection;
+mod tactical;
 
 use content::*;
 pub use dto::*;
+use tactical::*;
 
 #[derive(Debug, Clone)]
 struct PendingAction {
@@ -45,6 +48,8 @@ struct PendingAction {
     token: String,
     preview: ActionPreview,
 }
+
+type LegalActionPreview = (D20Id, EntityId, ActionPreview);
 
 #[derive(Debug)]
 struct RestoreData {
@@ -511,6 +516,12 @@ impl GameRuntime {
                         EncounterFactionDefinition::Opposition => EncounterFaction::Opposition,
                     },
                     initiative,
+                    position: tactical_position(
+                        encounter
+                            .board
+                            .placement(&participant.character)
+                            .expect("compiled encounter participant has a placement"),
+                    ),
                 })
             })
             .collect::<Result<Vec<_>, GameRuntimeError>>()?;
@@ -770,6 +781,17 @@ impl GameRuntime {
                 actor_definition.name
             )));
         }
+        let action_definition = self
+            .rules
+            .action(&action)
+            .expect("compiled character action exists");
+        if !self.action_is_spatially_legal(actor, target, action_definition)? {
+            return Err(GameRuntimeError::InvalidCommand(format!(
+                "target {} is outside {} range or line of effect",
+                target.raw(),
+                action
+            )));
+        }
         let serial = self.next_operation;
         let operation = operation(&format!("action-{serial}"))?;
         let preview = self
@@ -786,6 +808,78 @@ impl GameRuntime {
         });
         self.bump_revision()?;
         self.saved_revision = None;
+        self.snapshot()
+    }
+
+    pub fn move_actor(
+        &mut self,
+        request: MoveActorRequestDto,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        let mut staged = self.clone();
+        let snapshot = staged.move_actor_inner(request)?;
+        *self = staged;
+        Ok(snapshot)
+    }
+
+    fn move_actor_inner(
+        &mut self,
+        request: MoveActorRequestDto,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        self.ensure_revision(request.expected_revision)?;
+        self.ensure_encounter_phase()?;
+        self.ensure_current_faction(EncounterFaction::Party)?;
+        self.ensure_mutation_capacity(true, true)?;
+        if self.pending.is_some() {
+            return Err(GameRuntimeError::InvalidCommand(
+                "resolve the pending action before moving".to_owned(),
+            ));
+        }
+        let actor = entity(request.actor_id)?;
+        let (current_actor, _) = self.current_actor()?;
+        if actor != current_actor {
+            return Err(GameRuntimeError::InvalidCommand(
+                "the selected actor does not own the current activation".to_owned(),
+            ));
+        }
+        let destination = TacticalPosition::new(request.x, request.y);
+        let route = self
+            .legal_tactical_routes(actor)?
+            .into_iter()
+            .find(|route| route.destination == destination)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidCommand(format!(
+                    "cell ({}, {}) is not a legal destination for the current movement budget",
+                    request.x, request.y
+                ))
+            })?;
+        let movement_cost = u16::try_from(route.path.len().saturating_sub(1))
+            .map_err(|_| GameRuntimeError::CounterOverflow)?;
+        let origin = self.participant_position(actor)?;
+        self.session_mut()?
+            .relocate_encounter_participant(actor, destination, movement_cost)?;
+        self.bump_revision()?;
+        self.saved_revision = None;
+        self.push_log(
+            GameLogKindDto::Turn,
+            "Movement",
+            &format!(
+                "{} moved from ({}, {}) to ({}, {}).",
+                self.character_name(actor)?,
+                origin.x(),
+                origin.y(),
+                destination.x(),
+                destination.y()
+            ),
+            vec![format!(
+                "Engine pathfinding admitted a {movement_cost}-square route: {}.",
+                route
+                    .path
+                    .iter()
+                    .map(|position| format!("({}, {})", position.x(), position.y()))
+                    .collect::<Vec<_>>()
+                    .join(" → ")
+            )],
+        )?;
         self.snapshot()
     }
 
@@ -876,6 +970,34 @@ impl GameRuntime {
             ),
             format!("Deterministic roll index {}.", receipt.roll_index),
         ];
+        if receipt.hit && action_definition.forced_movement > 0 {
+            let actor_position = self.participant_position(receipt.actor)?;
+            let target_position = self.participant_position(receipt.target)?;
+            let destination = forced_destination(
+                self.tactical_board()?,
+                &self.occupied_positions(Some(receipt.target))?,
+                actor_position,
+                target_position,
+                action_definition.forced_movement,
+            );
+            if destination != target_position {
+                self.session_mut()?.relocate_encounter_participant(
+                    receipt.target,
+                    destination,
+                    0,
+                )?;
+                details.push(format!(
+                    "{} was forced from ({}, {}) to ({}, {}) without spending movement.",
+                    self.character_name(receipt.target)?,
+                    target_position.x(),
+                    target_position.y(),
+                    destination.x(),
+                    destination.y()
+                ));
+            } else {
+                details.push("Forced movement was blocked by terrain or occupancy.".to_owned());
+            }
+        }
         if let Some(damage) = &receipt.damage {
             for part in &damage.parts {
                 details.push(format!(
@@ -981,35 +1103,55 @@ impl GameRuntime {
             .filter(|(_, faction, _)| *faction == EncounterFaction::Party)
             .map(|(entity, _, _)| entity)
             .collect::<Vec<_>>();
-        let mut unavailable = Vec::new();
-        let legal_actions = opponent
-            .actions
-            .iter()
-            .flat_map(|action| targets.iter().map(move |target| (action, *target)))
-            .filter_map(|(action, target)| {
-                let result = self.session().and_then(|session| {
-                    session
-                        .preview_action(actor, target, action, operation.clone())
-                        .map_err(GameRuntimeError::Session)
-                });
-                match result {
-                    Ok(preview) => Some(Ok((action.clone(), target, preview))),
-                    Err(GameRuntimeError::Session(error))
-                        if is_unavailable_action_error(&error) =>
-                    {
-                        unavailable.push((action.clone(), target));
-                        None
-                    }
-                    Err(error) => Some(Err(error)),
-                }
-            })
-            .collect::<Result<Vec<_>, GameRuntimeError>>()?;
+        let (mut legal_actions, mut unavailable) =
+            self.legal_action_previews(actor, &opponent.actions, &targets, &operation)?;
+        let mut movement_detail = None;
         if legal_actions.is_empty() {
-            self.advance_activation(vec![format!(
-                    "{} had no legal authored action/target pair; {} unavailable choice(s) were skipped without mutation.",
+            if let Some(route) = self.opposition_movement_route(actor, &targets)? {
+                let origin = self.participant_position(actor)?;
+                let movement_cost = u16::try_from(route.path.len().saturating_sub(1))
+                    .map_err(|_| GameRuntimeError::CounterOverflow)?;
+                match self.session_mut()?.relocate_encounter_participant(
+                    actor,
+                    route.destination,
+                    movement_cost,
+                ) {
+                    Ok(()) => {
+                        movement_detail = Some(format!(
+                            "{} moved from ({}, {}) to ({}, {}) along an Engine-admitted {}-square route.",
+                            opponent.name,
+                            origin.x(),
+                            origin.y(),
+                            route.destination.x(),
+                            route.destination.y(),
+                            movement_cost
+                        ));
+                        (legal_actions, unavailable) = self.legal_action_previews(
+                            actor,
+                            &opponent.actions,
+                            &targets,
+                            &operation,
+                        )?;
+                    }
+                    Err(D20SessionError::MovementForbidden { effect, .. }) => {
+                        movement_detail = Some(format!(
+                            "{} could not move because {} forbids voluntary movement.",
+                            opponent.name,
+                            humanize(effect.as_str())
+                        ));
+                    }
+                    Err(error) => return Err(GameRuntimeError::Session(error)),
+                }
+            }
+        }
+        if legal_actions.is_empty() {
+            let mut details = movement_detail.into_iter().collect::<Vec<_>>();
+            details.push(format!(
+                    "{} had no legal authored action/target pair after tactical movement; {} unavailable choice(s) were skipped.",
                     opponent.name,
-                    unavailable.len()
-                )])?;
+                    unavailable
+                ));
+            self.advance_activation(details)?;
             self.bump_revision()?;
             self.saved_revision = None;
             return self.snapshot();
@@ -1049,12 +1191,12 @@ impl GameRuntime {
                 humanize(action.as_str()),
                 self.character_name(target)?
             ),
-            vec![format!(
+            movement_detail.into_iter().chain([format!(
                 "Deterministic enemy policy selected legal choice {} of {}; {} unavailable authored choice(s) were excluded.",
                 index + 1,
                 legal_actions.len(),
-                unavailable.len()
-            )],
+                unavailable
+            )]).collect(),
         )?;
         self.snapshot()
     }
@@ -1437,6 +1579,174 @@ impl GameRuntime {
             .collect()
     }
 
+    fn participant_position(&self, entity: EntityId) -> Result<TacticalPosition, GameRuntimeError> {
+        self.session()?
+            .encounter_participation(entity)?
+            .map(|participation| participation.position())
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(format!(
+                    "participant {} has no canonical tactical position",
+                    entity.raw()
+                ))
+            })
+    }
+
+    fn occupied_positions(
+        &self,
+        excluded: Option<EntityId>,
+    ) -> Result<BTreeSet<TacticalPosition>, GameRuntimeError> {
+        self.ordered_participants()?
+            .into_iter()
+            .filter(|(entity, _, _)| Some(*entity) != excluded)
+            .map(|(entity, _, _)| self.participant_position(entity))
+            .collect()
+    }
+
+    fn tactical_board(&self) -> Result<&TacticalBoardDefinition, GameRuntimeError> {
+        Ok(&current_encounter_definition(
+            &self.rules,
+            self.adventure()?,
+            self.campaign
+                .as_ref()
+                .ok_or(GameRuntimeError::NoEncounter)?,
+        )?
+        .board)
+    }
+
+    fn action_range(&self, action: &ActionDefinition) -> Result<u16, GameRuntimeError> {
+        match &action.attack {
+            ActionAttackDefinition::Fixed { range, .. } => Ok(*range),
+            ActionAttackDefinition::Implement { implement } => self
+                .rules
+                .implement(implement)
+                .map(|definition| definition.range)
+                .ok_or_else(|| {
+                    GameRuntimeError::InvalidState(format!(
+                        "action {} references missing implement {}",
+                        action.id, implement
+                    ))
+                }),
+        }
+    }
+
+    fn action_is_spatially_legal(
+        &self,
+        actor: EntityId,
+        target: EntityId,
+        action: &ActionDefinition,
+    ) -> Result<bool, GameRuntimeError> {
+        action_is_spatially_legal(
+            self.tactical_board()?,
+            self.participant_position(actor)?,
+            self.participant_position(target)?,
+            self.action_range(action)?,
+            action.target.line_of_effect,
+        )
+        .map_err(GameRuntimeError::InvalidState)
+    }
+
+    fn legal_tactical_routes(
+        &self,
+        actor: EntityId,
+    ) -> Result<Vec<TacticalRoute>, GameRuntimeError> {
+        if self
+            .session()?
+            .active_movement_prohibition(actor)?
+            .is_some()
+        {
+            return Ok(Vec::new());
+        }
+        let movement = id("movement")?;
+        let available = self
+            .session()?
+            .activation_budgets(actor)?
+            .current(&movement)
+            .unwrap_or(0);
+        legal_routes(
+            self.tactical_board()?,
+            &self.occupied_positions(Some(actor))?,
+            self.participant_position(actor)?,
+            available,
+        )
+        .map_err(GameRuntimeError::InvalidState)
+    }
+
+    fn legal_action_previews(
+        &self,
+        actor: EntityId,
+        actions: &[D20Id],
+        targets: &[EntityId],
+        operation: &OperationId,
+    ) -> Result<(Vec<LegalActionPreview>, usize), GameRuntimeError> {
+        let mut unavailable = 0_usize;
+        let previews = actions
+            .iter()
+            .flat_map(|action| targets.iter().map(move |target| (action, *target)))
+            .filter_map(|(action, target)| {
+                let definition = self
+                    .rules
+                    .action(action)
+                    .expect("compiled character action exists");
+                match self.action_is_spatially_legal(actor, target, definition) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        unavailable += 1;
+                        return None;
+                    }
+                    Err(error) => return Some(Err(error)),
+                }
+                match self.session().and_then(|session| {
+                    session
+                        .preview_action(actor, target, action, operation.clone())
+                        .map_err(GameRuntimeError::Session)
+                }) {
+                    Ok(preview) => Some(Ok((action.clone(), target, preview))),
+                    Err(GameRuntimeError::Session(error))
+                        if is_unavailable_action_error(&error) =>
+                    {
+                        unavailable += 1;
+                        None
+                    }
+                    Err(error) => Some(Err(error)),
+                }
+            })
+            .collect::<Result<Vec<_>, GameRuntimeError>>()?;
+        Ok((previews, unavailable))
+    }
+
+    fn opposition_movement_route(
+        &self,
+        actor: EntityId,
+        targets: &[EntityId],
+    ) -> Result<Option<TacticalRoute>, GameRuntimeError> {
+        let target_positions = targets
+            .iter()
+            .map(|target| self.participant_position(*target))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(self
+            .legal_tactical_routes(actor)?
+            .into_iter()
+            .min_by_key(|route| {
+                let distance = target_positions
+                    .iter()
+                    .map(|target| {
+                        route
+                            .destination
+                            .x()
+                            .abs_diff(target.x())
+                            .max(route.destination.y().abs_diff(target.y()))
+                    })
+                    .min()
+                    .unwrap_or(u16::MAX);
+                (
+                    distance,
+                    route.path.len(),
+                    route.destination.y(),
+                    route.destination.x(),
+                )
+            }))
+    }
+
     fn current_actor(&self) -> Result<(EntityId, EncounterFaction), GameRuntimeError> {
         let actor = self
             .campaign
@@ -1673,7 +1983,8 @@ impl GameRuntimeError {
             Self::Session(D20SessionError::StalePreview { .. }) => (ApiErrorKindDto::Stale, true),
             Self::Session(
                 D20SessionError::RequiredImplementNotEquipped { .. }
-                | D20SessionError::ActionForbidden { .. },
+                | D20SessionError::ActionForbidden { .. }
+                | D20SessionError::MovementForbidden { .. },
             ) => (ApiErrorKindDto::Invalid, false),
             Self::PendingActionCannotBeSaved | Self::InvalidCommand(_) | Self::D20Identity(_) => {
                 (ApiErrorKindDto::Invalid, false)

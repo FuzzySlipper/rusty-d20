@@ -21,7 +21,8 @@ use rusty_d20::{
     EffectCandidate, EncounterCandidate, EncounterFactionCandidate, EncounterOutcomeCandidate,
     EncounterParticipantCandidate, EquipmentItemSeed, EquipmentReferenceCandidate,
     ImplementCandidate, ItemInstanceCandidate, ItemRarityCandidate, ReactionCandidate,
-    ResourceCandidate, SessionSaveError, StorageCandidate, D20_CANDIDATE_SCHEMA_VERSION,
+    ResourceCandidate, SessionSaveError, StorageCandidate, TacticalBoardCandidate,
+    TacticalPlacementCandidate, D20_CANDIDATE_SCHEMA_VERSION,
 };
 use serde_json::json;
 use svc_rng::RngSeed;
@@ -67,6 +68,29 @@ fn dungeon(encounter: &str) -> DungeonCandidate {
 
 fn effect_instance(value: &str) -> EffectInstanceId {
     EffectInstanceId::parse(value).unwrap()
+}
+
+fn tactical_board(characters: &[&str]) -> TacticalBoardCandidate {
+    TacticalBoardCandidate {
+        width: 7,
+        height: 5,
+        rows: vec![
+            "#######".to_owned(),
+            "#.....#".to_owned(),
+            "#.....#".to_owned(),
+            "#.....#".to_owned(),
+            "#######".to_owned(),
+        ],
+        placements: characters
+            .iter()
+            .enumerate()
+            .map(|(index, character)| TacticalPlacementCandidate {
+                character: id(character),
+                x: u16::try_from(index + 1).unwrap(),
+                y: 2,
+            })
+            .collect(),
+    }
 }
 
 fn base_character_template(id_value: &str, entity_id: u64) -> CharacterTemplateCandidate {
@@ -194,6 +218,7 @@ fn base_candidate() -> D20RulesCandidate {
                 range: 1,
             },
             effect: Some(id("bleeding")),
+            forced_movement: 0,
         }],
         character_templates: vec![
             base_character_template("attacker", ATTACKER.raw()),
@@ -771,6 +796,7 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
                     faction: EncounterFactionCandidate::Opposition,
                 },
             ],
+            board: tactical_board(&["hero", "missing-opponent"]),
             available_from_camp: true,
             introduction_source: "Encounter".to_owned(),
             introduction_text: "A broken encounter starts.".to_owned(),
@@ -904,6 +930,7 @@ fn otherwise_valid_adventure_candidate(
                     faction: EncounterFactionCandidate::Opposition,
                 },
             ],
+            board: tactical_board(&["hero", "opponent"]),
             available_from_camp: true,
             introduction_source: "Encounter".to_owned(),
             introduction_text: "The duel starts.".to_owned(),

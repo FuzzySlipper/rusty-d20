@@ -319,6 +319,15 @@ impl GameRuntime {
             .ordered_participants()?
             .into_iter()
             .map(|(entity, faction, initiative)| {
+                let position = session
+                    .encounter_participation(entity)?
+                    .ok_or_else(|| {
+                        GameRuntimeError::InvalidState(format!(
+                            "participant {} has no canonical encounter facts",
+                            entity.raw()
+                        ))
+                    })?
+                    .position();
                 let character = self
                     .rules
                     .character_templates()
@@ -337,6 +346,8 @@ impl GameRuntime {
                     },
                     initiative,
                     defeated: self.vitality(entity)? == 0,
+                    x: position.x(),
+                    y: position.y(),
                 })
             })
             .collect::<Result<Vec<_>, GameRuntimeError>>()?;
@@ -384,6 +395,11 @@ impl GameRuntime {
                     .iter()
                     .copied()
                     .filter_map(|target| {
+                        match self.action_is_spatially_legal(actor, EntityId::new(target), action) {
+                            Ok(true) => {}
+                            Ok(false) => return None,
+                            Err(error) => return Some(Err(error)),
+                        }
                         match session.preview_action(
                             actor,
                             EntityId::new(target),
@@ -444,13 +460,44 @@ impl GameRuntime {
                         .effect
                         .as_ref()
                         .map(|effect| humanize(effect.as_str())),
+                    forced_movement: action.forced_movement,
                 });
             }
         }
+        let encounter = current_encounter_definition(&self.rules, self.adventure()?, campaign)?;
+        let legal_moves = if let Some(actor) =
+            current_actor.filter(|_| current_is_party && self.pending.is_none())
+        {
+            self.legal_tactical_routes(actor)?
+                .into_iter()
+                .map(|route| TacticalMoveDto {
+                    x: route.destination.x(),
+                    y: route.destination.y(),
+                    cost: u16::try_from(route.path.len().saturating_sub(1))
+                        .expect("compiled tactical route length fits u16"),
+                    route: route
+                        .path
+                        .into_iter()
+                        .map(|position| TacticalCellDto {
+                            x: position.x(),
+                            y: position.y(),
+                        })
+                        .collect(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         Ok(EncounterDto {
             round: session.current_turn(),
             next_roll: session.next_roll_index(),
             current_actor_id: campaign.current_actor_id,
+            board: TacticalBoardDto {
+                width: encounter.board.width,
+                height: encounter.board.height,
+                rows: encounter.board.rows.clone(),
+                legal_moves,
+            },
             participants,
             actions,
             legal_targets,

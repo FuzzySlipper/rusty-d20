@@ -167,6 +167,12 @@ export class SessionStore {
     );
   }
 
+  async moveActor(actorId: number, x: number, y: number): Promise<void> {
+    await this.mutate((expectedRevision) =>
+      this.transport.moveActor({ expectedRevision, actorId, x, y }),
+    );
+  }
+
   async applyReaction(previewToken: string, reactionId: string): Promise<void> {
     await this.mutate((expectedRevision) =>
       this.transport.applyReaction({

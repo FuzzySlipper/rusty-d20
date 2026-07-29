@@ -66,6 +66,7 @@ function transport(
     equipItem: async () => sessionResult,
     unequipItem: async () => sessionResult,
     transferItem: async () => sessionResult,
+    moveActor: async () => sessionResult,
     previewAction: async () => sessionResult,
     applyReaction: async () => sessionResult,
     applyAction: async () => sessionResult,
@@ -139,12 +140,30 @@ describe("SessionStore", () => {
         round: 0,
         nextRoll: 0,
         currentActorId: 101,
+        board: {
+          width: 5,
+          height: 5,
+          rows: ["#####", "#...#", "#...#", "#...#", "#####"],
+          legalMoves: [
+            {
+              x: 1,
+              y: 2,
+              cost: 1,
+              route: [
+                { x: 1, y: 1 },
+                { x: 1, y: 2 },
+              ],
+            },
+          ],
+        },
         participants: [
           {
             character: hero,
             faction: "party",
             initiative: 18,
             defeated: false,
+            x: 1,
+            y: 1,
           },
           {
             character: {
@@ -156,6 +175,8 @@ describe("SessionStore", () => {
             faction: "opposition",
             initiative: 14,
             defeated: false,
+            x: 2,
+            y: 1,
           },
         ],
         actions: [],
@@ -164,6 +185,10 @@ describe("SessionStore", () => {
         log: [],
       },
     };
+    const encounterState = encounter.encounter;
+    if (encounterState === null) {
+      throw new Error("encounter test fixture is missing");
+    }
     const store = new SessionStore(
       transport({
         newAdventure: async (request) => {
@@ -171,6 +196,22 @@ describe("SessionStore", () => {
           return { ok: true, value: camp };
         },
         beginExploration: async () => ({ ok: true, value: encounter }),
+        moveActor: async (request) => ({
+          ok: true,
+          value: {
+            ...encounter,
+            revision: 4,
+            encounter: {
+              ...encounterState,
+              board: { ...encounterState.board, legalMoves: [] },
+              participants: encounterState.participants.map((participant) =>
+                participant.character.id === request.actorId
+                  ? { ...participant, x: request.x, y: request.y }
+                  : participant,
+              ),
+            },
+          },
+        }),
       }),
     );
 
@@ -190,6 +231,16 @@ describe("SessionStore", () => {
         encounter: { round: 0, currentActorId: 101 },
       },
     });
+    await store.moveActor(101, 1, 2);
+    const moved = store.session();
+    expect(moved).toMatchObject({ kind: "data", value: { revision: 4 } });
+    expect(
+      moved.kind === "data"
+        ? moved.value.encounter?.participants.find(
+            (participant) => participant.character.id === 101,
+          )
+        : undefined,
+    ).toMatchObject({ character: { id: 101 }, x: 1, y: 2 });
   });
 
   it("routes loadout commands and preserves typed atomic rejection", async () => {

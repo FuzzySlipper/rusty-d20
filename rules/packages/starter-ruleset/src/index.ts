@@ -124,6 +124,7 @@ export function authorContentOnlyExtension(
             range: 1,
           },
           effect: null,
+          forcedMovement: 1,
         }),
       ],
     }),

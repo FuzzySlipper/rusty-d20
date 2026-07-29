@@ -315,12 +315,16 @@ describe("decodeGameSnapshot", () => {
         faction: "party",
         initiative: 18,
         defeated: false,
+        x: 1,
+        y: 1,
       },
       {
         character: target,
         faction: "opposition",
         initiative: 14,
         defeated: false,
+        x: 2,
+        y: 1,
       },
     ];
     const action = {
@@ -335,11 +339,29 @@ describe("decodeGameSnapshot", () => {
       implement: "Training Blade",
       tags: ["Attack", "Melee", "Weapon"],
       effect: "Bleeding",
+      forcedMovement: 1,
+    };
+    const board = {
+      width: 5,
+      height: 5,
+      rows: ["#####", "#...#", "#...#", "#...#", "#####"],
+      legalMoves: [
+        {
+          x: 1,
+          y: 2,
+          cost: 1,
+          route: [
+            { x: 1, y: 1 },
+            { x: 1, y: 2 },
+          ],
+        },
+      ],
     };
     const encounterWithAction = {
       round: 0,
       nextRoll: 0,
       currentActorId: 101,
+      board,
       participants,
       actions: [action],
       legalTargets: [
@@ -363,6 +385,63 @@ describe("decodeGameSnapshot", () => {
         encounter: encounterWithAction,
       }),
     ).toMatchObject({ ok: true });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: activeCampaign,
+        encounter: {
+          ...encounterWithAction,
+          board: { ...board, hiddenTopology: "leaked" },
+        },
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: activeCampaign,
+        encounter: {
+          ...encounterWithAction,
+          board: {
+            ...board,
+            legalMoves: [
+              {
+                x: 2,
+                y: 2,
+                cost: 2,
+                route: [
+                  { x: 1, y: 1 },
+                  { x: 2, y: 1 },
+                  { x: 2, y: 2 },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: activeCampaign,
+        encounter: {
+          ...encounterWithAction,
+          board: {
+            ...board,
+            legalMoves: [
+              {
+                ...board.legalMoves[0],
+                route: [
+                  { x: 1, y: 1 },
+                  { x: 0, y: 1 },
+                ],
+                x: 0,
+                y: 1,
+              },
+            ],
+          },
+        },
+      }),
+    ).toMatchObject({ ok: false });
     expect(
       decodeGameSnapshot({
         ...empty,
@@ -445,6 +524,7 @@ describe("decodeGameSnapshot", () => {
       ],
       actions: [],
       legalTargets: [],
+      board: { ...board, legalMoves: [] },
     };
     expect(
       decodeGameSnapshot({

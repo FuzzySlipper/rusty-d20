@@ -15,6 +15,23 @@ export const embersWakeModule = defineD20Module(
           { character: 'sera-vale', faction: 'party' },
           { character: 'ash-seer', faction: 'opposition' },
         ],
+        board: {
+          width: 10,
+          height: 7,
+          rows: [
+            '##########',
+            '#........#',
+            '#..#.....#',
+            '#........#',
+            '#.....#..#',
+            '#........#',
+            '##########',
+          ],
+          placements: [
+            { character: 'sera-vale', x: 1, y: 3 },
+            { character: 'ash-seer', x: 8, y: 3 },
+          ],
+        },
         availableFromCamp: true,
         introductionSource: 'Encounter',
         introductionText: 'Sera Vale enters the Ash Seer reliquary.',

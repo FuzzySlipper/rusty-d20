@@ -51,6 +51,7 @@ export interface EncounterView {
   readonly currentActorId: number | null;
   readonly currentActor: CharacterDto | null;
   readonly currentFaction: EncounterParticipantDto["faction"] | null;
+  readonly board: EncounterDto["board"];
   readonly party: readonly CharacterDto[];
   readonly targets: readonly CharacterDto[];
   readonly participants: readonly EncounterParticipantDto[];
@@ -118,6 +119,7 @@ function projectEncounter(encounter: EncounterDto): EncounterView {
     currentActorId: encounter.currentActorId,
     currentActor: current?.character ?? null,
     currentFaction: current?.faction ?? null,
+    board: encounter.board,
     party: encounter.participants
       .filter((participant) => participant.faction === "party")
       .map((participant) => participant.character),

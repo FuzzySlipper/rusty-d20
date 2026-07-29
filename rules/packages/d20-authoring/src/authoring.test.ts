@@ -53,6 +53,7 @@ test('module order does not change canonical package identity', () => {
             range: 1,
           },
           effect: null,
+          forcedMovement: 0,
         }),
       ],
     }),
