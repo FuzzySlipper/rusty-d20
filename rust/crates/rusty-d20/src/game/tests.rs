@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use super::*;
+use gameplay_rules::decode_canonical_rule_package;
 
 const PLAYER: EntityId = EntityId::new(101);
 const OPPONENT: EntityId = EntityId::new(102);
@@ -35,6 +36,76 @@ fn defense_value(loadout: &LoadoutDto, defense: &str) -> i64 {
         .find(|readout| readout.id == defense)
         .unwrap_or_else(|| panic!("missing {defense} defense readout"))
         .value
+}
+
+fn subset_party_catalog() -> AuthoredAdventureCatalog {
+    let mut artifact: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../rules/artifacts/starter/catalog.json"
+    ))
+    .unwrap();
+    let packages = artifact["packages"].as_array_mut().unwrap();
+    let mut replaced = false;
+    for canonical in packages {
+        let package =
+            decode_canonical_rule_package(canonical.as_str().unwrap().as_bytes()).unwrap();
+        if package.identity().package().as_str() != "wardens-gate" {
+            continue;
+        }
+        let mut candidate: crate::D20RulesCandidate =
+            serde_json::from_value(package.payload().clone()).unwrap();
+        let encounter = candidate
+            .encounters
+            .iter_mut()
+            .find(|encounter| encounter.id.as_str() == ENCOUNTER_ID)
+            .unwrap();
+        encounter.roster.retain(|participant| {
+            participant.faction == crate::EncounterFactionCandidate::Opposition
+                || participant.character.as_str() == "mara-venn"
+        });
+        let admitted = crate::admit_d20_candidate(
+            crate::D20PackageEnvelope {
+                domain: package.identity().domain().clone(),
+                package: package.identity().package().clone(),
+                version: package.identity().version(),
+                dependencies: package.dependencies().to_vec(),
+                sources: package.sources().to_vec(),
+                provenance: package.provenance().to_vec(),
+            },
+            candidate,
+        )
+        .unwrap();
+        *canonical = json!(String::from_utf8(admitted.canonical_bytes().to_vec()).unwrap());
+        replaced = true;
+    }
+    assert!(replaced, "the built-in Warden package must be rewritten");
+    AuthoredAdventureCatalog::decode(&serde_json::to_string(&artifact).unwrap()).unwrap()
+}
+
+fn subset_party_runtime() -> GameRuntime {
+    let catalog = subset_party_catalog();
+    let adventure = id("wardens-gate").unwrap();
+    let rules = catalog.rules_for(&adventure).unwrap();
+    GameRuntime::empty_with_rules(catalog, rules, adventure).unwrap()
+}
+
+fn saved_activation_budgets(
+    save: &mut serde_json::Value,
+    entity: u64,
+) -> &mut Vec<serde_json::Value> {
+    let component = save["session"]["entityState"]["registeredComponents"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|component| component["typeId"] == "rusty-d20.activation-budgets")
+        .unwrap();
+    component["values"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|value| value["entity"] == entity)
+        .unwrap()["value"]["budgets"]
+        .as_array_mut()
+        .unwrap()
 }
 
 #[test]
@@ -157,6 +228,136 @@ fn schema_eight_fresh_save_round_trips_and_old_product_or_session_schemas_reject
         Err(GameRuntimeError::Save(
             SessionSaveError::UnsupportedSchema { actual: 2 }
         ))
+    ));
+}
+
+#[test]
+fn restored_activation_budgets_require_the_exact_authored_identity_set_and_bounds() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    start_test_encounter(&mut runtime);
+    let encoded = runtime.encode_save().unwrap();
+    assert_eq!(
+        GameRuntime::decode_save(&encoded)
+            .unwrap()
+            .encode_save()
+            .unwrap(),
+        encoded,
+        "a canonical activation budget set must reopen exactly"
+    );
+
+    let mut unknown_extra: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    saved_activation_budgets(&mut unknown_extra, PLAYER.raw()).push(json!({
+        "id": "zz-forged-budget",
+        "current": 1
+    }));
+    assert!(matches!(
+        GameRuntime::decode_save(&serde_json::to_string(&unknown_extra).unwrap()),
+        Err(GameRuntimeError::Save(SessionSaveError::InvalidState(
+            D20SessionError::ActivationBudgetUnavailable { budget, .. }
+        ))) if budget.as_str() == "zz-forged-budget"
+    ));
+
+    let mut missing_known: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    saved_activation_budgets(&mut missing_known, PLAYER.raw())
+        .retain(|budget| budget["id"] != "bonus-action");
+    assert!(matches!(
+        GameRuntime::decode_save(&serde_json::to_string(&missing_known).unwrap()),
+        Err(GameRuntimeError::Save(SessionSaveError::InvalidState(
+            D20SessionError::ActivationBudgetUnavailable { budget, .. }
+        ))) if budget.as_str() == "bonus-action"
+    ));
+
+    let mut above_initial: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    saved_activation_budgets(&mut above_initial, PLAYER.raw())
+        .iter_mut()
+        .find(|budget| budget["id"] == "standard-action")
+        .unwrap()["current"] = json!(2);
+    assert!(matches!(
+        GameRuntime::decode_save(&serde_json::to_string(&above_initial).unwrap()),
+        Err(GameRuntimeError::Save(SessionSaveError::InvalidState(
+            D20SessionError::ActivationBudgetUnavailable {
+                budget,
+                required: 2,
+                available: 1,
+                ..
+            }
+        ))) if budget.as_str() == "standard-action"
+    ));
+}
+
+#[test]
+fn subset_party_defeat_reopens_but_cannot_borrow_nonparticipant_liveness() {
+    let mut runtime = subset_party_runtime();
+    let camp = runtime.new_adventure(0).unwrap();
+    runtime
+        .enter_encounter(EnterEncounterRequestDto {
+            expected_revision: camp.revision,
+            encounter_id: ENCOUNTER_ID.to_owned(),
+        })
+        .unwrap();
+    let outcome = play_to_outcome(&mut runtime, "pass", false, false);
+    assert_eq!(
+        outcome.campaign.as_ref().unwrap().phase,
+        CampaignPhaseDto::Outcome
+    );
+    assert_eq!(
+        outcome
+            .campaign
+            .as_ref()
+            .unwrap()
+            .latest_outcome
+            .as_ref()
+            .unwrap()
+            .kind,
+        EncounterOutcomeKindDto::Defeat
+    );
+    assert!(outcome
+        .campaign
+        .as_ref()
+        .unwrap()
+        .party
+        .iter()
+        .any(|member| member.character.id != PLAYER.raw() && member.character.health_current > 0));
+
+    let encoded = runtime.encode_save().unwrap();
+    assert_eq!(
+        GameRuntime::decode_save_with_catalog(&encoded, subset_party_catalog())
+            .unwrap()
+            .encode_save()
+            .unwrap(),
+        encoded,
+        "defeat is determined by the admitted encounter party, not idle adventure members"
+    );
+
+    let living_opposition = outcome
+        .encounter
+        .as_ref()
+        .unwrap()
+        .participants
+        .iter()
+        .find(|participant| {
+            participant.faction == EncounterFactionDto::Opposition
+                && participant.character.health_current > 0
+        })
+        .unwrap()
+        .character
+        .id;
+    let mut forged_active: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    forged_active["campaign"]["phase"] = json!("encounter");
+    forged_active["campaign"]["resolvedEncounterId"] = serde_json::Value::Null;
+    forged_active["campaign"]["currentActorId"] = json!(living_opposition);
+    forged_active["campaign"]["outcome"] = serde_json::Value::Null;
+    forged_active["campaign"]["completedEncounters"]
+        .as_array_mut()
+        .unwrap()
+        .pop();
+    assert!(matches!(
+        GameRuntime::decode_save_with_catalog(
+            &serde_json::to_string(&forged_active).unwrap(),
+            subset_party_catalog()
+        ),
+        Err(GameRuntimeError::InvalidSave(message))
+            if message.contains("party alive=0")
     ));
 }
 

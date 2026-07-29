@@ -174,31 +174,22 @@ graph in `boundaries.json`; production code cannot import testing fixtures.
 ## Persistence and execution
 
 `D20Session` saves the exact Engine revision, ruleset fingerprint, explicit RNG
-seed/roll position, caller-owned turn, and canonical entity snapshot. Product
-session save schema 2 includes the catalog-v2 inventory/equipment state.
-Product save schema 7 wraps it with the authored adventure identity, exact
-composition fingerprint, phase, dungeon position/facing/discovery/inspection
-state, active and resolved encounter identities, ordered completed-encounter
-history, encounter turn owner, terminal outcome, product revision, next
-operation/log identities, and the bounded explanatory log. Product schemas 1
-through 3 migrate
-deterministically: the old mechanics catalog is upgraded, the fixed starter
-loadout is installed without replay where required, and older active
-encounters resume at the player decision boundary. A reachable legacy
-encounter with one participant already at zero vitality is instead reconciled
-to the matching outcome; Warden victory transfers the reward once
-through the same Engine services, while player defeat leaves inventory
-unchanged. Legacy dead-camp and both-dead states reject as impossible. Schema 1
-establishes the active Iron Warden encounter. Unknown schemas, partial
-loadouts, and inconsistent phase/turn/outcome pairs reject rather than
-defaulting or discarding state. Schema 4 is admitted through its strict
-single-adventure compatibility shape and upgraded to the catalog composition;
-schema 5 additionally migrates the prior Warden composition fingerprint and
-infers its completed first encounter. Schema 6 admits only its exact reviewed
-Warden or Ember composition and deterministically establishes the authored
-dungeon location needed to preserve its active or resolved encounter before
-strict schema-7 admission. New saves never infer a missing adventure or
-composition.
+seed/roll position, caller-owned turn, and canonical entity snapshot. Session
+save schema 3 includes the catalog-v2 inventory/equipment state together with
+the registered party roster, encounter participation facts, and per-character
+activation budgets. Product save schema 8 wraps it with the authored adventure
+identity, exact composition fingerprint, phase, dungeon
+position/facing/discovery/inspection state, active and resolved encounter
+identities, ordered completed-encounter history, encounter turn owner, terminal
+outcome, product revision, next operation/log identities, and the bounded
+explanatory log.
+
+Product schemas 1 through 7 and session schemas before 3 are rejected rather
+than migrated. Unknown schemas, partial loadouts, missing or extra registered
+party/participation/budget facts, unknown budget identities, above-initial
+budgets, and inconsistent phase/turn/outcome pairs also reject rather than
+defaulting or discarding state. New saves never infer a missing adventure,
+composition, roster, or action economy.
 Opaque previews are intentionally not durable, so save rejects before file
 mutation while an action is pending; the user must resolve it first. This
 includes a pending action whose reaction has already committed resource and
@@ -206,10 +197,13 @@ effect changes. Compiled definitions are not copied into live saves. Reopen
 resolves the saved adventure from the embedded catalog, requires its matching
 immutable package closure and fingerprint, reconstructs registered components,
 validates mechanics, d20 references, product loadout and reward identities,
-cross-checks encounter phase and outcome against authoritative participant
-vitality, reacquires non-durable component revisions, and continues the exact
-camp, exploration, encounter, or outcome phase, exact dungeon progress, turn
-owner, loadout, and deterministic rolls without replay.
+requires the exact authored budget identity set and canonical participation
+roster, cross-checks encounter phase and outcome against the vitality of that
+encounter's party and opposition participants, and separately requires at
+least one living whole-party member in camp or exploration. It reacquires
+non-durable component revisions and continues the exact camp, exploration,
+encounter, or outcome phase, exact dungeon progress, turn owner, loadout, and
+deterministic rolls without replay.
 
 File layout and storage policy remain host-owned. The browser observes the
 configured save identity but never chooses an arbitrary path. Reset validates

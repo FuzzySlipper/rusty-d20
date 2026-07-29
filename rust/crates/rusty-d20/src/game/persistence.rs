@@ -2,6 +2,14 @@ use super::*;
 
 impl GameRuntime {
     pub fn decode_save(input: &str) -> Result<Self, GameRuntimeError> {
+        let catalog = AuthoredAdventureCatalog::builtin().map_err(GameRuntimeError::Catalog)?;
+        Self::decode_save_with_catalog(input, catalog)
+    }
+
+    pub(super) fn decode_save_with_catalog(
+        input: &str,
+        catalog: AuthoredAdventureCatalog,
+    ) -> Result<Self, GameRuntimeError> {
         if input.len() > MAX_GAME_SAVE_BYTES {
             return Err(GameRuntimeError::InvalidSave(format!(
                 "save contains {} bytes; maximum is {MAX_GAME_SAVE_BYTES}",
@@ -16,7 +24,6 @@ impl GameRuntime {
             });
         }
         let save: GameSave = serde_json::from_value(value)?;
-        let catalog = AuthoredAdventureCatalog::builtin().map_err(GameRuntimeError::Catalog)?;
         let adventure_id = D20Id::parse(&save.campaign.adventure_id).map_err(|error| {
             GameRuntimeError::InvalidSave(format!("saved adventure identity is invalid: {error}"))
         })?;

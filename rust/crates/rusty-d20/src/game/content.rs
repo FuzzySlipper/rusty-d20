@@ -257,7 +257,7 @@ pub(super) fn validate_campaign_vitality(
     session: &D20Session,
     campaign: &CampaignState,
 ) -> Result<(), GameRuntimeError> {
-    let party_alive = adventure
+    let adventure_party_alive = adventure
         .party
         .iter()
         .map(|member| character_entity(rules, adventure, member))
@@ -273,7 +273,10 @@ pub(super) fn validate_campaign_vitality(
         campaign.phase,
         CampaignPhase::Camp | CampaignPhase::Exploration
     ) {
-        if campaign.current_actor_id.is_some() || !participation.is_empty() || party_alive == 0 {
+        if campaign.current_actor_id.is_some()
+            || !participation.is_empty()
+            || adventure_party_alive == 0
+        {
             return Err(GameRuntimeError::InvalidSave(
                 "camp/exploration phase contradicts canonical party or participation state"
                     .to_owned(),
@@ -320,6 +323,14 @@ pub(super) fn validate_campaign_vitality(
             "encounter roster does not match canonical participation facts".to_owned(),
         ));
     }
+    let party_alive = actual
+        .iter()
+        .filter(|(_, (faction, _))| *faction == EncounterFaction::Party)
+        .map(|(entity, _)| saved_vitality(session, *entity))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|vitality| *vitality > 0)
+        .count();
     let opposition_alive = actual
         .iter()
         .filter(|(_, (faction, _))| *faction == EncounterFaction::Opposition)

@@ -1989,25 +1989,41 @@ fn validate_restored_d20_state(
                     component: ActivationBudgetsComponent::LABEL,
                 })
             })?;
-        for definition in rules.activation_budgets() {
-            let current = budgets.current(&definition.id).ok_or_else(|| {
-                SessionSaveError::InvalidState(D20SessionError::ActivationBudgetUnavailable {
-                    entity,
-                    budget: definition.id.clone(),
-                    required: 0,
-                    available: 0,
-                })
-            })?;
-            if current > definition.initial {
+        let mut expected_budgets = rules
+            .activation_budgets()
+            .map(|definition| (definition.id.clone(), definition.initial))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        for budget in budgets.budgets() {
+            let Some(initial) = expected_budgets.remove(budget.id()) else {
                 return Err(SessionSaveError::InvalidState(
                     D20SessionError::ActivationBudgetUnavailable {
                         entity,
-                        budget: definition.id.clone(),
-                        required: current,
-                        available: definition.initial,
+                        budget: budget.id().clone(),
+                        required: budget.current(),
+                        available: 0,
+                    },
+                ));
+            };
+            if budget.current() > initial {
+                return Err(SessionSaveError::InvalidState(
+                    D20SessionError::ActivationBudgetUnavailable {
+                        entity,
+                        budget: budget.id().clone(),
+                        required: budget.current(),
+                        available: initial,
                     },
                 ));
             }
+        }
+        if let Some((budget, _)) = expected_budgets.first_key_value() {
+            return Err(SessionSaveError::InvalidState(
+                D20SessionError::ActivationBudgetUnavailable {
+                    entity,
+                    budget: budget.clone(),
+                    required: 0,
+                    available: 0,
+                },
+            ));
         }
         validate_character_seed(
             rules,
