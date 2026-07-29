@@ -21,7 +21,8 @@ authored d20 encounter. It is not yet a broad d20 game.
   authentication, TLS, multi-user coordination, or migration between Engine or
   ruleset revisions. Product schemas 1 through 3 have explicit migrations into
   schema 4, including deterministic installation of the starter loadout and a
-  defined legacy encounter turn; this is not a general migration framework.
+  defined legacy encounter turn or vitality-derived terminal outcome; this is
+  not a general migration framework.
 - Opaque action previews are process-local and intentionally not saved. Save is
   unavailable until the pending action is resolved, including after a reaction
   commits its cost and effect. Completed entity state, turn, RNG position,

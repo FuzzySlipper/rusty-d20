@@ -551,6 +551,8 @@ impl GameRuntime {
         campaign: CampaignState,
         legacy: bool,
     ) -> Result<Self, GameRuntimeError> {
+        let mut data = data;
+        let mut campaign = campaign;
         let session_json = serde_json::to_string(&data.session)?;
         let mut session = D20Session::decode_save(rules.clone(), &session_json)?;
         if legacy
@@ -560,6 +562,9 @@ impl GameRuntime {
                 .is_none()
         {
             install_product_loadout(&mut session)?;
+        }
+        if legacy {
+            campaign = migrate_legacy_campaign(&mut session, campaign, &mut data.next_operation)?;
         }
         validate_product_state(&session, &campaign)?;
         if data.next_operation == 0 || data.next_log_id == 0 || data.log.len() > MAX_LOG_ENTRIES {
@@ -1721,27 +1726,8 @@ impl GameRuntime {
         let mut details = Vec::new();
         match outcome {
             EncounterOutcome::Victory => {
-                let unequip_serial = self.next_operation;
-                self.session_mut()?.unequip_armor(
-                    OPPONENT,
-                    OPPONENT_ARMOR,
-                    operation(&format!("reward-unequip-{unequip_serial}"))?,
-                )?;
-                self.next_operation = self
-                    .next_operation
-                    .checked_add(1)
-                    .ok_or(GameRuntimeError::CounterOverflow)?;
-                let transfer_serial = self.next_operation;
-                self.session_mut()?.transfer_armor(
-                    OPPONENT_ARMOR,
-                    OPPONENT,
-                    CAMP_STASH,
-                    operation(&format!("reward-transfer-{transfer_serial}"))?,
-                )?;
-                self.next_operation = self
-                    .next_operation
-                    .checked_add(1)
-                    .ok_or(GameRuntimeError::CounterOverflow)?;
+                let session = self.session.as_mut().ok_or(GameRuntimeError::NoEncounter)?;
+                transfer_victory_reward(session, &mut self.next_operation)?;
                 details.push(
                     "Warden chain armor was unequipped and transferred into canonical camp storage."
                         .to_owned(),
@@ -2435,6 +2421,67 @@ fn saved_vitality(session: &D20Session, entity: EntityId) -> Result<i64, GameRun
                 entity.raw()
             ))
         })
+}
+
+fn migrate_legacy_campaign(
+    session: &mut D20Session,
+    mut campaign: CampaignState,
+    next_operation: &mut u64,
+) -> Result<CampaignState, GameRuntimeError> {
+    let player_vitality = saved_vitality(session, PLAYER)?;
+    let opponent_vitality = saved_vitality(session, OPPONENT)?;
+    match campaign.phase {
+        CampaignPhase::Encounter if player_vitality > 0 && opponent_vitality > 0 => {}
+        CampaignPhase::Encounter if player_vitality > 0 && opponent_vitality == 0 => {
+            transfer_victory_reward(session, next_operation)?;
+            campaign.phase = CampaignPhase::Outcome;
+            campaign.turn_owner = None;
+            campaign.outcome = Some(EncounterOutcome::Victory);
+        }
+        CampaignPhase::Encounter if player_vitality == 0 && opponent_vitality > 0 => {
+            campaign.phase = CampaignPhase::Outcome;
+            campaign.turn_owner = None;
+            campaign.outcome = Some(EncounterOutcome::Defeat);
+        }
+        CampaignPhase::Camp if player_vitality > 0 && opponent_vitality > 0 => {}
+        CampaignPhase::Encounter | CampaignPhase::Camp | CampaignPhase::Outcome => {
+            return Err(GameRuntimeError::InvalidSave(format!(
+                "legacy campaign has an impossible phase/vitality combination: player={player_vitality}, opponent={opponent_vitality}"
+            )));
+        }
+    }
+    Ok(campaign)
+}
+
+fn transfer_victory_reward(
+    session: &mut D20Session,
+    next_operation: &mut u64,
+) -> Result<(), GameRuntimeError> {
+    if *next_operation == 0 {
+        return Err(GameRuntimeError::InvalidSave(
+            "next operation identity must be nonzero".to_owned(),
+        ));
+    }
+    let unequip_serial = *next_operation;
+    session.unequip_armor(
+        OPPONENT,
+        OPPONENT_ARMOR,
+        operation(&format!("reward-unequip-{unequip_serial}"))?,
+    )?;
+    *next_operation = next_operation
+        .checked_add(1)
+        .ok_or(GameRuntimeError::CounterOverflow)?;
+    let transfer_serial = *next_operation;
+    session.transfer_armor(
+        OPPONENT_ARMOR,
+        OPPONENT,
+        CAMP_STASH,
+        operation(&format!("reward-transfer-{transfer_serial}"))?,
+    )?;
+    *next_operation = next_operation
+        .checked_add(1)
+        .ok_or(GameRuntimeError::CounterOverflow)?;
+    Ok(())
 }
 
 fn validate_inventory(
@@ -3139,6 +3186,131 @@ mod tests {
         GameRuntime::decode_save(&defeat_runtime.encode_save().unwrap()).unwrap();
     }
 
+    #[test]
+    fn schema_three_terminal_encounter_remains_migratable() {
+        let mut encounter_runtime = GameRuntime::empty().unwrap();
+        start_test_encounter(&mut encounter_runtime);
+        let encounter_save = encounter_runtime.encode_save().unwrap();
+
+        for schema in 1..=3 {
+            let live = legacy_product_save(&encounter_save, schema);
+            let live_snapshot = GameRuntime::decode_save(&serde_json::to_string(&live).unwrap())
+                .unwrap()
+                .snapshot()
+                .unwrap();
+            assert_eq!(
+                live_snapshot.campaign.as_ref().unwrap().phase,
+                CampaignPhaseDto::Encounter
+            );
+            assert_eq!(
+                live_snapshot.encounter.as_ref().unwrap().turn_owner,
+                Some(EncounterTurnOwnerDto::Player)
+            );
+
+            let mut legacy_victory = live.clone();
+            set_saved_vitality(&mut legacy_victory, OPPONENT, 0);
+            let mut migrated_victory =
+                GameRuntime::decode_save(&serde_json::to_string(&legacy_victory).unwrap()).unwrap();
+            let victory = migrated_victory.snapshot().unwrap();
+            let campaign = victory.campaign.as_ref().unwrap();
+            assert_eq!(campaign.phase, CampaignPhaseDto::Outcome);
+            assert_eq!(
+                campaign.latest_outcome.as_ref().unwrap().kind,
+                EncounterOutcomeKindDto::Victory
+            );
+            assert_eq!(
+                campaign
+                    .loadout
+                    .stash_items
+                    .iter()
+                    .filter(|item| item.entity_id == OPPONENT_ARMOR.raw())
+                    .count(),
+                1
+            );
+            let schema_four_victory = migrated_victory.encode_save().unwrap();
+            let schema_four_value: serde_json::Value =
+                serde_json::from_str(&schema_four_victory).unwrap();
+            assert_eq!(
+                schema_four_value["schemaVersion"],
+                json!(GAME_SAVE_SCHEMA_VERSION)
+            );
+            assert_eq!(schema_four_value["nextOperation"], json!(3));
+            assert_eq!(
+                GameRuntime::decode_save(&schema_four_victory)
+                    .unwrap()
+                    .encode_save()
+                    .unwrap(),
+                schema_four_victory
+            );
+            let camp = migrated_victory.return_to_camp(victory.revision).unwrap();
+            assert_eq!(
+                camp.campaign
+                    .as_ref()
+                    .unwrap()
+                    .loadout
+                    .stash_items
+                    .iter()
+                    .filter(|item| item.entity_id == OPPONENT_ARMOR.raw())
+                    .count(),
+                1
+            );
+
+            let mut legacy_defeat = live.clone();
+            set_saved_vitality(&mut legacy_defeat, PLAYER, 0);
+            let mut migrated_defeat =
+                GameRuntime::decode_save(&serde_json::to_string(&legacy_defeat).unwrap()).unwrap();
+            let defeat = migrated_defeat.snapshot().unwrap();
+            let campaign = defeat.campaign.as_ref().unwrap();
+            assert_eq!(campaign.phase, CampaignPhaseDto::Outcome);
+            assert_eq!(
+                campaign.latest_outcome.as_ref().unwrap().kind,
+                EncounterOutcomeKindDto::Defeat
+            );
+            assert!(!campaign
+                .loadout
+                .stash_items
+                .iter()
+                .any(|item| item.entity_id == OPPONENT_ARMOR.raw()));
+            let schema_four_defeat = migrated_defeat.encode_save().unwrap();
+            assert_eq!(
+                GameRuntime::decode_save(&schema_four_defeat)
+                    .unwrap()
+                    .encode_save()
+                    .unwrap(),
+                schema_four_defeat
+            );
+            let recovered = migrated_defeat.return_to_camp(defeat.revision).unwrap();
+            assert_eq!(
+                recovered.campaign.as_ref().unwrap().hero.health_current,
+                i64::from(DEFEAT_RECOVERY_VITALITY)
+            );
+
+            let mut impossible = live;
+            set_saved_vitality(&mut impossible, PLAYER, 0);
+            set_saved_vitality(&mut impossible, OPPONENT, 0);
+            assert_legacy_vitality_rejected(&impossible);
+        }
+
+        let mut camp_runtime = GameRuntime::empty().unwrap();
+        camp_runtime.new_adventure(0).unwrap();
+        let camp_save = camp_runtime.encode_save().unwrap();
+        for schema in 2..=3 {
+            let live_camp = legacy_product_save(&camp_save, schema);
+            let migrated = GameRuntime::decode_save(&serde_json::to_string(&live_camp).unwrap())
+                .unwrap()
+                .snapshot()
+                .unwrap();
+            assert_eq!(
+                migrated.campaign.as_ref().unwrap().phase,
+                CampaignPhaseDto::Camp
+            );
+
+            let mut impossible_camp = live_camp;
+            set_saved_vitality(&mut impossible_camp, OPPONENT, 0);
+            assert_legacy_vitality_rejected(&impossible_camp);
+        }
+    }
+
     fn play_to_outcome(
         runtime: &mut GameRuntime,
         player_action: &str,
@@ -3261,6 +3433,37 @@ mod tests {
             ),
             "unexpected save rejection: {error:?}"
         );
+    }
+
+    fn assert_legacy_vitality_rejected(save: &serde_json::Value) {
+        let error = GameRuntime::decode_save(&serde_json::to_string(save).unwrap()).unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                GameRuntimeError::InvalidSave(message)
+                    if message.contains("impossible phase/vitality combination")
+            ),
+            "unexpected legacy save rejection: {error:?}"
+        );
+    }
+
+    fn legacy_product_save(input: &str, schema: u32) -> serde_json::Value {
+        let mut save: serde_json::Value = if schema <= 2 {
+            serde_json::from_str(&downgrade_to_pre_loadout_v2(input)).unwrap()
+        } else {
+            serde_json::from_str(input).unwrap()
+        };
+        save["schemaVersion"] = json!(schema);
+        if schema == 1 {
+            save.as_object_mut().unwrap().remove("campaign");
+        } else {
+            save["campaign"]
+                .as_object_mut()
+                .unwrap()
+                .remove("turnOwner");
+            save["campaign"].as_object_mut().unwrap().remove("outcome");
+        }
+        save
     }
 
     #[test]

@@ -120,10 +120,14 @@ turn owner, terminal outcome, product revision, next operation/log identities,
 and the bounded explanatory log. Product schemas 1 through 3 migrate
 deterministically: the old mechanics catalog is upgraded, the fixed starter
 loadout is installed without replay where required, and older active
-encounters resume at the player decision boundary. Schema 1 establishes the
-active Iron Warden encounter. Unknown schemas, partial loadouts, and
-inconsistent phase/turn/outcome pairs reject rather than defaulting or
-discarding state.
+encounters resume at the player decision boundary. A reachable legacy
+encounter with one participant already at zero vitality is instead reconciled
+to the matching schema-4 outcome; Warden defeat transfers the reward once
+through the same Engine services, while player defeat leaves inventory
+unchanged. Legacy dead-camp and both-dead states reject as impossible. Schema 1
+establishes the active Iron Warden encounter. Unknown schemas, partial
+loadouts, and inconsistent phase/turn/outcome pairs reject rather than
+defaulting or discarding state.
 Opaque previews are intentionally not durable, so save rejects before file
 mutation while an action is pending; the user must resolve it first. This
 includes a pending action whose reaction has already committed resource and
