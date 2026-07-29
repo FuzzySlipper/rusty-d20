@@ -156,15 +156,6 @@ impl AuthoredAdventureCatalog {
         Ok(rules)
     }
 
-    pub(crate) fn rules_for_package(&self, package: &str) -> Result<D20Ruleset, String> {
-        let identity = self
-            .packages
-            .keys()
-            .find(|identity| identity.package().as_str() == package)
-            .ok_or_else(|| format!("unknown authored package {package}"))?;
-        D20Ruleset::compile(self.package_closure(identity)?).map_err(|error| error.to_string())
-    }
-
     fn package_closure(
         &self,
         root: &RulePackageIdentity,
@@ -314,7 +305,7 @@ mod tests {
                 title: format!("Adventure {index}"),
                 default: first_is_default && index == start,
                 selectable: true,
-                hero: D20Id::parse("hero").unwrap(),
+                party: vec![D20Id::parse("hero").unwrap()],
                 characters: Vec::new(),
                 camp_storage: D20Id::parse("camp").unwrap(),
                 storage: Vec::new(),

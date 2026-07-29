@@ -9,18 +9,26 @@ use crate::D20Id;
 
 pub const ABILITY_SCORES_COMPONENT_TYPE_ID: &str = "rusty-d20.ability-scores";
 pub const ACTION_RESOURCES_COMPONENT_TYPE_ID: &str = "rusty-d20.action-resources";
+pub const ACTIVATION_BUDGETS_COMPONENT_TYPE_ID: &str = "rusty-d20.activation-budgets";
+pub const ENCOUNTER_PARTICIPATION_COMPONENT_TYPE_ID: &str = "rusty-d20.encounter-participation";
 pub const SCHEDULED_EFFECTS_COMPONENT_TYPE_ID: &str = "rusty-d20.scheduled-effects";
 
 pub const ABILITY_SCORES_COMPONENT_CODEC_ID: &str = "rusty-d20.ability-scores-json";
 pub const ACTION_RESOURCES_COMPONENT_CODEC_ID: &str = "rusty-d20.action-resources-json";
+pub const ACTIVATION_BUDGETS_COMPONENT_CODEC_ID: &str = "rusty-d20.activation-budgets-json";
+pub const ENCOUNTER_PARTICIPATION_COMPONENT_CODEC_ID: &str =
+    "rusty-d20.encounter-participation-json";
 pub const SCHEDULED_EFFECTS_COMPONENT_CODEC_ID: &str = "rusty-d20.scheduled-effects-json";
 
 pub const ABILITY_SCORES_COMPONENT_CODEC_VERSION: u32 = 1;
 pub const ACTION_RESOURCES_COMPONENT_CODEC_VERSION: u32 = 1;
+pub const ACTIVATION_BUDGETS_COMPONENT_CODEC_VERSION: u32 = 1;
+pub const ENCOUNTER_PARTICIPATION_COMPONENT_CODEC_VERSION: u32 = 1;
 pub const SCHEDULED_EFFECTS_COMPONENT_CODEC_VERSION: u32 = 1;
 
 pub const MAX_D20_ABILITIES_PER_ENTITY: usize = 64;
 pub const MAX_D20_RESOURCES_PER_ENTITY: usize = 64;
+pub const MAX_D20_ACTIVATION_BUDGETS_PER_ENTITY: usize = 64;
 pub const MAX_D20_SCHEDULED_EFFECTS_PER_ENTITY: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,6 +151,113 @@ impl ActionResourcesComponent {
 }
 
 impl EntityComponent for ActionResourcesComponent {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ActivationBudget {
+    id: D20Id,
+    current: u16,
+}
+
+impl ActivationBudget {
+    pub const fn new(id: D20Id, current: u16) -> Self {
+        Self { id, current }
+    }
+
+    pub const fn id(&self) -> &D20Id {
+        &self.id
+    }
+
+    pub const fn current(&self) -> u16 {
+        self.current
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ActivationBudgetsComponent {
+    budgets: Vec<ActivationBudget>,
+}
+
+impl ActivationBudgetsComponent {
+    pub const LABEL: &'static str = "ActivationBudgetsComponent";
+
+    pub fn new(mut budgets: Vec<ActivationBudget>) -> Result<Self, D20ComponentDataError> {
+        budgets.sort_by(|left, right| left.id.cmp(&right.id));
+        validate_unique(
+            &budgets,
+            MAX_D20_ACTIVATION_BUDGETS_PER_ENTITY,
+            "activationBudgets",
+            |entry| entry.id.as_str(),
+        )?;
+        Ok(Self { budgets })
+    }
+
+    pub fn budgets(&self) -> &[ActivationBudget] {
+        &self.budgets
+    }
+
+    pub fn current(&self, id: &D20Id) -> Option<u16> {
+        self.budgets
+            .binary_search_by(|entry| entry.id.cmp(id))
+            .ok()
+            .map(|index| self.budgets[index].current)
+    }
+
+    pub(crate) fn spend(&self, id: &D20Id, amount: u16) -> Option<Self> {
+        let index = self
+            .budgets
+            .binary_search_by(|entry| entry.id.cmp(id))
+            .ok()?;
+        let after = self.budgets[index].current.checked_sub(amount)?;
+        let mut candidate = self.clone();
+        candidate.budgets[index].current = after;
+        Some(candidate)
+    }
+}
+
+impl EntityComponent for ActivationBudgetsComponent {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EncounterFaction {
+    Party,
+    Opposition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct EncounterParticipationComponent {
+    encounter: D20Id,
+    faction: EncounterFaction,
+    initiative: i16,
+}
+
+impl EncounterParticipationComponent {
+    pub const LABEL: &'static str = "EncounterParticipationComponent";
+
+    pub const fn new(encounter: D20Id, faction: EncounterFaction, initiative: i16) -> Self {
+        Self {
+            encounter,
+            faction,
+            initiative,
+        }
+    }
+
+    pub const fn encounter(&self) -> &D20Id {
+        &self.encounter
+    }
+
+    pub const fn faction(&self) -> EncounterFaction {
+        self.faction
+    }
+
+    pub const fn initiative(&self) -> i16 {
+        self.initiative
+    }
+}
+
+impl EntityComponent for EncounterParticipationComponent {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -274,6 +389,24 @@ pub fn register_d20_components(
             })
         },
     ))?;
+    staged.register(durable_registration::<ActivationBudgetsComponent>(
+        ACTIVATION_BUDGETS_COMPONENT_TYPE_ID,
+        ACTIVATION_BUDGETS_COMPONENT_CODEC_ID,
+        ACTIVATION_BUDGETS_COMPONENT_CODEC_VERSION,
+        |value| {
+            validate_canonical(
+                value.budgets(),
+                MAX_D20_ACTIVATION_BUDGETS_PER_ENTITY,
+                |entry| entry.id.as_str(),
+            )
+        },
+    ))?;
+    staged.register(durable_registration::<EncounterParticipationComponent>(
+        ENCOUNTER_PARTICIPATION_COMPONENT_TYPE_ID,
+        ENCOUNTER_PARTICIPATION_COMPONENT_CODEC_ID,
+        ENCOUNTER_PARTICIPATION_COMPONENT_CODEC_VERSION,
+        |_| Ok(()),
+    ))?;
     staged.register(durable_registration::<ScheduledEffectsComponent>(
         SCHEDULED_EFFECTS_COMPONENT_TYPE_ID,
         SCHEDULED_EFFECTS_COMPONENT_CODEC_ID,
@@ -372,6 +505,8 @@ mod tests {
         for type_id in [
             ABILITY_SCORES_COMPONENT_TYPE_ID,
             ACTION_RESOURCES_COMPONENT_TYPE_ID,
+            ACTIVATION_BUDGETS_COMPONENT_TYPE_ID,
+            ENCOUNTER_PARTICIPATION_COMPONENT_TYPE_ID,
             SCHEDULED_EFFECTS_COMPONENT_TYPE_ID,
         ] {
             let kind = inspection

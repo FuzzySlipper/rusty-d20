@@ -37,7 +37,7 @@ impl GameRuntime {
         state.discovered.insert(state.position);
         campaign.phase = CampaignPhase::Exploration;
         campaign.active_encounter_id = None;
-        campaign.turn_owner = None;
+        campaign.current_actor_id = None;
         self.bump_revision()?;
         self.saved_revision = None;
         self.push_log(

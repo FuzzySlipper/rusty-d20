@@ -11,20 +11,28 @@ export const wardensGateModule = defineD20Module(
         id: 'iron-warden',
         title: 'The Iron Warden',
         summary: 'Challenge the armored sentinel guarding the mountain pass.',
-        opponent: 'iron-warden',
+        roster: [
+          { character: 'mara-venn', faction: 'party' },
+          { character: 'ilyra-fen', faction: 'party' },
+          { character: 'corin-ash', faction: 'party' },
+          { character: 'veyra-quill', faction: 'party' },
+          { character: 'iron-warden', faction: 'opposition' },
+          { character: 'gate-skirmisher', faction: 'opposition' },
+        ],
         availableFromCamp: true,
         introductionSource: 'Encounter',
-        introductionText: 'Mara Venn faces the Iron Warden.',
+        introductionText:
+          "Mara Venn's four-person company faces the Warden patrol.",
         introductionDetails: [
-          "Iron Warden's chain armor, impact resistance, and equipped implements are active sources.",
+          'Ward Anchor, Pathfinder, Signal Guide, and Field Shaper roles enter one authoritative initiative order.',
+          "The Iron Warden and Gate Skirmisher's equipment, resources, and effects remain canonical entity facts.",
         ],
         victory: {
           title: 'The Iron Warden defeated',
           summary:
-            'Mara prevailed; her remaining vitality and resources carry forward.',
+            'The company prevailed; every member’s remaining vitality and resources carry forward.',
           logSource: 'Victory',
-          logText:
-            'The Iron Warden falls and yields the Warden chain armor.',
+          logText: 'The Iron Warden falls and yields the Warden chain armor.',
           logDetails: [
             'Warden chain armor was unequipped and transferred into canonical camp storage.',
           ],
@@ -33,13 +41,13 @@ export const wardensGateModule = defineD20Module(
           recoveryVitality: null,
         },
         defeat: {
-          title: 'Mara was defeated',
+          title: 'The company was defeated',
           summary:
             'No reward was granted; returning to camp applies bounded recovery.',
           logSource: 'Defeat',
-          logText: 'Mara Venn falls and must recover before continuing.',
+          logText: 'Mara’s company falls and must recover before continuing.',
           logDetails: [
-            'Mara reached zero vitality; no reward or inventory mutation occurred.',
+            'Every party participant reached zero vitality; no reward or inventory mutation occurred.',
             'Return to camp applies the explicit bounded recovery consequence.',
           ],
           rewardItem: null,
@@ -52,10 +60,17 @@ export const wardensGateModule = defineD20Module(
         title: "The Warden's Reckoning",
         summary:
           'Face the reawakened sentinel after its gate armor has become part of the camp loadout.',
-        opponent: 'iron-warden',
+        roster: [
+          { character: 'mara-venn', faction: 'party' },
+          { character: 'ilyra-fen', faction: 'party' },
+          { character: 'corin-ash', faction: 'party' },
+          { character: 'veyra-quill', faction: 'party' },
+          { character: 'iron-warden', faction: 'opposition' },
+          { character: 'gate-skirmisher', faction: 'opposition' },
+        ],
         availableFromCamp: true,
         introductionSource: 'Encounter',
-        introductionText: "The Iron Warden rises for a final reckoning.",
+        introductionText: 'The Iron Warden rises for a final reckoning.',
         introductionDetails: [
           'Rust restores the returning opponent through the bounded vitality track service.',
           'Prior resources, effects, loadout, and the first reward remain authoritative.',
@@ -65,7 +80,8 @@ export const wardensGateModule = defineD20Module(
           summary:
             'Mara completed the authored gate sequence; no duplicate reward was created.',
           logSource: 'Victory',
-          logText: 'The reawakened sentinel yields and the mountain pass is secure.',
+          logText:
+            'The reawakened sentinel yields and the mountain pass is secure.',
           logDetails: [
             'The ordered campaign recorded its second distinct encounter outcome.',
             'The original Warden chain reward remains the only canonical reward instance.',
@@ -96,8 +112,15 @@ export const wardensGateModule = defineD20Module(
         title: "The Warden's Gate",
         default: true,
         selectable: true,
-        hero: 'mara-venn',
-        characters: ['mara-venn', 'iron-warden'],
+        party: ['mara-venn', 'ilyra-fen', 'corin-ash', 'veyra-quill'],
+        characters: [
+          'mara-venn',
+          'ilyra-fen',
+          'corin-ash',
+          'veyra-quill',
+          'iron-warden',
+          'gate-skirmisher',
+        ],
         campStorage: 'camp-stash',
         storage: ['camp-stash'],
         items: [
@@ -109,6 +132,18 @@ export const wardensGateModule = defineD20Module(
           'mara-blade',
           'warden-bow',
           'mara-bow',
+          'ilyra-chain',
+          'ilyra-blade',
+          'ilyra-bow',
+          'corin-chain',
+          'corin-blade',
+          'corin-bow',
+          'veyra-chain',
+          'veyra-blade',
+          'veyra-bow',
+          'skirmisher-chain',
+          'skirmisher-blade',
+          'skirmisher-bow',
         ],
         encounters: ['iron-warden', 'wardens-reckoning'],
         dungeon: {
@@ -155,8 +190,8 @@ export const wardensGateModule = defineD20Module(
         startText: "Mara Venn prepares at the Warden's Gate camp.",
         startDetails: [
           'Ruleweaver foundation + Steel Guard authored packages compiled by Rust.',
-          'Mara’s implement-bound training blade and field bow are canonical equipped items.',
-          'The Iron Warden and Warden’s Reckoning form an ordered two-encounter campaign.',
+          'The Ward Anchor, Pathfinder, Signal Guide, and Field Shaper each own canonical equipment and resources.',
+          'Two Warden opponents and four party members form one bounded authoritative initiative lifecycle.',
         ],
       }),
     ],

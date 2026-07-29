@@ -7,10 +7,6 @@ impl GameRuntime {
         session: &D20Session,
     ) -> Result<CampaignDto, GameRuntimeError> {
         let adventure = self.adventure()?;
-        let hero = self
-            .rules
-            .character_template(&adventure.hero)
-            .expect("compiled hero exists");
         let encounter = current_encounter_definition(&self.rules, adventure, campaign)?;
         let available_encounters = if campaign.phase == CampaignPhase::Camp {
             next_available_encounter_definition(&self.rules, adventure, campaign)?
@@ -59,8 +55,21 @@ impl GameRuntime {
                 CampaignPhase::Encounter => CampaignPhaseDto::Encounter,
                 CampaignPhase::Outcome => CampaignPhaseDto::Outcome,
             },
-            hero: self.project_character(session, hero)?,
-            loadout: self.project_loadout(session)?,
+            party: adventure
+                .party
+                .iter()
+                .map(|member| {
+                    let character = self
+                        .rules
+                        .character_template(member)
+                        .expect("compiled party member exists");
+                    Ok(PartyMemberDto {
+                        character: self.project_character(session, character)?,
+                        loadout: self
+                            .project_loadout(session, EntityId::new(character.entity_id))?,
+                    })
+                })
+                .collect::<Result<Vec<_>, GameRuntimeError>>()?,
             active_encounter_id: campaign.active_encounter_id.clone(),
             available_encounters,
             latest_outcome: campaign.outcome.map(|outcome| match outcome {
@@ -93,16 +102,17 @@ impl GameRuntime {
     pub(super) fn project_loadout(
         &self,
         session: &D20Session,
+        owner: EntityId,
     ) -> Result<LoadoutDto, GameRuntimeError> {
         let adventure = self.adventure()?;
-        let hero = character_entity(&self.rules, adventure, &adventure.hero)?;
+        party_member_name(&self.rules, adventure, owner)?;
         let stash = storage_entity(&self.rules, adventure, &adventure.camp_storage)?;
-        let inventory = session.inventory_view(hero)?;
+        let inventory = session.inventory_view(owner)?;
         let equipment = session
             .entities()
-            .component::<EquipmentComponent>(hero)?
+            .component::<EquipmentComponent>(owner)?
             .ok_or_else(|| {
-                GameRuntimeError::InvalidState("player equipment component is missing".to_owned())
+                GameRuntimeError::InvalidState("party equipment component is missing".to_owned())
             })?;
         let equipped_by_item = equipment
             .assignments()
@@ -193,7 +203,7 @@ impl GameRuntime {
                 let defense = StatService::evaluate(
                     session.entities(),
                     self.rules.mechanics(),
-                    hero,
+                    owner,
                     &defense_stat_id(&definition.id),
                     &operation(&format!("project-loadout-{}", definition.id))?,
                     &[],
@@ -219,7 +229,7 @@ impl GameRuntime {
             })
             .collect::<Result<Vec<_>, GameRuntimeError>>()?;
         Ok(LoadoutDto {
-            owner_id: hero.raw(),
+            owner_id: owner.raw(),
             stash_owner_id: stash.raw(),
             inventory_slots,
             equipment_slots,
@@ -305,78 +315,145 @@ impl GameRuntime {
         campaign: &CampaignState,
         session: &D20Session,
     ) -> Result<EncounterDto, GameRuntimeError> {
-        let adventure = self.adventure()?;
-        let encounter = current_encounter_definition(&self.rules, adventure, campaign)?;
-        let hero = self
-            .rules
-            .character_template(&adventure.hero)
-            .expect("compiled hero exists");
-        let opponent = self
-            .rules
-            .character_template(&encounter.opponent)
-            .expect("compiled opponent exists");
-        Ok(EncounterDto {
-            turn: session.current_turn(),
-            next_roll: session.next_roll_index(),
-            player_id: hero.entity_id,
-            turn_owner: campaign.turn_owner.map(|owner| match owner {
-                EncounterTurnOwner::Player => EncounterTurnOwnerDto::Player,
-                EncounterTurnOwner::Opposition => EncounterTurnOwnerDto::Opposition,
-            }),
-            characters: vec![
-                self.project_character(session, hero)?,
-                self.project_character(session, opponent)?,
-            ],
-            actions: hero
-                .actions
-                .iter()
-                .filter_map(|action| self.rules.action(action))
-                .map(|action| {
-                    let resolved = session.action_definition_profile(&action.id)?;
-                    Ok(ActionDto {
-                        id: action.id.to_string(),
-                        label: humanize(action.id.as_str()),
-                        ability: humanize(resolved.ability.as_str()),
-                        defense: humanize(resolved.defense.as_str()),
-                        damage: format!(
-                            "{}d{}{}{} {}",
-                            resolved.damage.dice,
-                            resolved.damage.sides,
-                            if resolved.damage.bonus >= 0 { "+" } else { "" },
-                            resolved.damage.bonus,
-                            humanize(resolved.damage.kind.as_str())
-                        ),
-                        activation: action
-                            .activation_costs
-                            .iter()
-                            .map(|cost| {
-                                format!("{} {}", cost.amount, humanize(cost.budget.as_str()))
-                            })
-                            .collect(),
-                        target: format!(
-                            "{} {} {} · line of effect {}",
-                            action.target.maximum_targets,
-                            humanize(&format!("{:?}", action.target.team).to_lowercase()),
-                            humanize(&format!("{:?}", action.target.kind).to_lowercase()),
-                            humanize(&format!("{:?}", action.target.line_of_effect).to_lowercase())
-                        ),
-                        range: resolved.range,
-                        implement: resolved
-                            .implement
-                            .as_ref()
-                            .map(|implement| humanize(implement.as_str())),
-                        tags: action
-                            .tags
-                            .iter()
-                            .map(|tag| humanize(tag.as_str()))
-                            .collect(),
-                        effect: action
-                            .effect
-                            .as_ref()
-                            .map(|effect| humanize(effect.as_str())),
-                    })
+        let participants = self
+            .ordered_participants()?
+            .into_iter()
+            .map(|(entity, faction, initiative)| {
+                let character = self
+                    .rules
+                    .character_templates()
+                    .find(|character| character.entity_id == entity.raw())
+                    .ok_or_else(|| {
+                        GameRuntimeError::InvalidState(format!(
+                            "participant {} has no compiled character",
+                            entity.raw()
+                        ))
+                    })?;
+                Ok(EncounterParticipantDto {
+                    character: self.project_character(session, character)?,
+                    faction: match faction {
+                        EncounterFaction::Party => EncounterFactionDto::Party,
+                        EncounterFaction::Opposition => EncounterFactionDto::Opposition,
+                    },
+                    initiative,
+                    defeated: self.vitality(entity)? == 0,
                 })
-                .collect::<Result<Vec<_>, GameRuntimeError>>()?,
+            })
+            .collect::<Result<Vec<_>, GameRuntimeError>>()?;
+        let current_actor = campaign.current_actor_id.map(EntityId::new);
+        let current_is_party = match current_actor {
+            Some(actor) => {
+                session
+                    .encounter_participation(actor)?
+                    .ok_or_else(|| {
+                        GameRuntimeError::InvalidState(format!(
+                            "current actor {} is not an encounter participant",
+                            actor.raw()
+                        ))
+                    })?
+                    .faction()
+                    == EncounterFaction::Party
+            }
+            None => false,
+        };
+        let target_ids = if current_is_party {
+            participants
+                .iter()
+                .filter(|participant| {
+                    participant.faction == EncounterFactionDto::Opposition && !participant.defeated
+                })
+                .map(|participant| participant.character.id)
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let mut legal_targets = Vec::new();
+        let mut actions = Vec::new();
+        if let Some(actor) = current_actor.filter(|_| current_is_party) {
+            let actor_definition = self
+                .rules
+                .character_templates()
+                .find(|character| character.entity_id == actor.raw())
+                .expect("canonical current actor has a compiled character");
+            for action_id in &actor_definition.actions {
+                let action = self
+                    .rules
+                    .action(action_id)
+                    .expect("compiled character action exists");
+                let admitted_targets = target_ids
+                    .iter()
+                    .copied()
+                    .filter_map(|target| {
+                        match session.preview_action(
+                            actor,
+                            EntityId::new(target),
+                            action_id,
+                            operation(&format!("project-action-{}-{target}", action.id))
+                                .expect("compiled action identity forms an operation"),
+                        ) {
+                            Ok(_) => Some(Ok(target)),
+                            Err(error) if is_unavailable_action_error(&error) => None,
+                            Err(error) => Some(Err(GameRuntimeError::Session(error))),
+                        }
+                    })
+                    .collect::<Result<Vec<_>, GameRuntimeError>>()?;
+                if admitted_targets.is_empty() {
+                    continue;
+                }
+                legal_targets.push(ActionTargetsDto {
+                    action_id: action.id.to_string(),
+                    target_ids: admitted_targets,
+                });
+                let resolved = session.action_definition_profile(&action.id)?;
+                actions.push(ActionDto {
+                    id: action.id.to_string(),
+                    label: humanize(action.id.as_str()),
+                    ability: humanize(resolved.ability.as_str()),
+                    defense: humanize(resolved.defense.as_str()),
+                    damage: format!(
+                        "{}d{}{}{} {}",
+                        resolved.damage.dice,
+                        resolved.damage.sides,
+                        if resolved.damage.bonus >= 0 { "+" } else { "" },
+                        resolved.damage.bonus,
+                        humanize(resolved.damage.kind.as_str())
+                    ),
+                    activation: action
+                        .activation_costs
+                        .iter()
+                        .map(|cost| format!("{} {}", cost.amount, humanize(cost.budget.as_str())))
+                        .collect(),
+                    target: format!(
+                        "{} {} {} · line of effect {}",
+                        action.target.maximum_targets,
+                        humanize(&format!("{:?}", action.target.team).to_lowercase()),
+                        humanize(&format!("{:?}", action.target.kind).to_lowercase()),
+                        humanize(&format!("{:?}", action.target.line_of_effect).to_lowercase())
+                    ),
+                    range: resolved.range,
+                    implement: resolved
+                        .implement
+                        .as_ref()
+                        .map(|implement| humanize(implement.as_str())),
+                    tags: action
+                        .tags
+                        .iter()
+                        .map(|tag| humanize(tag.as_str()))
+                        .collect(),
+                    effect: action
+                        .effect
+                        .as_ref()
+                        .map(|effect| humanize(effect.as_str())),
+                });
+            }
+        }
+        Ok(EncounterDto {
+            round: session.current_turn(),
+            next_roll: session.next_roll_index(),
+            current_actor_id: campaign.current_actor_id,
+            participants,
+            actions,
+            legal_targets,
             pending_action: self
                 .pending
                 .as_ref()

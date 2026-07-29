@@ -232,9 +232,7 @@ export function defineD20Module(
   });
 }
 
-export function authorD20Package(
-  draft: D20PackageDraft,
-): D20CanonicalArtifact {
+export function authorD20Package(draft: D20PackageDraft): D20CanonicalArtifact {
   const sources = collectSources(draft.modules);
   const abilities = collect<AbilityCandidate>(draft.modules, 'abilities');
   const defenses = collect<DefenseCandidate>(draft.modules, 'defenses');
@@ -361,12 +359,16 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
     ability: (line, value, column = 1) =>
       locate(source, line, column, value, [['id', value.id]]),
     defense: (line, value, column = 1) =>
-      locate(source, line, column, { ...value, abilities: [...value.abilities] }, [
-        ['id', value.id],
-        ...value.abilities.map(
-          (ability) => ['abilities', ability] as const,
-        ),
-      ]),
+      locate(
+        source,
+        line,
+        column,
+        { ...value, abilities: [...value.abilities] },
+        [
+          ['id', value.id],
+          ...value.abilities.map((ability) => ['abilities', ability] as const),
+        ],
+      ),
     activationBudget: (line, value, column = 1) =>
       locate(source, line, column, value, [['id', value.id]]),
     damageType: (line, value, column = 1) =>
@@ -415,6 +417,9 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
         ['id', value.id],
         ['defense', value.defense],
         ['resource', value.resource],
+        ...value.activationCosts.map(
+          (entry) => ['activationCosts.budget', entry.budget] as const,
+        ),
         ['effect', value.effect],
       ]),
     action: (line, value, column = 1) =>
@@ -444,9 +449,7 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
                 ['attack.defense', value.attack.defense],
                 ['attack.damage.kind', value.attack.damage.kind],
               ] as const)
-            : ([
-                ['attack.implement', value.attack.implement],
-              ] as const)),
+            : ([['attack.implement', value.attack.implement]] as const)),
           ...(value.effect === null
             ? []
             : ([['effect', value.effect]] as const)),
@@ -470,17 +473,25 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
     storage: (line, value, column = 1) =>
       locate(source, line, column, value, [['id', value.id]]),
     itemInstance: (line, value, column = 1) =>
-      locate(source, line, column, { ...value, equipment: { ...value.equipment } }, [
-        ['id', value.id],
-        value.equipment.kind === 'armor'
-          ? ['equipment.armor', value.equipment.armor]
-          : ['equipment.implement', value.equipment.implement],
-        ['owner', value.owner],
-      ]),
+      locate(
+        source,
+        line,
+        column,
+        { ...value, equipment: { ...value.equipment } },
+        [
+          ['id', value.id],
+          value.equipment.kind === 'armor'
+            ? ['equipment.armor', value.equipment.armor]
+            : ['equipment.implement', value.equipment.implement],
+          ['owner', value.owner],
+        ],
+      ),
     encounter: (line, value, column = 1) =>
       locate(source, line, column, value, [
         ['id', value.id],
-        ['opponent', value.opponent],
+        ...value.roster.map(
+          (participant) => ['roster.character', participant.character] as const,
+        ),
         ...(value.victory.rewardItem === null
           ? []
           : ([['victory.rewardItem', value.victory.rewardItem]] as const)),
@@ -491,7 +502,7 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
     adventure: (line, value, column = 1) =>
       locate(source, line, column, value, [
         ['id', value.id],
-        ['hero', value.hero],
+        ...value.party.map((id) => ['party', id] as const),
         ['campStorage', value.campStorage],
         ...value.characters.map((id) => ['characters', id] as const),
         ...value.storage.map((id) => ['storage', id] as const),

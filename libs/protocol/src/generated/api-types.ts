@@ -4,6 +4,8 @@ export const D20_PROTOCOL_LIMITS = Object.freeze({
 maxAvailableAdventures: 16,
 maxAdventureDetails: 64,
 maxCampaignEncounters: 64,
+maxPartyMembers: 4,
+maxEncounterParticipants: 12,
 maxDungeonCells: 576,
 maxDungeonViewDepth: 3,
 } as const);
@@ -28,9 +30,13 @@ export type ReactionDto = { id: string, label: string, resource: string, cost: n
 
 export type PendingActionDto = { token: string, actorId: number, targetId: number, actionId: string, actionLabel: string, abilityScore: number, abilityModifier: number, defense: number, defenseSources: Array<string>, reactions: Array<ReactionDto>, };
 
-export type EncounterTurnOwnerDto = "player" | "opposition";
+export type ActionTargetsDto = { actionId: string, targetIds: number[], };
 
-export type EncounterDto = { turn: number, nextRoll: number, playerId: number, turnOwner: EncounterTurnOwnerDto | null, characters: Array<CharacterDto>, actions: Array<ActionDto>, pendingAction: PendingActionDto | null, log: Array<GameLogEntryDto>, };
+export type EncounterFactionDto = "party" | "opposition";
+
+export type EncounterParticipantDto = { character: CharacterDto, faction: EncounterFactionDto, initiative: number, defeated: boolean, };
+
+export type EncounterDto = { round: number, nextRoll: number, currentActorId: number | null, participants: Array<EncounterParticipantDto>, actions: Array<ActionDto>, legalTargets: Array<ActionTargetsDto>, pendingAction: PendingActionDto | null, log: Array<GameLogEntryDto>, };
 
 export type CampaignPhaseDto = "camp" | "exploration" | "encounter" | "outcome";
 
@@ -68,7 +74,9 @@ export type DefenseReadoutDto = { id: string, label: string, value: number, sour
 
 export type LoadoutDto = { ownerId: number, stashOwnerId: number, inventorySlots: Array<LoadoutItemDto | null>, equipmentSlots: Array<EquipmentSlotDto>, stashItems: Array<LoadoutItemDto>, capacity: LoadoutCapacityDto, defenses: Array<DefenseReadoutDto>, };
 
-export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, hero: CharacterDto, loadout: LoadoutDto, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, latestOutcome: CampaignOutcomeDto | null, completedEncounters: Array<CompletedEncounterDto>, };
+export type PartyMemberDto = { character: CharacterDto, loadout: LoadoutDto, };
+
+export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, party: Array<PartyMemberDto>, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, latestOutcome: CampaignOutcomeDto | null, completedEncounters: Array<CompletedEncounterDto>, };
 
 export type GameSnapshotDto = { product: string, version: string, engineRevision: string, rulesetFingerprint: string, revision: number, saved: boolean, availableAdventures: Array<AdventureChoiceDto>, campaign: CampaignDto | null, exploration: ExplorationDto | null, encounter: EncounterDto | null, };
 

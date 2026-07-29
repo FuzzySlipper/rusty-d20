@@ -3,40 +3,48 @@ import type {
   Result,
   RuntimeReadoutDto,
   SaveStatusDto,
-} from '@rusty-d20/protocol';
-import type { RustyD20Transport } from '@rusty-d20/transport';
+} from "@rusty-d20/protocol";
+import type { RustyD20Transport } from "@rusty-d20/transport";
 
-export function makeRuntimeReadout(overrides: Partial<RuntimeReadoutDto> = {}): RuntimeReadoutDto {
+export function makeRuntimeReadout(
+  overrides: Partial<RuntimeReadoutDto> = {},
+): RuntimeReadoutDto {
   return {
-    engineRevision: 'fb608e323a8b44a55195f5720101224ff37fd5db',
+    engineRevision: "fb608e323a8b44a55195f5720101224ff37fd5db",
     entityCount: 0,
-    product: 'Rusty D20',
-    status: 'ready',
-    version: '0.1.0',
+    product: "Rusty D20",
+    status: "ready",
+    version: "0.1.0",
     ...overrides,
   };
 }
 
-export function makeGameSnapshot(overrides: Partial<GameSnapshotDto> = {}): GameSnapshotDto {
+export function makeGameSnapshot(
+  overrides: Partial<GameSnapshotDto> = {},
+): GameSnapshotDto {
   return {
-    product: 'Rusty D20',
-    version: '0.1.0',
-    engineRevision: 'fb608e323a8b44a55195f5720101224ff37fd5db',
-    rulesetFingerprint: 'starter-core=fingerprint|steel-guard=fingerprint',
+    product: "Rusty D20",
+    version: "0.1.0",
+    engineRevision: "fb608e323a8b44a55195f5720101224ff37fd5db",
+    rulesetFingerprint: "starter-core=fingerprint|steel-guard=fingerprint",
     revision: 0,
     saved: false,
     availableAdventures: [
       {
-        id: 'wardens-gate',
+        id: "wardens-gate",
         title: "The Warden's Gate",
         summary: "Mara Venn prepares at the Warden's Gate camp.",
-        details: ['Starter Core + Steel Guard authored packages compiled by Rust.'],
+        details: [
+          "Starter Core + Steel Guard authored packages compiled by Rust.",
+        ],
       },
       {
-        id: 'embers-wake',
+        id: "embers-wake",
         title: "Ember's Wake",
-        summary: 'Sera Vale prepares beside the ember reliquary.',
-        details: ['Starter Core + Ember Ward authored packages compiled by Rust.'],
+        summary: "Sera Vale prepares beside the ember reliquary.",
+        details: [
+          "Starter Core + Ember Ward authored packages compiled by Rust.",
+        ],
       },
     ],
     campaign: null,
@@ -57,8 +65,8 @@ export function createFakeRustyD20Transport(
   },
 ): RustyD20Transport {
   const saveStatus: SaveStatusDto = {
-    saveIdentity: '/fixture/rusty-d20.json',
-    state: 'empty',
+    saveIdentity: "/fixture/rusty-d20.json",
+    state: "empty",
     campaignId: null,
     campaignTitle: null,
     revision: 0,
@@ -79,6 +87,7 @@ export function createFakeRustyD20Transport(
     applyReaction: async () => sessionResult,
     applyAction: async () => sessionResult,
     beginOppositionTurn: async () => sessionResult,
+    endActivation: async () => sessionResult,
     returnToCamp: async () => sessionResult,
     save: async () => sessionResult,
   };

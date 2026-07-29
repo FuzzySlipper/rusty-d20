@@ -68,6 +68,7 @@ fn router_with_recovery(
         .route("/api/v1/session/reaction", post(reaction))
         .route("/api/v1/session/action", post(action))
         .route("/api/v1/session/opposition", post(begin_opposition_turn))
+        .route("/api/v1/session/activation/end", post(end_activation))
         .route("/api/v1/session/camp", post(return_to_camp))
         .route("/api/v1/session/save", post(save))
         .with_state(HostState {
@@ -302,6 +303,15 @@ async fn begin_opposition_turn(
 ) -> ApiResult {
     mutate(&state, |runtime| {
         runtime.begin_opposition_turn(request.expected_revision)
+    })
+}
+
+async fn end_activation(
+    State(state): State<HostState>,
+    Json(request): Json<ExpectedRevisionDto>,
+) -> ApiResult {
+    mutate(&state, |runtime| {
+        runtime.end_activation(request.expected_revision)
     })
 }
 
@@ -743,18 +753,20 @@ mod tests {
         let saved_bytes = fs::read(&save_path).unwrap();
 
         let encounter = start.encounter.as_ref().unwrap();
+        let actor = encounter.current_actor_id.unwrap();
         let target = encounter
-            .characters
+            .legal_targets
             .iter()
-            .find(|character| character.id != encounter.player_id)
+            .find(|entry| entry.action_id == "longsword-strike")
+            .and_then(|entry| entry.target_ids.first())
             .unwrap()
-            .id;
+            .to_owned();
         let (_, preview_body) = post_json(
             &app,
             "/api/v1/session/preview",
             &format!(
                 r#"{{"expectedRevision":{},"actorId":{},"targetId":{},"actionId":"longsword-strike"}}"#,
-                start.revision, encounter.player_id, target
+                start.revision, actor, target
             ),
         )
         .await;

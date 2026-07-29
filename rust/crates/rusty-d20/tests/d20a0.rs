@@ -123,9 +123,11 @@ fn checked_artifacts_drive_distinct_node_free_rust_compositions() {
         ember_adventure_rules
             .adventure(&id("embers-wake"))
             .unwrap()
-            .hero
-            .as_str(),
-        "sera-vale"
+            .party
+            .iter()
+            .map(D20Id::as_str)
+            .collect::<Vec<_>>(),
+        vec!["sera-vale"]
     );
     assert!(ember_adventure_rules.encounter(&id("ash-seer")).is_some());
 

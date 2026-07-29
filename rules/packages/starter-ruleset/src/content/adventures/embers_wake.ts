@@ -11,7 +11,10 @@ export const embersWakeModule = defineD20Module(
         id: 'ash-seer',
         title: 'The Ash Seer',
         summary: 'Break the psychic ward around the ember reliquary.',
-        opponent: 'ash-seer',
+        roster: [
+          { character: 'sera-vale', faction: 'party' },
+          { character: 'ash-seer', faction: 'opposition' },
+        ],
         availableFromCamp: true,
         introductionSource: 'Encounter',
         introductionText: 'Sera Vale enters the Ash Seer reliquary.',
@@ -32,7 +35,8 @@ export const embersWakeModule = defineD20Module(
         },
         defeat: {
           title: 'Sera was defeated',
-          summary: 'No reward was granted; returning to camp rekindles bounded vitality.',
+          summary:
+            'No reward was granted; returning to camp rekindles bounded vitality.',
           logSource: 'Defeat',
           logText: 'Sera Vale falls beneath the reliquary ward.',
           logDetails: [
@@ -51,7 +55,7 @@ export const embersWakeModule = defineD20Module(
         title: "Ember's Wake",
         default: false,
         selectable: true,
-        hero: 'sera-vale',
+        party: ['sera-vale'],
         characters: ['sera-vale', 'ash-seer'],
         campStorage: 'ember-camp-stash',
         storage: ['ember-camp-stash'],

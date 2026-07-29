@@ -22,9 +22,9 @@ use crate::{
     ActionTargetTeamCandidate, ActivationTimingCandidate, AdventureCandidate, ArmorCandidate,
     CharacterAffinityKindCandidate, CharacterTemplateCandidate, ConditionClauseCandidate, D20Id,
     D20RulesCandidate, DamageCandidate, DungeonCandidate, DungeonFacingCandidate, EffectCandidate,
-    EncounterCandidate, EncounterOutcomeCandidate, EquipmentReferenceCandidate, ImplementCandidate,
-    ItemInstanceCandidate, ItemRarityCandidate, ReactionCandidate, StorageCandidate,
-    D20_CANDIDATE_SCHEMA_VERSION,
+    EncounterCandidate, EncounterFactionCandidate, EncounterOutcomeCandidate,
+    EquipmentReferenceCandidate, ImplementCandidate, ItemInstanceCandidate, ItemRarityCandidate,
+    ReactionCandidate, StorageCandidate, D20_CANDIDATE_SCHEMA_VERSION,
 };
 
 pub const MAX_D20_DEFINITIONS_PER_KIND: usize = 64;
@@ -44,6 +44,8 @@ pub const MAX_D20_CONDITION_CLAUSES: usize = 8;
 pub const MAX_D20_IMPLEMENT_TAGS: usize = 16;
 pub const MAX_D20_TACTICAL_RANGE: u16 = 32;
 pub const MAX_D20_ACTION_TARGETS: u16 = 12;
+pub const MAX_D20_PARTY_MEMBERS: usize = 4;
+pub const MAX_D20_ENCOUNTER_PARTICIPANTS: usize = 12;
 const VITALITY_TRACK: &str = "vitality";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,6 +123,7 @@ pub struct ReactionDefinition {
     pub bonus: i16,
     pub resource: D20Id,
     pub cost: u16,
+    pub activation_costs: Vec<ActivationCostDefinition>,
     pub effect: D20Id,
 }
 
@@ -263,12 +266,24 @@ pub struct EncounterOutcomeDefinition {
     pub recovery_vitality: Option<u32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncounterFactionDefinition {
+    Party,
+    Opposition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncounterParticipantDefinition {
+    pub character: D20Id,
+    pub faction: EncounterFactionDefinition,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncounterDefinition {
     pub id: D20Id,
     pub title: String,
     pub summary: String,
-    pub opponent: D20Id,
+    pub roster: Vec<EncounterParticipantDefinition>,
     pub available_from_camp: bool,
     pub introduction_source: String,
     pub introduction_text: String,
@@ -333,7 +348,7 @@ pub struct AdventureDefinition {
     pub title: String,
     pub default: bool,
     pub selectable: bool,
-    pub hero: D20Id,
+    pub party: Vec<D20Id>,
     pub characters: Vec<D20Id>,
     pub camp_storage: D20Id,
     pub storage: Vec<D20Id>,
@@ -500,6 +515,10 @@ impl D20Ruleset {
 
     pub fn actions(&self) -> impl Iterator<Item = &ActionDefinition> {
         self.actions.values()
+    }
+
+    pub fn character_templates(&self) -> impl Iterator<Item = &CharacterTemplateDefinition> {
+        self.character_templates.values()
     }
 
     pub fn damage_types(&self) -> impl Iterator<Item = &D20Id> {
@@ -887,6 +906,42 @@ impl DefinitionCollector {
                     "reaction cost must be positive".to_owned(),
                 );
             }
+            self.validate_bounded_list(
+                package,
+                &subject,
+                "reactions",
+                &value.id,
+                "activationCosts",
+                value.activation_costs.len(),
+                MAX_D20_ACTIVATION_COSTS,
+            );
+            if value.activation_costs.is_empty()
+                || value.activation_costs.iter().any(|cost| cost.amount == 0)
+            {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_INVALID_REACTION_ACTIVATION_COST",
+                    format!("$/payload/reactions/{}/activationCosts", value.id),
+                    "reactions require positive activation budget costs".to_owned(),
+                );
+            }
+            if value
+                .activation_costs
+                .iter()
+                .map(|cost| &cost.budget)
+                .collect::<BTreeSet<_>>()
+                .len()
+                != value.activation_costs.len()
+            {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_DUPLICATE_SEMANTIC_ENTRY",
+                    format!("$/payload/reactions/{}/activationCosts", value.id),
+                    "a reaction may charge each activation budget at most once".to_owned(),
+                );
+            }
             let definition = reaction_definition(value);
             insert_unique(
                 &mut self.reactions,
@@ -1193,6 +1248,34 @@ impl DefinitionCollector {
                 );
             }
         }
+        let party_count = value
+            .roster
+            .iter()
+            .filter(|participant| participant.faction == EncounterFactionCandidate::Party)
+            .count();
+        let opposition_count = value.roster.len().saturating_sub(party_count);
+        let distinct_participants = value
+            .roster
+            .iter()
+            .map(|participant| &participant.character)
+            .collect::<BTreeSet<_>>()
+            .len();
+        if value.roster.len() > MAX_D20_ENCOUNTER_PARTICIPANTS
+            || party_count == 0
+            || party_count > MAX_D20_PARTY_MEMBERS
+            || opposition_count == 0
+            || distinct_participants != value.roster.len()
+        {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_INVALID_ENCOUNTER_ROSTER",
+                format!("$/payload/encounters/{}/roster", value.id),
+                format!(
+                    "encounter roster must contain distinct participants, 1..={MAX_D20_PARTY_MEMBERS} party members, at least one opponent, and no more than {MAX_D20_ENCOUNTER_PARTICIPANTS} total participants"
+                ),
+            );
+        }
         if value.victory.reward_item.is_some() != value.victory.reward_label.is_some()
             || value.victory.recovery_vitality.is_some()
             || value.defeat.reward_item.is_some()
@@ -1230,6 +1313,7 @@ impl DefinitionCollector {
             );
         }
         for (field, actual) in [
+            ("party", value.party.len()),
             ("characters", value.characters.len()),
             ("storage", value.storage.len()),
             ("items", value.items.len()),
@@ -1239,6 +1323,15 @@ impl DefinitionCollector {
             ("startDetails", value.start_details.len()),
         ] {
             self.validate_adventure_list(package, subject, "adventures", &value.id, field, actual);
+        }
+        if value.party.is_empty() || value.party.len() > MAX_D20_PARTY_MEMBERS {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_INVALID_PARTY_SIZE",
+                format!("$/payload/adventures/{}/party", value.id),
+                format!("adventure party must contain 1..={MAX_D20_PARTY_MEMBERS} members"),
+            );
         }
         for detail in &value.start_details {
             self.validate_text(
@@ -1585,6 +1678,32 @@ impl DefinitionCollector {
                     format!("unknown defense {}", definition.defense),
                 );
             }
+            for cost in &definition.activation_costs {
+                let Some(budget) = self.activation_budgets.get(&cost.budget) else {
+                    self.push_for_identity(
+                        &package_id,
+                        Some(&correlation),
+                        "D20_UNKNOWN_ACTIVATION_BUDGET",
+                        format!("$/payload/reactions/{id}/activationCosts"),
+                        format!("unknown activation budget {}", cost.budget),
+                    );
+                    continue;
+                };
+                if budget.0.timing != ActivationTimingDefinition::Reaction
+                    || cost.amount > budget.0.initial
+                {
+                    self.push_for_identity(
+                        &package_id,
+                        Some(&correlation),
+                        "D20_INCOMPATIBLE_ACTIVATION_COST",
+                        format!("$/payload/reactions/{id}/activationCosts"),
+                        format!(
+                            "reaction activation cost {} must use a reaction budget and not exceed {} initial amount {}",
+                            cost.amount, cost.budget, budget.0.initial
+                        ),
+                    );
+                }
+            }
             let Some(resource) = self.resources.get(&definition.resource) else {
                 self.push_for_identity(
                     &package_id,
@@ -1692,14 +1811,16 @@ impl DefinitionCollector {
                     );
                     continue;
                 };
-                if cost.amount > budget.0.initial {
+                if budget.0.timing != ActivationTimingDefinition::Action
+                    || cost.amount > budget.0.initial
+                {
                     self.push_for_identity(
                         &package_id,
                         Some(&correlation),
                         "D20_INCOMPATIBLE_ACTIVATION_COST",
                         format!("$/payload/actions/{id}/activationCosts"),
                         format!(
-                            "activation cost {} exceeds {} initial amount {}",
+                            "action activation cost {} must use an action budget and not exceed {} initial amount {}",
                             cost.amount, cost.budget, budget.0.initial
                         ),
                     );
@@ -1889,27 +2010,29 @@ impl DefinitionCollector {
         }
         for (id, (definition, package)) in self.encounters.clone() {
             let correlation = subject("encounter", &id);
-            if let Some((opponent, _)) = self.character_templates.get(&definition.opponent) {
-                if opponent.actions.is_empty() {
+            for participant in &definition.roster {
+                if let Some((character, _)) = self.character_templates.get(&participant.character) {
+                    if character.actions.is_empty() {
+                        self.push_for_identity(
+                            &package,
+                            Some(&correlation),
+                            "D20_ACTIONLESS_ENCOUNTER_PARTICIPANT",
+                            format!("$/payload/encounters/{id}/roster"),
+                            format!(
+                                "encounter participant {} must define at least one action",
+                                participant.character
+                            ),
+                        );
+                    }
+                } else {
                     self.push_for_identity(
                         &package,
                         Some(&correlation),
-                        "D20_ACTIONLESS_ENCOUNTER_OPPONENT",
-                        format!("$/payload/encounters/{id}/opponent"),
-                        format!(
-                            "encounter opponent {} must define at least one action",
-                            definition.opponent
-                        ),
+                        "D20_UNKNOWN_ENCOUNTER_PARTICIPANT",
+                        format!("$/payload/encounters/{id}/roster"),
+                        format!("unknown character template {}", participant.character),
                     );
                 }
-            } else {
-                self.push_for_identity(
-                    &package,
-                    Some(&correlation),
-                    "D20_UNKNOWN_ENCOUNTER_OPPONENT",
-                    format!("$/payload/encounters/{id}/opponent"),
-                    format!("unknown character template {}", definition.opponent),
-                );
             }
             if let Some(item) = definition.victory.reward_item.as_ref() {
                 if !self.item_instances.contains_key(item) {
@@ -1938,6 +2061,7 @@ impl DefinitionCollector {
         for (id, (definition, package)) in self.adventures.clone() {
             let correlation = subject("adventure", &id);
             for (field, values) in [
+                ("party", definition.party.as_slice()),
                 ("characters", definition.characters.as_slice()),
                 ("storage", definition.storage.as_slice()),
                 ("items", definition.items.as_slice()),
@@ -1985,7 +2109,10 @@ impl DefinitionCollector {
             }
             if definition.characters.is_empty()
                 || definition.encounters.is_empty()
-                || !definition.characters.contains(&definition.hero)
+                || definition
+                    .party
+                    .iter()
+                    .any(|member| !definition.characters.contains(member))
                 || !definition.storage.contains(&definition.camp_storage)
             {
                 self.push_for_identity(
@@ -1993,7 +2120,7 @@ impl DefinitionCollector {
                     Some(&correlation),
                     "D20_INVALID_ADVENTURE_ROOTS",
                     format!("$/payload/adventures/{id}"),
-                    "adventure requires characters, encounters, a listed hero, and listed camp storage"
+                    "adventure requires characters, encounters, a listed party, and listed camp storage"
                         .to_owned(),
                 );
             }
@@ -2006,17 +2133,24 @@ impl DefinitionCollector {
                     "the default adventure must be selectable".to_owned(),
                 );
             }
-            if let Some((hero, _)) = self.character_templates.get(&definition.hero) {
-                if hero.actions.is_empty() {
+            for party_member in &definition.party {
+                if let Some((member, _)) = self.character_templates.get(party_member) {
+                    if member.actions.is_empty() {
+                        self.push_for_identity(
+                            &package,
+                            Some(&correlation),
+                            "D20_ACTIONLESS_PARTY_MEMBER",
+                            format!("$/payload/adventures/{id}/party"),
+                            format!("party member {party_member} must define at least one action"),
+                        );
+                    }
+                } else {
                     self.push_for_identity(
                         &package,
                         Some(&correlation),
-                        "D20_ACTIONLESS_ADVENTURE_HERO",
-                        format!("$/payload/adventures/{id}/hero"),
-                        format!(
-                            "adventure hero {} must define at least one action",
-                            definition.hero
-                        ),
+                        "D20_UNKNOWN_PARTY_MEMBER",
+                        format!("$/payload/adventures/{id}/party"),
+                        format!("unknown character template {party_member}"),
                     );
                 }
             }
@@ -2080,20 +2214,33 @@ impl DefinitionCollector {
                     );
                     continue;
                 };
-                if !definition
-                    .characters
-                    .contains(&encounter_definition.opponent)
-                {
-                    self.push_for_identity(
-                        &package,
-                        Some(&correlation),
-                        "D20_ENCOUNTER_OPPONENT_OUTSIDE_ADVENTURE",
-                        format!("$/payload/adventures/{id}/encounters"),
-                        format!(
-                            "encounter {encounter} opponent {} is not included in the adventure",
-                            encounter_definition.opponent
-                        ),
-                    );
+                for participant in &encounter_definition.roster {
+                    if !definition.characters.contains(&participant.character) {
+                        self.push_for_identity(
+                            &package,
+                            Some(&correlation),
+                            "D20_ENCOUNTER_PARTICIPANT_OUTSIDE_ADVENTURE",
+                            format!("$/payload/adventures/{id}/encounters"),
+                            format!(
+                                "encounter {encounter} participant {} is not included in the adventure",
+                                participant.character
+                            ),
+                        );
+                    }
+                    if participant.faction == EncounterFactionDefinition::Party
+                        && !definition.party.contains(&participant.character)
+                    {
+                        self.push_for_identity(
+                            &package,
+                            Some(&correlation),
+                            "D20_ENCOUNTER_PARTY_MISMATCH",
+                            format!("$/payload/adventures/{id}/encounters"),
+                            format!(
+                                "encounter {encounter} party participant {} is not in the adventure party",
+                                participant.character
+                            ),
+                        );
+                    }
                 }
                 if let Some(reward) = encounter_definition.victory.reward_item.as_ref() {
                     if !definition.items.contains(reward) {
@@ -2389,6 +2536,14 @@ fn reaction_definition(value: ReactionCandidate) -> ReactionDefinition {
         bonus: value.bonus,
         resource: value.resource,
         cost: value.cost,
+        activation_costs: value
+            .activation_costs
+            .into_iter()
+            .map(|cost| ActivationCostDefinition {
+                budget: cost.budget,
+                amount: cost.amount,
+            })
+            .collect(),
         effect: value.effect,
     }
 }
@@ -2542,7 +2697,17 @@ fn encounter_definition(value: EncounterCandidate) -> EncounterDefinition {
         id: value.id,
         title: value.title,
         summary: value.summary,
-        opponent: value.opponent,
+        roster: value
+            .roster
+            .into_iter()
+            .map(|participant| EncounterParticipantDefinition {
+                character: participant.character,
+                faction: match participant.faction {
+                    EncounterFactionCandidate::Party => EncounterFactionDefinition::Party,
+                    EncounterFactionCandidate::Opposition => EncounterFactionDefinition::Opposition,
+                },
+            })
+            .collect(),
         available_from_camp: value.available_from_camp,
         introduction_source: value.introduction_source,
         introduction_text: value.introduction_text,
@@ -2558,7 +2723,7 @@ fn adventure_definition(value: AdventureCandidate) -> AdventureDefinition {
         title: value.title,
         default: value.default,
         selectable: value.selectable,
-        hero: value.hero,
+        party: value.party,
         characters: value.characters,
         camp_storage: value.camp_storage,
         storage: value.storage,

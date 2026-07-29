@@ -42,8 +42,8 @@ export const fundamentalsModule = defineD20Module(
         initial: 6,
       }),
     ],
-    damageTypes: ['impact', 'projectile', 'energy', 'resolve'].map(
-      (id) => damageType(14, { id }),
+    damageTypes: ['impact', 'projectile', 'energy', 'resolve'].map((id) =>
+      damageType(14, { id }),
     ),
     resources: [
       resource(24, { id: 'guard', maximum: 2 }),

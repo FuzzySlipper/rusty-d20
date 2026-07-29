@@ -18,10 +18,10 @@ use rusty_d20::{
     ConditionClauseCandidate, D20CompileError, D20Id, D20PackageEnvelope, D20RulesCandidate,
     D20Ruleset, D20Session, D20SessionError, DamageAffinity, DamageCandidate, DamageTypeCandidate,
     DefenseCandidate, DungeonCandidate, DungeonEncounterCandidate, DungeonFacingCandidate,
-    EffectCandidate, EncounterCandidate, EncounterOutcomeCandidate, EquipmentItemSeed,
-    EquipmentReferenceCandidate, ImplementCandidate, ItemInstanceCandidate, ItemRarityCandidate,
-    ReactionCandidate, ResourceCandidate, SessionSaveError, StorageCandidate,
-    D20_CANDIDATE_SCHEMA_VERSION,
+    EffectCandidate, EncounterCandidate, EncounterFactionCandidate, EncounterOutcomeCandidate,
+    EncounterParticipantCandidate, EquipmentItemSeed, EquipmentReferenceCandidate,
+    ImplementCandidate, ItemInstanceCandidate, ItemRarityCandidate, ReactionCandidate,
+    ResourceCandidate, SessionSaveError, StorageCandidate, D20_CANDIDATE_SCHEMA_VERSION,
 };
 use serde_json::json;
 use svc_rng::RngSeed;
@@ -69,6 +69,35 @@ fn effect_instance(value: &str) -> EffectInstanceId {
     EffectInstanceId::parse(value).unwrap()
 }
 
+fn base_character_template(id_value: &str, entity_id: u64) -> CharacterTemplateCandidate {
+    CharacterTemplateCandidate {
+        id: id(id_value),
+        entity_id,
+        name: id_value.to_owned(),
+        title: "Test combatant".to_owned(),
+        level: 1,
+        vitality: 100,
+        inventory_capacity: 4,
+        abilities: vec![
+            CharacterAbilityCandidate {
+                ability: id("dexterity"),
+                score: 10,
+            },
+            CharacterAbilityCandidate {
+                ability: id("strength"),
+                score: 10,
+            },
+        ],
+        resources: vec![CharacterResourceCandidate {
+            resource: id("guard"),
+            current: 2,
+        }],
+        actions: vec![id("strike")],
+        reactions: vec![id("parry")],
+        affinities: vec![],
+    }
+}
+
 fn base_candidate() -> D20RulesCandidate {
     D20RulesCandidate {
         schema_version: D20_CANDIDATE_SCHEMA_VERSION,
@@ -89,11 +118,18 @@ fn base_candidate() -> D20RulesCandidate {
             base: 1,
             abilities: vec![id("dexterity")],
         }],
-        activation_budgets: vec![ActivationBudgetCandidate {
-            id: id("standard-action"),
-            timing: ActivationTimingCandidate::Action,
-            initial: 1,
-        }],
+        activation_budgets: vec![
+            ActivationBudgetCandidate {
+                id: id("standard-action"),
+                timing: ActivationTimingCandidate::Action,
+                initial: 1,
+            },
+            ActivationBudgetCandidate {
+                id: id("reaction"),
+                timing: ActivationTimingCandidate::Reaction,
+                initial: 1,
+            },
+        ],
         damage_types: vec![DamageTypeCandidate { id: id("slashing") }],
         resources: vec![ResourceCandidate {
             id: id("guard"),
@@ -127,6 +163,10 @@ fn base_candidate() -> D20RulesCandidate {
             bonus: 5,
             resource: id("guard"),
             cost: 1,
+            activation_costs: vec![ActivationCostCandidate {
+                budget: id("reaction"),
+                amount: 1,
+            }],
             effect: id("reaction-guard"),
         }],
         actions: vec![ActionCandidate {
@@ -155,6 +195,10 @@ fn base_candidate() -> D20RulesCandidate {
             },
             effect: Some(id("bleeding")),
         }],
+        character_templates: vec![
+            base_character_template("attacker", ATTACKER.raw()),
+            base_character_template("target", TARGET.raw()),
+        ],
         ..D20RulesCandidate::default()
     }
 }
@@ -645,7 +689,7 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
     );
     let hero = CharacterTemplateCandidate {
         id: id("hero"),
-        entity_id: 101,
+        entity_id: 401,
         name: "Hero".to_owned(),
         title: "Tester".to_owned(),
         level: 1,
@@ -687,7 +731,7 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
         character_templates: vec![hero],
         storage: vec![StorageCandidate {
             id: id("camp"),
-            entity_id: 101,
+            entity_id: 401,
             name: "Camp".to_owned(),
             capacity: 4,
         }],
@@ -717,7 +761,16 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
             id: id("broken-encounter"),
             title: "Broken encounter".to_owned(),
             summary: "Missing its opponent and reward".to_owned(),
-            opponent: id("missing-opponent"),
+            roster: vec![
+                EncounterParticipantCandidate {
+                    character: id("hero"),
+                    faction: EncounterFactionCandidate::Party,
+                },
+                EncounterParticipantCandidate {
+                    character: id("missing-opponent"),
+                    faction: EncounterFactionCandidate::Opposition,
+                },
+            ],
             available_from_camp: true,
             introduction_source: "Encounter".to_owned(),
             introduction_text: "A broken encounter starts.".to_owned(),
@@ -730,7 +783,7 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
             title: "Broken adventure".to_owned(),
             default: true,
             selectable: true,
-            hero: id("hero"),
+            party: vec![id("hero")],
             characters,
             camp_storage: id("camp"),
             storage: vec![id("camp")],
@@ -769,7 +822,7 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
         ("D20_DUPLICATE_ENTITY_ID", 2),
         ("D20_UNKNOWN_ITEM_OWNER", 3),
         ("D20_INCOMPATIBLE_EQUIPPED_OWNER", 4),
-        ("D20_UNKNOWN_ENCOUNTER_OPPONENT", 5),
+        ("D20_UNKNOWN_ENCOUNTER_PARTICIPANT", 5),
         ("D20_UNKNOWN_REWARD_ITEM", 5),
         ("D20_ADVENTURE_ENTRY_QUOTA", 6),
     ] {
@@ -841,7 +894,16 @@ fn otherwise_valid_adventure_candidate(
             id: id("duel"),
             title: "Duel".to_owned(),
             summary: "A valid duel.".to_owned(),
-            opponent: id("opponent"),
+            roster: vec![
+                EncounterParticipantCandidate {
+                    character: id("hero"),
+                    faction: EncounterFactionCandidate::Party,
+                },
+                EncounterParticipantCandidate {
+                    character: id("opponent"),
+                    faction: EncounterFactionCandidate::Opposition,
+                },
+            ],
             available_from_camp: true,
             introduction_source: "Encounter".to_owned(),
             introduction_text: "The duel starts.".to_owned(),
@@ -854,7 +916,7 @@ fn otherwise_valid_adventure_candidate(
             title: "Duel adventure".to_owned(),
             default: true,
             selectable: true,
-            hero: id("hero"),
+            party: vec![id("hero")],
             characters: vec![id("hero"), id("opponent")],
             camp_storage: id("camp"),
             storage: vec![id("camp")],
@@ -1004,11 +1066,11 @@ fn adventure_combat_participants_require_actions_at_semantic_admission() {
     let diagnostic = report
         .diagnostics()
         .iter()
-        .find(|diagnostic| diagnostic.code() == "D20_ACTIONLESS_ENCOUNTER_OPPONENT")
+        .find(|diagnostic| diagnostic.code() == "D20_ACTIONLESS_ENCOUNTER_PARTICIPANT")
         .expect("actionless opponent diagnostic");
     assert_eq!(
         diagnostic.logical_path(),
-        "$/payload/encounters/duel/opponent"
+        "$/payload/encounters/duel/roster"
     );
     let correlation = diagnostic.correlation().expect("source correlation");
     assert_eq!(correlation.source().as_str(), "actionless-opponent-source");
@@ -1021,11 +1083,11 @@ fn adventure_combat_participants_require_actions_at_semantic_admission() {
     let diagnostic = report
         .diagnostics()
         .iter()
-        .find(|diagnostic| diagnostic.code() == "D20_ACTIONLESS_ADVENTURE_HERO")
+        .find(|diagnostic| diagnostic.code() == "D20_ACTIONLESS_PARTY_MEMBER")
         .expect("actionless hero diagnostic");
     assert_eq!(
         diagnostic.logical_path(),
-        "$/payload/adventures/duel-adventure/hero"
+        "$/payload/adventures/duel-adventure/party"
     );
     let correlation = diagnostic.correlation().expect("source correlation");
     assert_eq!(correlation.source().as_str(), "actionless-hero-source");
@@ -1173,6 +1235,7 @@ fn deterministic_rng_and_complete_save_reopen_continue_identically() {
     session
         .advance_turn(2, operation("expire-before-save"))
         .unwrap();
+    session.reset_activation_budgets(ATTACKER).unwrap();
 
     let encoded = session.encode_save().unwrap();
     let mut reopened = D20Session::decode_save(ruleset(), &encoded).unwrap();
@@ -1252,6 +1315,7 @@ fn repeated_refresh_effect_reuses_the_engine_instance_and_reschedules_atomically
     session
         .apply_reaction(&first, &id("parry"), effect_instance("parry-original"))
         .unwrap();
+    session.reset_activation_budgets(TARGET).unwrap();
     let second = session
         .preview_action(
             ATTACKER,
@@ -1303,6 +1367,7 @@ fn a_failed_late_missing_effect_identity_does_not_publish_damage_or_rng_progress
             effect_instance: Some(effect_instance("shared-bleeding")),
         })
         .unwrap();
+    session.reset_activation_budgets(ATTACKER).unwrap();
     let before = session.encode_save().unwrap();
     let preview = session
         .preview_action(ATTACKER, TARGET, &id("strike"), operation("missing-effect"))

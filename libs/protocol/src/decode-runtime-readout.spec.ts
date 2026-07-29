@@ -1,29 +1,31 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 import {
   D20_PROTOCOL_LIMITS,
   decodeGameSnapshot,
   decodeRuntimeReadout,
   decodeSaveStatus,
-} from './index';
+} from "./index";
 
 const validReadout = {
-  engineRevision: 'fb608e323a8b44a55195f5720101224ff37fd5db',
+  engineRevision: "fb608e323a8b44a55195f5720101224ff37fd5db",
   entityCount: 0,
-  product: 'Rusty D20',
-  status: 'ready',
-  version: '0.1.0',
+  product: "Rusty D20",
+  status: "ready",
+  version: "0.1.0",
 };
 
-describe('decodeRuntimeReadout', () => {
-  it('accepts the exact Rust-owned shape', () => {
+describe("decodeRuntimeReadout", () => {
+  it("accepts the exact Rust-owned shape", () => {
     expect(decodeRuntimeReadout(validReadout)).toEqual({
       ok: true,
       value: validReadout,
     });
   });
 
-  it('rejects unknown fields and unsafe counts', () => {
-    expect(decodeRuntimeReadout({ ...validReadout, semanticStatus: 'pretend' })).toMatchObject({
+  it("rejects unknown fields and unsafe counts", () => {
+    expect(
+      decodeRuntimeReadout({ ...validReadout, semanticStatus: "pretend" }),
+    ).toMatchObject({
       ok: false,
     });
     expect(
@@ -35,26 +37,26 @@ describe('decodeRuntimeReadout', () => {
   });
 });
 
-describe('decodeGameSnapshot', () => {
+describe("decodeGameSnapshot", () => {
   const empty = {
-    product: 'Rusty D20',
-    version: '0.1.0',
-    engineRevision: 'fb608e323a8b44a55195f5720101224ff37fd5db',
-    rulesetFingerprint: 'rules',
+    product: "Rusty D20",
+    version: "0.1.0",
+    engineRevision: "fb608e323a8b44a55195f5720101224ff37fd5db",
+    rulesetFingerprint: "rules",
     revision: 0,
     saved: false,
     availableAdventures: [
       {
-        id: 'wardens-gate',
+        id: "wardens-gate",
         title: "The Warden's Gate",
         summary: "Mara Venn prepares at the Warden's Gate camp.",
-        details: ['Steel path'],
+        details: ["Steel path"],
       },
       {
-        id: 'embers-wake',
+        id: "embers-wake",
         title: "Ember's Wake",
-        summary: 'Sera Vale prepares beside the ember reliquary.',
-        details: ['Ember path'],
+        summary: "Sera Vale prepares beside the ember reliquary.",
+        details: ["Ember path"],
       },
     ],
     campaign: null,
@@ -62,23 +64,27 @@ describe('decodeGameSnapshot', () => {
     encounter: null,
   };
 
-  it('accepts the exact empty-session shape', () => {
+  it("accepts the exact empty-session shape", () => {
     expect(decodeGameSnapshot(empty)).toEqual({ ok: true, value: empty });
   });
 
-  it('rejects unknown fields and unsafe revisions', () => {
+  it("rejects unknown fields and unsafe revisions", () => {
     expect(decodeGameSnapshot({ ...empty, liveRules: [] })).toMatchObject({
       ok: false,
     });
-    expect(decodeGameSnapshot({ ...empty, revision: Number.MAX_SAFE_INTEGER + 1 })).toMatchObject({
+    expect(
+      decodeGameSnapshot({ ...empty, revision: Number.MAX_SAFE_INTEGER + 1 }),
+    ).toMatchObject({
       ok: false,
     });
-    expect(decodeGameSnapshot({ ...empty, availableAdventures: [] })).toMatchObject({
+    expect(
+      decodeGameSnapshot({ ...empty, availableAdventures: [] }),
+    ).toMatchObject({
       ok: false,
     });
   });
 
-  it('uses Rust-owned exact adventure projection limits', () => {
+  it("uses Rust-owned exact adventure projection limits", () => {
     const choice = empty.availableAdventures[0];
     const exactDetails = {
       ...choice,
@@ -101,7 +107,10 @@ describe('decodeGameSnapshot', () => {
     expect(
       decodeGameSnapshot({
         ...empty,
-        availableAdventures: [...exactChoices, { ...exactDetails, id: 'one-over' }],
+        availableAdventures: [
+          ...exactChoices,
+          { ...exactDetails, id: "one-over" },
+        ],
       }),
     ).toMatchObject({ ok: false });
     expect(
@@ -110,104 +119,146 @@ describe('decodeGameSnapshot', () => {
         availableAdventures: [
           {
             ...exactDetails,
-            details: [...exactDetails.details, 'One over'],
+            details: [...exactDetails.details, "One over"],
           },
         ],
       }),
     ).toMatchObject({ ok: false });
   });
 
-  it('strictly validates campaign phase ownership', () => {
+  it("strictly validates party, encounter, and phase ownership", () => {
     const hero = {
       id: 101,
-      name: 'Mara Venn',
-      title: 'Steel Adept',
+      name: "Mara Venn",
+      title: "Steel Adept",
       level: 1,
       healthCurrent: 24,
       healthMaximum: 24,
       resources: [],
       effects: [],
     };
-    const campaign = {
-      id: 'wardens-gate',
-      title: "The Warden's Gate",
-      phase: 'camp',
-      hero,
-      loadout: {
-        ownerId: 101,
-        stashOwnerId: 103,
-        inventorySlots: [
-          {
+    const loadout = {
+      ownerId: 101,
+      stashOwnerId: 103,
+      inventorySlots: [
+        {
+          entityId: 202,
+          definitionId: "chain-armor",
+          name: "Chain Armor",
+          icon: "shield",
+          rarity: "uncommon",
+          quantity: 1,
+          equipmentSlotId: "body",
+          equippedSlotId: "body",
+        },
+        null,
+      ],
+      equipmentSlots: [
+        {
+          id: "body",
+          label: "Body",
+          equipped: {
             entityId: 202,
-            definitionId: 'chain-armor',
-            name: 'Chain Armor',
-            icon: 'shield',
-            rarity: 'uncommon',
+            definitionId: "chain-armor",
+            name: "Chain Armor",
+            icon: "shield",
+            rarity: "uncommon",
             quantity: 1,
-            equipmentSlotId: 'body',
-            equippedSlotId: 'body',
+            equipmentSlotId: "body",
+            equippedSlotId: "body",
           },
-          null,
-        ],
-        equipmentSlots: [
-          {
-            id: 'body',
-            label: 'Body',
-            equipped: {
-              entityId: 202,
-              definitionId: 'chain-armor',
-              name: 'Chain Armor',
-              icon: 'shield',
-              rarity: 'uncommon',
-              quantity: 1,
-              equipmentSlotId: 'body',
-              equippedSlotId: 'body',
-            },
-          },
-        ],
-        stashItems: [],
-        capacity: { metric: 'carried-items', used: 1, maximum: 2 },
-        defenses: [
-          {
-            id: 'armor',
-            label: 'Armor',
-            value: 16,
-            sources: ['Equipped item 202: +4 defense (applied)'],
-          },
-          {
-            id: 'resolve',
-            label: 'Resolve',
-            value: 11,
-            sources: [],
-          },
-        ],
-      },
+        },
+      ],
+      stashItems: [],
+      capacity: { metric: "carried-items", used: 1, maximum: 2 },
+      defenses: [
+        {
+          id: "armor",
+          label: "Armor",
+          value: 16,
+          sources: ["Equipped item 202: +4 defense (applied)"],
+        },
+        {
+          id: "resolve",
+          label: "Resolve",
+          value: 11,
+          sources: [],
+        },
+      ],
+    };
+    const campaign = {
+      id: "wardens-gate",
+      title: "The Warden's Gate",
+      phase: "camp",
+      party: [{ character: hero, loadout }],
       activeEncounterId: null,
       latestOutcome: null,
       completedEncounters: [],
       availableEncounters: [
         {
-          id: 'iron-warden',
-          title: 'The Iron Warden',
-          summary: 'Challenge the sentinel.',
+          id: "iron-warden",
+          title: "The Iron Warden",
+          summary: "Challenge the sentinel.",
         },
       ],
     };
     expect(decodeGameSnapshot({ ...empty, campaign })).toMatchObject({
       ok: true,
     });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          party: [
+            {
+              character: hero,
+              loadout: {
+                ...loadout,
+                capacity: { ...loadout.capacity, used: 2 },
+              },
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          party: [
+            {
+              character: hero,
+              loadout: {
+                ...loadout,
+                equipmentSlots: [
+                  { ...loadout.equipmentSlots[0], id: "off-hand" },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ ok: false });
+
     const occludedExploration = {
       dungeonTitle: "Warden's Gate Pass",
-      wallStyle: 'mountain-fortress',
+      wallStyle: "mountain-fortress",
       width: 11,
       height: 7,
       x: 1,
       y: 1,
-      facing: 'east',
+      facing: "east",
       canStepForward: false,
       canStepBackward: false,
       view: [
-        { depth: 0, frontBlocked: true, leftBlocked: false, rightBlocked: false },
+        {
+          depth: 0,
+          frontBlocked: true,
+          leftBlocked: false,
+          rightBlocked: false,
+        },
         { depth: 1, frontBlocked: true, leftBlocked: true, rightBlocked: true },
         { depth: 2, frontBlocked: true, leftBlocked: true, rightBlocked: true },
       ],
@@ -217,163 +268,140 @@ describe('decodeGameSnapshot', () => {
     expect(
       decodeGameSnapshot({
         ...empty,
-        campaign: { ...campaign, phase: 'exploration' },
+        campaign: { ...campaign, phase: "exploration" },
         exploration: occludedExploration,
       }),
     ).toMatchObject({ ok: true });
     for (const hiddenTopology of [
       [
         occludedExploration.view[0],
-        { depth: 1, frontBlocked: true, leftBlocked: true, rightBlocked: false },
+        {
+          depth: 1,
+          frontBlocked: true,
+          leftBlocked: true,
+          rightBlocked: false,
+        },
         occludedExploration.view[2],
       ],
       [
         occludedExploration.view[0],
         occludedExploration.view[1],
-        { depth: 2, frontBlocked: true, leftBlocked: false, rightBlocked: true },
+        {
+          depth: 2,
+          frontBlocked: true,
+          leftBlocked: false,
+          rightBlocked: true,
+        },
       ],
     ]) {
       expect(
         decodeGameSnapshot({
           ...empty,
-          campaign: { ...campaign, phase: 'exploration' },
+          campaign: { ...campaign, phase: "exploration" },
           exploration: { ...occludedExploration, view: hiddenTopology },
         }),
       ).toMatchObject({ ok: false });
     }
-    expect(
-      decodeGameSnapshot({
-        ...empty,
-        campaign: {
-          ...campaign,
-          loadout: {
-            ...campaign.loadout,
-            capacity: { ...campaign.loadout.capacity, used: 2 },
-          },
-        },
-      }),
-    ).toMatchObject({ ok: false });
-    expect(
-      decodeGameSnapshot({
-        ...empty,
-        campaign: {
-          ...campaign,
-          loadout: {
-            ...campaign.loadout,
-            equipmentSlots: [
-              {
-                ...campaign.loadout.equipmentSlots[0],
-                id: 'off-hand',
-              },
-            ],
-          },
-        },
-      }),
-    ).toMatchObject({ ok: false });
-    expect(
-      decodeGameSnapshot({
-        ...empty,
-        campaign: { ...campaign, phase: 'encounter', activeEncounterId: null },
-      }),
-    ).toMatchObject({ ok: false });
 
     const target = {
       ...hero,
       id: 102,
-      name: 'Iron Warden',
-      title: 'Armored Sentinel',
+      name: "Iron Warden",
+      title: "Armored Sentinel",
     };
-    expect(
-      decodeGameSnapshot({
-        ...empty,
-        campaign: {
-          ...campaign,
-          phase: 'encounter',
-          activeEncounterId: 'iron-warden',
-        },
-        encounter: {
-          turn: 0,
-          nextRoll: 0,
-          playerId: 101,
-          turnOwner: 'player',
-          characters: [hero, target],
-          actions: [],
-          pendingAction: null,
-          log: [],
-        },
-      }),
-    ).toMatchObject({ ok: true });
-
+    const participants = [
+      {
+        character: hero,
+        faction: "party",
+        initiative: 18,
+        defeated: false,
+      },
+      {
+        character: target,
+        faction: "opposition",
+        initiative: 14,
+        defeated: false,
+      },
+    ];
     const action = {
-      id: 'longsword-strike',
-      label: 'Longsword Strike',
-      ability: 'Might',
-      defense: 'Armor',
-      damage: '1d8+2 Impact',
-      activation: ['1 Standard Action'],
-      target: '1 Hostile Participant · line of effect Required',
+      id: "longsword-strike",
+      label: "Longsword Strike",
+      ability: "Might",
+      defense: "Armor",
+      damage: "1d8+2 Impact",
+      activation: ["1 Standard Action"],
+      target: "1 Hostile Participant · line of effect Required",
       range: 1,
-      implement: 'Training Blade',
-      tags: ['Attack', 'Melee', 'Weapon'],
-      effect: 'Bleeding',
+      implement: "Training Blade",
+      tags: ["Attack", "Melee", "Weapon"],
+      effect: "Bleeding",
     };
     const encounterWithAction = {
-      turn: 0,
+      round: 0,
       nextRoll: 0,
-      playerId: 101,
-      turnOwner: 'player',
-      characters: [hero, target],
+      currentActorId: 101,
+      participants,
       actions: [action],
+      legalTargets: [
+        {
+          actionId: "longsword-strike",
+          targetIds: [102],
+        },
+      ],
       pendingAction: null,
       log: [],
     };
+    const activeCampaign = {
+      ...campaign,
+      phase: "encounter",
+      activeEncounterId: "iron-warden",
+    };
     expect(
       decodeGameSnapshot({
         ...empty,
-        campaign: {
-          ...campaign,
-          phase: 'encounter',
-          activeEncounterId: 'iron-warden',
-        },
+        campaign: activeCampaign,
         encounter: encounterWithAction,
       }),
     ).toMatchObject({ ok: true });
     expect(
       decodeGameSnapshot({
         ...empty,
-        campaign: {
-          ...campaign,
-          phase: 'encounter',
-          activeEncounterId: 'iron-warden',
+        campaign: { ...activeCampaign, activeEncounterId: null },
+        encounter: encounterWithAction,
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: activeCampaign,
+        encounter: {
+          ...encounterWithAction,
+          legalTargets: [],
         },
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: activeCampaign,
         encounter: {
           ...encounterWithAction,
           actions: [
             {
               ...action,
-              activation: [
-                'one',
-                'two',
-                'three',
-                'four',
-                'one-over',
-              ],
+              activation: ["one", "two", "three", "four", "one-over"],
             },
           ],
         },
       }),
     ).toMatchObject({ ok: false });
     const missingBinding = Object.fromEntries(
-      Object.entries(action).filter(([key]) => key !== 'implement'),
+      Object.entries(action).filter(([key]) => key !== "implement"),
     );
     expect(
       decodeGameSnapshot({
         ...empty,
-        campaign: {
-          ...campaign,
-          phase: 'encounter',
-          activeEncounterId: 'iron-warden',
-        },
+        campaign: activeCampaign,
         encounter: {
           ...encounterWithAction,
           actions: [missingBinding],
@@ -382,79 +410,66 @@ describe('decodeGameSnapshot', () => {
     ).toMatchObject({ ok: false });
 
     const victory = {
-      kind: 'victory',
-      encounterId: 'iron-warden',
-      title: 'The Iron Warden defeated',
-      summary: 'Mara prevailed.',
+      kind: "victory",
+      encounterId: "iron-warden",
+      title: "The Iron Warden defeated",
+      summary: "Mara prevailed.",
       rewardItemId: 201,
-      reward: 'Warden chain armor',
+      reward: "Warden chain armor",
+    };
+    const outcomeCampaign = {
+      ...campaign,
+      phase: "outcome",
+      activeEncounterId: "iron-warden",
+      latestOutcome: victory,
+      completedEncounters: [
+        {
+          encounterId: "iron-warden",
+          title: "The Iron Warden",
+          outcome: "victory",
+        },
+      ],
+    };
+    const outcomeEncounter = {
+      ...encounterWithAction,
+      round: 4,
+      nextRoll: 8,
+      currentActorId: null,
+      participants: [
+        participants[0],
+        {
+          ...participants[1],
+          character: { ...target, healthCurrent: 0 },
+          defeated: true,
+        },
+      ],
+      actions: [],
+      legalTargets: [],
     };
     expect(
       decodeGameSnapshot({
         ...empty,
-        campaign: {
-          ...campaign,
-          phase: 'outcome',
-          activeEncounterId: 'iron-warden',
-          latestOutcome: victory,
-          completedEncounters: [
-            {
-              encounterId: 'iron-warden',
-              title: 'The Iron Warden',
-              outcome: 'victory',
-            },
-          ],
-        },
-        encounter: {
-          turn: 4,
-          nextRoll: 8,
-          playerId: 101,
-          turnOwner: null,
-          characters: [hero, target],
-          actions: [],
-          pendingAction: null,
-          log: [],
-        },
+        campaign: outcomeCampaign,
+        encounter: outcomeEncounter,
       }),
     ).toMatchObject({ ok: true });
     expect(
       decodeGameSnapshot({
         ...empty,
-        campaign: {
-          ...campaign,
-          phase: 'outcome',
-          activeEncounterId: 'iron-warden',
-          latestOutcome: victory,
-          completedEncounters: [
-            {
-              encounterId: 'iron-warden',
-              title: 'The Iron Warden',
-              outcome: 'victory',
-            },
-          ],
-        },
-        encounter: {
-          turn: 4,
-          nextRoll: 8,
-          playerId: 101,
-          turnOwner: 'player',
-          characters: [hero, target],
-          actions: [],
-          pendingAction: null,
-          log: [],
-        },
+        campaign: outcomeCampaign,
+        encounter: { ...outcomeEncounter, currentActorId: 101 },
       }),
     ).toMatchObject({ ok: false });
   });
 });
 
-describe('decodeSaveStatus', () => {
-  it('strictly distinguishes ready, empty, and recovery identities', () => {
+describe("decodeSaveStatus", () => {
+  it("strictly distinguishes ready, empty, and recovery identities", () => {
     expect(
       decodeSaveStatus({
-        saveIdentity: '/tmp/campaign.json',
-        state: 'ready',
-        campaignId: 'wardens-gate',
+        saveIdentity: "/tmp/campaign.json",
+        state: "ready",
+        campaignId: "wardens-gate",
         campaignTitle: "The Warden's Gate",
         revision: 9,
         persistenceError: null,
@@ -462,22 +477,22 @@ describe('decodeSaveStatus', () => {
     ).toMatchObject({ ok: true });
     expect(
       decodeSaveStatus({
-        saveIdentity: '/tmp/campaign.json',
-        state: 'recovery-required',
+        saveIdentity: "/tmp/campaign.json",
+        state: "recovery-required",
         campaignId: null,
         campaignTitle: null,
         revision: null,
-        persistenceError: 'save is malformed',
+        persistenceError: "save is malformed",
       }),
     ).toMatchObject({ ok: true });
     expect(
       decodeSaveStatus({
-        saveIdentity: '/tmp/campaign.json',
-        state: 'recovery-required',
-        campaignId: 'forged',
+        saveIdentity: "/tmp/campaign.json",
+        state: "recovery-required",
+        campaignId: "forged",
         campaignTitle: null,
         revision: null,
-        persistenceError: 'save is malformed',
+        persistenceError: "save is malformed",
       }),
     ).toMatchObject({ ok: false });
   });

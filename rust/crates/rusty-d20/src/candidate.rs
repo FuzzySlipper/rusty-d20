@@ -14,7 +14,7 @@ use crate::{
     MAX_D20_IMPLEMENT_TAGS, MAX_D20_TACTICAL_RANGE,
 };
 
-pub const D20_CANDIDATE_SCHEMA_VERSION: u32 = 2;
+pub const D20_CANDIDATE_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -180,6 +180,7 @@ pub struct ReactionCandidate {
     pub bonus: i16,
     pub resource: D20Id,
     pub cost: u16,
+    pub activation_costs: Vec<ActivationCostCandidate>,
     pub effect: D20Id,
 }
 
@@ -430,6 +431,22 @@ pub struct EncounterOutcomeCandidate {
     pub recovery_vitality: Option<u32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum EncounterFactionCandidate {
+    Party,
+    Opposition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct EncounterParticipantCandidate {
+    pub character: D20Id,
+    pub faction: EncounterFactionCandidate,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
@@ -437,7 +454,7 @@ pub struct EncounterCandidate {
     pub id: D20Id,
     pub title: String,
     pub summary: String,
-    pub opponent: D20Id,
+    pub roster: Vec<EncounterParticipantCandidate>,
     pub available_from_camp: bool,
     pub introduction_source: String,
     pub introduction_text: String,
@@ -502,7 +519,7 @@ pub struct AdventureCandidate {
     pub title: String,
     pub default: bool,
     pub selectable: bool,
-    pub hero: D20Id,
+    pub party: Vec<D20Id>,
     pub characters: Vec<D20Id>,
     pub camp_storage: D20Id,
     pub storage: Vec<D20Id>,
@@ -577,6 +594,8 @@ pub fn generated_d20_candidate_typescript() -> String {
         EquipmentReferenceCandidate::decl(),
         ItemInstanceCandidate::decl(),
         EncounterOutcomeCandidate::decl(),
+        EncounterFactionCandidate::decl(),
+        EncounterParticipantCandidate::decl(),
         EncounterCandidate::decl(),
         DungeonFacingCandidate::decl(),
         DungeonEncounterCandidate::decl(),

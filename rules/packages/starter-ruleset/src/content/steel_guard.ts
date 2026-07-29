@@ -80,6 +80,7 @@ export const steelGuardModule = defineD20Module(
         bonus: 2,
         resource: 'guard',
         cost: 1,
+        activationCosts: [{ budget: 'reaction', amount: 1 }],
         effect: 'parry-stance',
       }),
     ],

@@ -20,16 +20,12 @@ const source = Object.freeze({
 
 test('module order does not change canonical package identity', () => {
   const abilities = defineD20Module(source, ({ ability }) => ({
-    abilities: [
-      ability(12, { id: 'might', minimum: 1, maximum: 30 }),
-    ],
+    abilities: [ability(12, { id: 'might', minimum: 1, maximum: 30 })],
   }));
   const combat = defineD20Module(
     { id: 'combat-source', path: 'rules/test-combat.ts' },
     ({ action, activationBudget, damageType, defense }) => ({
-      defenses: [
-        defense(8, { id: 'armor', base: 10, abilities: ['might'] }),
-      ],
+      defenses: [defense(8, { id: 'armor', base: 10, abilities: ['might'] })],
       activationBudgets: [
         activationBudget(10, {
           id: 'standard-action',
@@ -138,7 +134,7 @@ test('authored adventure payloads are deeply immutable and retain provenance', (
         title: 'Test Adventure',
         default: true,
         selectable: true,
-        hero: 'hero',
+        party: ['hero'],
         characters: ['hero', 'opponent'],
         campStorage: 'camp',
         storage: ['camp'],
@@ -192,9 +188,7 @@ test('authored adventure payloads are deeply immutable and retain provenance', (
 
 test('neutral envelope version rejection stays typed', () => {
   const module = defineD20Module(source, ({ ability }) => ({
-    abilities: [
-      ability(4, { id: 'strength', minimum: 1, maximum: 30 }),
-    ],
+    abilities: [ability(4, { id: 'strength', minimum: 1, maximum: 30 })],
   }));
   assert.throws(
     () =>
@@ -205,16 +199,13 @@ test('neutral envelope version rejection stays typed', () => {
         modules: [module],
       }),
     (error: unknown) =>
-      error instanceof RuleContractError &&
-      error.logicalPath === '$/version',
+      error instanceof RuleContractError && error.logicalPath === '$/version',
   );
 });
 
 test('canonical Rust diagnostic correlation maps to a source path', () => {
   const module = defineD20Module(source, ({ ability }) => ({
-    abilities: [
-      ability(31, { id: 'strength', minimum: 0, maximum: 40 }, 3),
-    ],
+    abilities: [ability(31, { id: 'strength', minimum: 0, maximum: 40 }, 3)],
   }));
   const artifact = authorD20Package({
     domain: 'rusty-d20',

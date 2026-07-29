@@ -16,12 +16,13 @@ use crate::{
     AbilityScore, ActionPreview, ActionResource, ActionResourcesComponent, AdventureDefinition,
     AffinitySeed, ApplyActionRequest, CharacterAffinityKindDefinition, CharacterSeed,
     CharacterTemplateDefinition, D20CompileError, D20Id, D20Ruleset, D20Session, D20SessionError,
-    DamageAffinity, DungeonFacingDefinition, EncounterDefinition, EquipmentItemSeed, InventorySeed,
+    DamageAffinity, DungeonFacingDefinition, EncounterDefinition, EncounterFaction,
+    EncounterFactionDefinition, EncounterParticipationSeed, EquipmentItemSeed, InventorySeed,
     ItemInstanceDefinition, ItemRarityDefinition, ReactionReceipt, ScheduledEffectsComponent,
     SessionSaveError, StorageSeed, ENGINE_REVISION,
 };
 
-const GAME_SAVE_SCHEMA_VERSION: u32 = 7;
+const GAME_SAVE_SCHEMA_VERSION: u32 = 8;
 const MAX_LOG_ENTRIES: usize = 64;
 const MAX_LOG_DETAILS: usize = 32;
 const MAX_LOG_SOURCE_BYTES: usize = 128;
@@ -65,13 +66,6 @@ enum CampaignPhase {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-enum EncounterTurnOwner {
-    Player,
-    Opposition,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 enum EncounterOutcome {
     Victory,
     Defeat,
@@ -105,7 +99,7 @@ struct CampaignState {
     phase: CampaignPhase,
     active_encounter_id: Option<String>,
     resolved_encounter_id: Option<String>,
-    turn_owner: Option<EncounterTurnOwner>,
+    current_actor_id: Option<u64>,
     outcome: Option<EncounterOutcome>,
     completed_encounters: Vec<CompletedEncounter>,
     exploration: Option<ExplorationState>,
@@ -343,7 +337,7 @@ impl GameRuntime {
             phase: CampaignPhase::Camp,
             active_encounter_id: None,
             resolved_encounter_id: None,
-            turn_owner: None,
+            current_actor_id: None,
             outcome: None,
             completed_encounters: Vec::new(),
             exploration: None,
@@ -444,17 +438,33 @@ impl GameRuntime {
                 encounter.id, next.id
             )));
         }
-        let repeated_opponent = campaign.completed_encounters.iter().any(|completed| {
-            self.rules
-                .encounter(&id(&completed.encounter_id).expect("validated campaign identity"))
-                .is_some_and(|completed| completed.opponent == encounter.opponent)
-        });
+        let mut completed_opposition = BTreeSet::new();
+        for completed in &campaign.completed_encounters {
+            let completed_id = id(&completed.encounter_id)?;
+            let completed_definition = self.rules.encounter(&completed_id).ok_or_else(|| {
+                GameRuntimeError::InvalidState(format!(
+                    "completed encounter {completed_id} is missing"
+                ))
+            })?;
+            completed_opposition.extend(
+                completed_definition
+                    .roster
+                    .iter()
+                    .filter(|participant| {
+                        participant.faction == EncounterFactionDefinition::Opposition
+                    })
+                    .map(|participant| participant.character.clone()),
+            );
+        }
         let mut introduction_details = encounter.introduction_details.clone();
-        if repeated_opponent {
+        for participant in encounter.roster.iter().filter(|participant| {
+            participant.faction == EncounterFactionDefinition::Opposition
+                && completed_opposition.contains(&participant.character)
+        }) {
             let opponent = self
                 .rules
-                .character_template(&encounter.opponent)
-                .expect("compiled encounter opponent exists")
+                .character_template(&participant.character)
+                .expect("compiled encounter participant exists")
                 .clone();
             let serial = self.next_operation;
             let receipt = self.session_mut()?.restore_vitality(
@@ -475,6 +485,54 @@ impl GameRuntime {
                 receipt.applied_amount.get()
             ));
         }
+        let initiative_ability = id("finesse")?;
+        let participants = encounter
+            .roster
+            .iter()
+            .map(|participant| {
+                let character = self
+                    .rules
+                    .character_template(&participant.character)
+                    .expect("compiled encounter participant exists");
+                let initiative =
+                    *character
+                        .abilities
+                        .get(&initiative_ability)
+                        .ok_or_else(|| {
+                            GameRuntimeError::InvalidState(format!(
+                                "encounter participant {} has no finesse initiative",
+                                character.id
+                            ))
+                        })?;
+                Ok(EncounterParticipationSeed {
+                    entity: EntityId::new(character.entity_id),
+                    faction: match participant.faction {
+                        EncounterFactionDefinition::Party => EncounterFaction::Party,
+                        EncounterFactionDefinition::Opposition => EncounterFaction::Opposition,
+                    },
+                    initiative,
+                })
+            })
+            .collect::<Result<Vec<_>, GameRuntimeError>>()?;
+        self.session_mut()?
+            .install_encounter_participation(encounter.id.clone(), participants)?;
+        let mut ordered = self.session()?.encounter_participants()?;
+        ordered.sort_by(|left, right| {
+            right
+                .1
+                .initiative()
+                .cmp(&left.1.initiative())
+                .then_with(|| left.0.raw().cmp(&right.0.raw()))
+        });
+        let first_actor = ordered
+            .into_iter()
+            .find_map(|(entity, _)| (self.vitality(entity).ok()? > 0).then_some(entity))
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(
+                    "encounter roster has no living participant".to_owned(),
+                )
+            })?;
+        self.session_mut()?.reset_activation_budgets(first_actor)?;
         let campaign = self
             .campaign
             .as_mut()
@@ -482,7 +540,7 @@ impl GameRuntime {
         campaign.phase = CampaignPhase::Encounter;
         campaign.active_encounter_id = Some(encounter.id.to_string());
         campaign.resolved_encounter_id = None;
-        campaign.turn_owner = Some(EncounterTurnOwner::Player);
+        campaign.current_actor_id = Some(first_actor.raw());
         campaign.outcome = None;
         self.bump_revision()?;
         self.saved_revision = None;
@@ -519,9 +577,19 @@ impl GameRuntime {
             });
         }
         let serial = self.next_operation;
-        let hero = character_entity(&self.rules, &adventure, &adventure.hero)?;
+        let owner = self
+            .session()?
+            .entities()
+            .contained_in(item)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidContainment(format!(
+                    "item {} has no canonical owner",
+                    item.raw()
+                ))
+            })?;
+        let owner_name = party_member_name(&self.rules, &adventure, owner)?;
         self.session_mut()?.equip_item(
-            hero,
+            owner,
             item,
             &equipment,
             operation(&format!("equip-item-{serial}"))?,
@@ -534,8 +602,9 @@ impl GameRuntime {
             "Loadout",
             &format!("Equipped {}.", humanize(definition_id.as_str())),
             vec![format!(
-                "{} now occupies the {} slot.",
+                "{} now occupies {}'s {} slot.",
                 humanize(definition_id.as_str()),
+                owner_name,
                 humanize(slot.as_str())
             )],
         )?;
@@ -554,16 +623,20 @@ impl GameRuntime {
         let equipment = product_loadout_item(&self.rules, &adventure, item)?
             .equipment
             .clone();
-        let hero_name = self
-            .rules
-            .character_template(&adventure.hero)
-            .expect("compiled hero exists")
-            .name
-            .clone();
-        let hero = character_entity(&self.rules, &adventure, &adventure.hero)?;
+        let owner = self
+            .session()?
+            .entities()
+            .contained_in(item)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidContainment(format!(
+                    "item {} has no canonical owner",
+                    item.raw()
+                ))
+            })?;
+        let owner_name = party_member_name(&self.rules, &adventure, owner)?;
         let serial = self.next_operation;
         self.session_mut()?.unequip_item(
-            hero,
+            owner,
             item,
             operation(&format!("unequip-item-{serial}"))?,
         )?;
@@ -574,7 +647,7 @@ impl GameRuntime {
             GameLogKindDto::System,
             "Loadout",
             &format!("Unequipped {}.", humanize(equipment.id().as_str())),
-            vec![format!("The item remains in {hero_name}'s inventory.")],
+            vec![format!("The item remains in {owner_name}'s inventory.")],
         )?;
         self.snapshot()
     }
@@ -593,16 +666,14 @@ impl GameRuntime {
             .clone();
         let from_owner = entity(request.from_owner_id)?;
         let to_owner = entity(request.to_owner_id)?;
-        let hero = character_entity(&self.rules, &adventure, &adventure.hero)?;
         let stash = storage_entity(&self.rules, &adventure, &adventure.camp_storage)?;
-        if !((from_owner == hero && to_owner == stash) || (from_owner == stash && to_owner == hero))
-        {
-            let hero_name = self
-                .rules
-                .character_template(&adventure.hero)
-                .expect("compiled hero exists")
-                .name
-                .clone();
+        let party_entities = adventure
+            .party
+            .iter()
+            .map(|member| character_entity(&self.rules, &adventure, member))
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        let allowed_owner = |owner: EntityId| owner == stash || party_entities.contains(&owner);
+        if from_owner == to_owner || !allowed_owner(from_owner) || !allowed_owner(to_owner) {
             let stash_name = self
                 .rules
                 .storage(&adventure.camp_storage)
@@ -610,7 +681,7 @@ impl GameRuntime {
                 .name
                 .clone();
             return Err(GameRuntimeError::InvalidContainment(format!(
-                "loadout transfers are limited to {hero_name} and {stash_name}"
+                "loadout transfers are limited to distinct party inventories and {stash_name}"
             )));
         }
         let serial = self.next_operation;
@@ -623,16 +694,13 @@ impl GameRuntime {
         self.next_operation = serial + 1;
         self.bump_revision()?;
         self.saved_revision = None;
-        let hero_name = self
-            .rules
-            .character_template(&adventure.hero)
-            .expect("compiled hero exists")
-            .name
-            .clone();
-        let destination = if to_owner == hero {
-            format!("{hero_name}'s inventory")
-        } else {
+        let destination = if to_owner == stash {
             "the camp stash".to_owned()
+        } else {
+            format!(
+                "{}'s inventory",
+                party_member_name(&self.rules, &adventure, to_owner)?
+            )
         };
         self.push_log(
             GameLogKindDto::System,
@@ -655,7 +723,7 @@ impl GameRuntime {
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
         self.ensure_revision(request.expected_revision)?;
         self.ensure_encounter_phase()?;
-        self.ensure_turn_owner(EncounterTurnOwner::Player)?;
+        self.ensure_current_faction(EncounterFaction::Party)?;
         self.ensure_mutation_capacity(true, false)?;
         if self.pending.is_some() {
             return Err(GameRuntimeError::InvalidCommand(
@@ -664,28 +732,42 @@ impl GameRuntime {
         }
         let actor = entity(request.actor_id)?;
         let target = entity(request.target_id)?;
-        let adventure = self.adventure()?.clone();
-        let campaign = self
-            .campaign
-            .as_ref()
-            .ok_or(GameRuntimeError::NoEncounter)?;
-        let encounter = current_encounter_definition(&self.rules, &adventure, campaign)?;
-        let hero = character_entity(&self.rules, &adventure, &adventure.hero)?;
-        let opponent = character_entity(&self.rules, &adventure, &encounter.opponent)?;
-        if actor != hero || target != opponent {
+        let (current_actor, _) = self.current_actor()?;
+        if actor != current_actor {
             return Err(GameRuntimeError::InvalidCommand(
-                "the player action actor/target do not match the authored encounter".to_owned(),
+                "the selected actor does not own the current activation".to_owned(),
+            ));
+        }
+        let target_participation = self
+            .session()?
+            .encounter_participation(target)?
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidCommand(
+                    "the selected target is not an encounter participant".to_owned(),
+                )
+            })?;
+        if target_participation.faction() != EncounterFaction::Opposition
+            || self.vitality(target)? == 0
+        {
+            return Err(GameRuntimeError::InvalidCommand(
+                "party actions require a living opposition target".to_owned(),
             ));
         }
         let action = id(&request.action_id)?;
-        let hero_definition = self
+        let actor_definition = self
             .rules
-            .character_template(&adventure.hero)
-            .expect("compiled hero exists");
-        if !hero_definition.actions.contains(&action) {
+            .character_templates()
+            .find(|character| character.entity_id == actor.raw())
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(format!(
+                    "current actor {} has no compiled character template",
+                    actor.raw()
+                ))
+            })?;
+        if !actor_definition.actions.contains(&action) {
             return Err(GameRuntimeError::InvalidCommand(format!(
                 "action {action} is not available to {}",
-                hero_definition.name
+                actor_definition.name
             )));
         }
         let serial = self.next_operation;
@@ -765,35 +847,10 @@ impl GameRuntime {
         self.ensure_encounter_phase()?;
         self.ensure_mutation_capacity(false, true)?;
         let pending = self.require_pending(&request.preview_token)?.clone();
-        let turn_owner = self
-            .campaign
-            .as_ref()
-            .and_then(|campaign| campaign.turn_owner)
-            .ok_or_else(|| {
-                GameRuntimeError::InvalidState(
-                    "active encounter is missing its turn owner".to_owned(),
-                )
-            })?;
-        let adventure = self.adventure()?.clone();
-        let encounter = current_encounter_definition(
-            &self.rules,
-            &adventure,
-            self.campaign
-                .as_ref()
-                .ok_or(GameRuntimeError::NoEncounter)?,
-        )?
-        .clone();
-        let expected_actor = match turn_owner {
-            EncounterTurnOwner::Player => {
-                character_entity(&self.rules, &adventure, &adventure.hero)?
-            }
-            EncounterTurnOwner::Opposition => {
-                character_entity(&self.rules, &adventure, &encounter.opponent)?
-            }
-        };
+        let (expected_actor, _) = self.current_actor()?;
         if pending.preview.actor() != expected_actor {
             return Err(GameRuntimeError::InvalidCommand(
-                "the pending action does not belong to the current turn owner".to_owned(),
+                "the pending action does not belong to the current actor".to_owned(),
             ));
         }
         let action_definition = self
@@ -863,23 +920,10 @@ impl GameRuntime {
             details,
         )?;
 
-        if self.vitality(receipt.target)? == 0 {
-            let opponent = character_entity(&self.rules, &adventure, &encounter.opponent)?;
-            let encounter_outcome = if receipt.target == opponent {
-                EncounterOutcome::Victory
-            } else {
-                EncounterOutcome::Defeat
-            };
+        if let Some(encounter_outcome) = self.encounter_outcome()? {
             self.complete_encounter(encounter_outcome)?;
         } else {
-            match turn_owner {
-                EncounterTurnOwner::Player => {
-                    self.campaign_mut()?.turn_owner = Some(EncounterTurnOwner::Opposition);
-                }
-                EncounterTurnOwner::Opposition => {
-                    self.advance_after_opposition(&adventure, Vec::new())?;
-                }
-            }
+            self.advance_activation(Vec::new())?;
         }
         self.bump_revision()?;
         self.saved_revision = None;
@@ -902,47 +946,58 @@ impl GameRuntime {
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
         self.ensure_revision(expected_revision)?;
         self.ensure_encounter_phase()?;
-        self.ensure_turn_owner(EncounterTurnOwner::Opposition)?;
+        self.ensure_current_faction(EncounterFaction::Opposition)?;
         self.ensure_mutation_capacity(true, true)?;
         if self.pending.is_some() {
             return Err(GameRuntimeError::InvalidCommand(
                 "the opposition action is already pending".to_owned(),
             ));
         }
-        let adventure = self.adventure()?.clone();
         let encounter = current_encounter_definition(
             &self.rules,
-            &adventure,
+            self.adventure()?,
             self.campaign
                 .as_ref()
                 .ok_or(GameRuntimeError::NoEncounter)?,
         )?
         .clone();
+        let (actor, _) = self.current_actor()?;
         let opponent = self
             .rules
-            .character_template(&encounter.opponent)
-            .expect("compiled opponent exists")
+            .character_templates()
+            .find(|character| character.entity_id == actor.raw())
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(format!(
+                    "current opposition actor {} has no compiled character",
+                    actor.raw()
+                ))
+            })?
             .clone();
         let serial = self.next_operation;
         let operation = operation(&format!("opposition-action-{serial}"))?;
-        let actor = EntityId::new(opponent.entity_id);
-        let target = character_entity(&self.rules, &adventure, &adventure.hero)?;
+        let targets = self
+            .living_participants()?
+            .into_iter()
+            .filter(|(_, faction, _)| *faction == EncounterFaction::Party)
+            .map(|(entity, _, _)| entity)
+            .collect::<Vec<_>>();
         let mut unavailable = Vec::new();
         let legal_actions = opponent
             .actions
             .iter()
-            .filter_map(|action| {
-                match self.session().and_then(|session| {
+            .flat_map(|action| targets.iter().map(move |target| (action, *target)))
+            .filter_map(|(action, target)| {
+                let result = self.session().and_then(|session| {
                     session
                         .preview_action(actor, target, action, operation.clone())
                         .map_err(GameRuntimeError::Session)
-                }) {
-                    Ok(preview) => Some(Ok((action.clone(), preview))),
-                    Err(GameRuntimeError::Session(
-                        D20SessionError::ActionForbidden { .. }
-                        | D20SessionError::RequiredImplementNotEquipped { .. },
-                    )) => {
-                        unavailable.push(action.clone());
+                });
+                match result {
+                    Ok(preview) => Some(Ok((action.clone(), target, preview))),
+                    Err(GameRuntimeError::Session(error))
+                        if is_unavailable_action_error(&error) =>
+                    {
+                        unavailable.push((action.clone(), target));
                         None
                     }
                     Err(error) => Some(Err(error)),
@@ -950,14 +1005,11 @@ impl GameRuntime {
             })
             .collect::<Result<Vec<_>, GameRuntimeError>>()?;
         if legal_actions.is_empty() {
-            self.advance_after_opposition(
-                &adventure,
-                vec![format!(
-                    "{} had no legal authored action; {} unavailable choice(s) were skipped without mutation.",
+            self.advance_activation(vec![format!(
+                    "{} had no legal authored action/target pair; {} unavailable choice(s) were skipped without mutation.",
                     opponent.name,
                     unavailable.len()
-                )],
-            )?;
+                )])?;
             self.bump_revision()?;
             self.saved_revision = None;
             return self.snapshot();
@@ -969,14 +1021,14 @@ impl GameRuntime {
         })?;
         let index = self
             .session()?
-            .deterministic_choice_index(&format!("{}-{}-action", adventure.id, encounter.id), upper)
+            .deterministic_choice_index(&format!("{}-{}-action", encounter.id, actor.raw()), upper)
             .ok_or_else(|| {
                 GameRuntimeError::InvalidState(
                     "the opposition has no admitted action choices".to_owned(),
                 )
             })?;
         let index = usize::try_from(index).expect("u32 choice index fits usize");
-        let (action, preview) = legal_actions[index].clone();
+        let (action, target, preview) = legal_actions[index].clone();
         self.next_operation = self
             .next_operation
             .checked_add(1)
@@ -991,7 +1043,12 @@ impl GameRuntime {
         self.push_log(
             GameLogKindDto::Turn,
             "Opposition",
-            &format!("{} prepares {}.", opponent.name, humanize(action.as_str())),
+            &format!(
+                "{} prepares {} against {}.",
+                opponent.name,
+                humanize(action.as_str()),
+                self.character_name(target)?
+            ),
             vec![format!(
                 "Deterministic enemy policy selected legal choice {} of {}; {} unavailable authored choice(s) were excluded.",
                 index + 1,
@@ -1002,42 +1059,30 @@ impl GameRuntime {
         self.snapshot()
     }
 
-    fn advance_after_opposition(
+    pub fn end_activation(
         &mut self,
-        adventure: &AdventureDefinition,
-        mut details: Vec<String>,
-    ) -> Result<(), GameRuntimeError> {
-        let serial = self.next_operation;
-        let next_turn = self
-            .session()?
-            .current_turn()
-            .checked_add(1)
-            .ok_or(GameRuntimeError::CounterOverflow)?;
-        let turn_receipt = self
-            .session_mut()?
-            .advance_turn(next_turn, operation(&format!("advance-round-{serial}"))?)?;
-        self.next_operation = self
-            .next_operation
-            .checked_add(1)
-            .ok_or(GameRuntimeError::CounterOverflow)?;
-        self.campaign_mut()?.turn_owner = Some(EncounterTurnOwner::Player);
-        details.push(format!(
-            "{} scheduled effect(s) expired before {}'s next turn.",
-            turn_receipt.expired.len(),
-            self.rules
-                .character_template(&adventure.hero)
-                .expect("compiled hero exists")
-                .name
-        ));
-        self.push_log(
-            GameLogKindDto::Turn,
-            "Round",
-            &format!(
-                "The encounter advanced from round {} to {}.",
-                turn_receipt.before, turn_receipt.after
-            ),
-            details,
-        )
+        expected_revision: u64,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        let mut staged = self.clone();
+        staged.ensure_revision(expected_revision)?;
+        staged.ensure_encounter_phase()?;
+        staged.ensure_current_faction(EncounterFaction::Party)?;
+        staged.ensure_mutation_capacity(true, true)?;
+        if staged.pending.is_some() {
+            return Err(GameRuntimeError::InvalidCommand(
+                "resolve the pending action before ending the activation".to_owned(),
+            ));
+        }
+        let (actor, _) = staged.current_actor()?;
+        let name = staged.character_name(actor)?;
+        staged.advance_activation(vec![format!(
+            "{name} ended the activation without spending another action."
+        )])?;
+        staged.bump_revision()?;
+        staged.saved_revision = None;
+        let snapshot = staged.snapshot()?;
+        *self = staged;
+        Ok(snapshot)
     }
 
     pub fn return_to_camp(
@@ -1073,11 +1118,16 @@ impl GameRuntime {
                 .ok_or(GameRuntimeError::NoEncounter)?,
         )?
         .clone();
-        let hero = self
-            .rules
-            .character_template(&adventure.hero)
-            .expect("compiled hero exists")
-            .clone();
+        let party = adventure
+            .party
+            .iter()
+            .map(|member| {
+                self.rules
+                    .character_template(member)
+                    .expect("compiled party member exists")
+                    .clone()
+            })
+            .collect::<Vec<_>>();
         let mut details = Vec::new();
         if outcome == EncounterOutcome::Defeat {
             let recovery = encounter.defeat.recovery_vitality.ok_or_else(|| {
@@ -1086,27 +1136,29 @@ impl GameRuntime {
                     encounter.id
                 ))
             })?;
-            let serial = self.next_operation;
-            let receipt = self.session_mut()?.restore_vitality(
-                EntityId::new(hero.entity_id),
-                recovery,
-                operation(&format!("camp-recovery-{serial}"))?,
-            )?;
-            self.next_operation = self
-                .next_operation
-                .checked_add(1)
-                .ok_or(GameRuntimeError::CounterOverflow)?;
-            details.push(format!(
-                "Camp recovery restored {} vitality; {} returns with {}/{} vitality.",
-                receipt.applied_amount.get(),
-                hero.name,
-                receipt.after.get(),
-                hero.vitality
-            ));
+            for member in &party {
+                let serial = self.next_operation;
+                let receipt = self.session_mut()?.restore_vitality(
+                    EntityId::new(member.entity_id),
+                    recovery,
+                    operation(&format!("camp-recovery-{serial}"))?,
+                )?;
+                self.next_operation = self
+                    .next_operation
+                    .checked_add(1)
+                    .ok_or(GameRuntimeError::CounterOverflow)?;
+                details.push(format!(
+                    "Camp recovery restored {} vitality; {} returns with {}/{} vitality.",
+                    receipt.applied_amount.get(),
+                    member.name,
+                    receipt.after.get(),
+                    member.vitality
+                ));
+            }
         } else {
             details.push(format!(
-                "{} keeps remaining vitality and resources.",
-                hero.name
+                "{} party members keep their remaining vitality and resources.",
+                party.len()
             ));
             if let Some(reward) = encounter.victory.reward_label {
                 details.push(format!("{reward} remains in canonical camp storage."));
@@ -1127,7 +1179,7 @@ impl GameRuntime {
                 CampaignPhase::Camp
             };
             campaign.active_encounter_id = None;
-            campaign.turn_owner = None;
+            campaign.current_actor_id = None;
             if !continue_exploring {
                 if let Some(exploration) = campaign.exploration.as_mut() {
                     exploration.position = DungeonPosition {
@@ -1139,6 +1191,7 @@ impl GameRuntime {
                 }
             }
         }
+        self.session_mut()?.clear_encounter_participation()?;
         self.bump_revision()?;
         self.saved_revision = None;
         self.push_log(
@@ -1235,7 +1288,7 @@ impl GameRuntime {
             }
             campaign.phase = CampaignPhase::Outcome;
             campaign.resolved_encounter_id = campaign.active_encounter_id.clone();
-            campaign.turn_owner = None;
+            campaign.current_actor_id = None;
             campaign.outcome = Some(outcome);
             campaign.completed_encounters.push(CompletedEncounter {
                 encounter_id: encounter.id.to_string(),
@@ -1335,6 +1388,159 @@ impl GameRuntime {
             })
     }
 
+    fn ordered_participants(
+        &self,
+    ) -> Result<Vec<(EntityId, EncounterFaction, i16)>, GameRuntimeError> {
+        let active_encounter = self
+            .campaign
+            .as_ref()
+            .and_then(|campaign| campaign.active_encounter_id.as_deref())
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(
+                    "active encounter is missing its identity".to_owned(),
+                )
+            })?;
+        let active_encounter = id(active_encounter)?;
+        let mut participants = self
+            .session()?
+            .encounter_participants()?
+            .into_iter()
+            .filter(|(_, participation)| participation.encounter() == &active_encounter)
+            .map(|(entity, participation)| {
+                (entity, participation.faction(), participation.initiative())
+            })
+            .collect::<Vec<_>>();
+        participants.sort_by(|left, right| {
+            right
+                .2
+                .cmp(&left.2)
+                .then_with(|| left.0.raw().cmp(&right.0.raw()))
+        });
+        if participants.is_empty() {
+            return Err(GameRuntimeError::InvalidState(format!(
+                "encounter {active_encounter} has no canonical participants"
+            )));
+        }
+        Ok(participants)
+    }
+
+    fn living_participants(
+        &self,
+    ) -> Result<Vec<(EntityId, EncounterFaction, i16)>, GameRuntimeError> {
+        self.ordered_participants()?
+            .into_iter()
+            .filter_map(|participant| match self.vitality(participant.0) {
+                Ok(vitality) if vitality > 0 => Some(Ok(participant)),
+                Ok(_) => None,
+                Err(error) => Some(Err(error)),
+            })
+            .collect()
+    }
+
+    fn current_actor(&self) -> Result<(EntityId, EncounterFaction), GameRuntimeError> {
+        let actor = self
+            .campaign
+            .as_ref()
+            .and_then(|campaign| campaign.current_actor_id)
+            .map(EntityId::new)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(
+                    "active encounter is missing its current actor".to_owned(),
+                )
+            })?;
+        let participation = self
+            .session()?
+            .encounter_participation(actor)?
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(format!(
+                    "current actor {} is not an encounter participant",
+                    actor.raw()
+                ))
+            })?;
+        if self.vitality(actor)? == 0 {
+            return Err(GameRuntimeError::InvalidState(format!(
+                "defeated participant {} owns the current activation",
+                actor.raw()
+            )));
+        }
+        Ok((actor, participation.faction()))
+    }
+
+    fn encounter_outcome(&self) -> Result<Option<EncounterOutcome>, GameRuntimeError> {
+        let participants = self.ordered_participants()?;
+        let mut party_alive = false;
+        let mut opposition_alive = false;
+        for (entity, faction, _) in participants {
+            if self.vitality(entity)? == 0 {
+                continue;
+            }
+            match faction {
+                EncounterFaction::Party => party_alive = true,
+                EncounterFaction::Opposition => opposition_alive = true,
+            }
+        }
+        Ok(match (party_alive, opposition_alive) {
+            (true, true) => None,
+            (true, false) => Some(EncounterOutcome::Victory),
+            (false, true) | (false, false) => Some(EncounterOutcome::Defeat),
+        })
+    }
+
+    fn advance_activation(&mut self, mut details: Vec<String>) -> Result<(), GameRuntimeError> {
+        let (current, _) = self.current_actor()?;
+        let ordered = self.ordered_participants()?;
+        let current_index = ordered
+            .iter()
+            .position(|participant| participant.0 == current)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(
+                    "current actor is absent from canonical initiative order".to_owned(),
+                )
+            })?;
+        let mut selected = None;
+        for offset in 1..=ordered.len() {
+            let index = (current_index + offset) % ordered.len();
+            if self.vitality(ordered[index].0)? > 0 {
+                selected = Some((index, ordered[index]));
+                break;
+            }
+        }
+        let (next_index, (next_actor, _, _)) = selected.ok_or_else(|| {
+            GameRuntimeError::InvalidState(
+                "encounter has no living participant after a nonterminal action".to_owned(),
+            )
+        })?;
+        let wrapped = next_index <= current_index;
+        if wrapped {
+            let serial = self.next_operation;
+            let next_round = self
+                .session()?
+                .current_turn()
+                .checked_add(1)
+                .ok_or(GameRuntimeError::CounterOverflow)?;
+            let receipt = self
+                .session_mut()?
+                .advance_turn(next_round, operation(&format!("advance-round-{serial}"))?)?;
+            self.next_operation = self
+                .next_operation
+                .checked_add(1)
+                .ok_or(GameRuntimeError::CounterOverflow)?;
+            details.push(format!(
+                "{} scheduled effect(s) expired at the round boundary.",
+                receipt.expired.len()
+            ));
+        }
+        self.session_mut()?.reset_activation_budgets(next_actor)?;
+        self.campaign_mut()?.current_actor_id = Some(next_actor.raw());
+        let name = self.character_name(next_actor)?;
+        self.push_log(
+            GameLogKindDto::Turn,
+            if wrapped { "Round" } else { "Initiative" },
+            &format!("{name} begins the next activation."),
+            details,
+        )
+    }
+
     fn require_pending(&self, token: &str) -> Result<&PendingAction, GameRuntimeError> {
         self.pending
             .as_ref()
@@ -1382,23 +1588,15 @@ impl GameRuntime {
         }
     }
 
-    fn ensure_turn_owner(&self, expected: EncounterTurnOwner) -> Result<(), GameRuntimeError> {
-        let actual = self
-            .campaign
-            .as_ref()
-            .and_then(|campaign| campaign.turn_owner)
-            .ok_or_else(|| {
-                GameRuntimeError::InvalidState(
-                    "active encounter is missing its turn owner".to_owned(),
-                )
-            })?;
+    fn ensure_current_faction(&self, expected: EncounterFaction) -> Result<(), GameRuntimeError> {
+        let (_, actual) = self.current_actor()?;
         if actual != expected {
             let owner = match actual {
-                EncounterTurnOwner::Player => "player",
-                EncounterTurnOwner::Opposition => "opposition",
+                EncounterFaction::Party => "party",
+                EncounterFaction::Opposition => "opposition",
             };
             return Err(GameRuntimeError::WrongPhase(format!(
-                "this command is not legal during the {owner} turn"
+                "this command is not legal during the {owner} activation"
             )));
         }
         Ok(())
@@ -1591,6 +1789,25 @@ fn entity(raw: u64) -> Result<EntityId, GameRuntimeError> {
     Ok(EntityId::new(raw))
 }
 
+fn party_member_name(
+    rules: &D20Ruleset,
+    adventure: &AdventureDefinition,
+    entity: EntityId,
+) -> Result<String, GameRuntimeError> {
+    adventure
+        .party
+        .iter()
+        .filter_map(|member| rules.character_template(member))
+        .find(|member| member.entity_id == entity.raw())
+        .map(|member| member.name.clone())
+        .ok_or_else(|| {
+            GameRuntimeError::InvalidContainment(format!(
+                "entity {} is not an authored party member",
+                entity.raw()
+            ))
+        })
+}
+
 fn id(value: &str) -> Result<D20Id, GameRuntimeError> {
     Ok(D20Id::parse(value)?)
 }
@@ -1689,6 +1906,15 @@ fn source_label(source: &SourceInstanceIdentity) -> String {
             humanize(instance.as_str())
         ),
     }
+}
+
+fn is_unavailable_action_error(error: &D20SessionError) -> bool {
+    matches!(
+        error,
+        D20SessionError::ActionForbidden { .. }
+            | D20SessionError::RequiredImplementNotEquipped { .. }
+            | D20SessionError::ActivationBudgetUnavailable { .. }
+    )
 }
 
 #[cfg(test)]

@@ -1,214 +1,308 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from "@playwright/test";
 
-test.describe.serial('real Rust encounter shell', () => {
-  test('loading projection is visible while Rust save status is pending', async ({
+test.describe.serial("real Rust encounter shell", () => {
+  test("loading projection is visible while Rust save status is pending", async ({
     page,
   }, testInfo) => {
-    await page.route('**/api/v1/session/save-status', async (route) => {
+    await page.route("**/api/v1/session/save-status", async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 750));
       await route.continue();
     });
-    await page.goto('/');
-    await expect(page.getByText('Loading authored rules and Rust state…')).toBeVisible();
-    await testInfo.attach('loading-state.png', {
+    await page.goto("/");
+    await expect(
+      page.getByText("Loading authored rules and Rust state…"),
+    ).toBeVisible();
+    await testInfo.attach("loading-state.png", {
       body: await page.screenshot({ fullPage: true }),
-      contentType: 'image/png',
+      contentType: "image/png",
     });
-    await page.unroute('**/api/v1/session/save-status');
+    await page.unroute("**/api/v1/session/save-status");
   });
 
-  test('empty game starts and resolves authored action, reaction, turn, and save', async ({
+  test("empty game starts and resolves authored action, reaction, turn, and save", async ({
     page,
     request,
   }, testInfo) => {
-    const health = await request.get('/healthz');
+    const health = await request.get("/healthz");
     expect(health.ok()).toBe(true);
     await expect(health.json()).resolves.toEqual({
-      status: 'ok',
-      version: '0.1.0',
+      status: "ok",
+      version: "0.1.0",
     });
 
-    await page.goto('/');
+    await page.goto("/");
     await expect(
-      page.getByRole('heading', { level: 1, name: 'Rusty D20', exact: true }),
+      page.getByRole("heading", { level: 1, name: "Rusty D20", exact: true }),
     ).toBeVisible();
-    await expect(page.getByRole('heading', { name: "The Warden's Gate" })).toBeVisible();
-    await testInfo.attach('empty-adventure-catalog.png', {
+    await expect(
+      page.getByRole("heading", { name: "The Warden's Gate" }),
+    ).toBeVisible();
+    await testInfo.attach("empty-adventure-catalog.png", {
       body: await page.screenshot({ fullPage: true }),
-      contentType: 'image/png',
+      contentType: "image/png",
     });
     await page
-      .getByRole('button', {
+      .getByRole("button", {
         name: "New Adventure · The Warden's Gate",
         exact: true,
       })
       .click();
-    await expect(page.getByRole('heading', { name: "The Warden's Gate Camp" })).toBeVisible();
-    await expect(page.getByLabel('Armor defense readout')).toContainText('16');
-    await expect(page.getByRole('region', { name: 'Inventory', exact: true })).toBeVisible();
-    await expect(page.getByLabel('Equipment')).toBeVisible();
-    await expect(page.getByLabel('Equipment')).toContainText("Mara's training blade");
-    await expect(page.getByLabel('Equipment')).toContainText("Mara's field bow");
-    await expect(page.getByLabel('Camp stash')).toContainText('Spare buckler');
+    await expect(
+      page.getByRole("heading", { name: "The Warden's Gate Camp" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Armor defense readout")).toContainText("18");
+    await expect(
+      page.getByRole("region", { name: "Inventory", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Equipment")).toBeVisible();
+    await expect(page.getByLabel("Equipment")).toContainText(
+      "Mara's training blade",
+    );
+    await expect(page.getByLabel("Equipment")).toContainText(
+      "Mara's field bow",
+    );
+    await expect(page.getByLabel("Camp stash")).toContainText("Spare buckler");
 
-    await page.getByRole('button', { name: 'Take' }).click();
-    await expect(page.getByRole('alert')).toContainText('capacity rejection');
-    await expect(page.getByRole('alert')).toContainText('maximum: 4');
-    await testInfo.attach('capacity-rejection.png', {
+    await page.getByRole("button", { name: "Take" }).click();
+    await expect(page.getByRole("alert")).toContainText("capacity rejection");
+    await expect(page.getByRole("alert")).toContainText("maximum: 4");
+    await testInfo.attach("capacity-rejection.png", {
       body: await page.screenshot({ fullPage: true }),
-      contentType: 'image/png',
+      contentType: "image/png",
     });
-    await page.getByRole('button', { name: 'Dismiss' }).click();
-    await expect(page.getByLabel('Armor defense readout')).toContainText('16');
-    await expect(page.getByText('Carried 4/4')).toBeVisible();
+    await page.getByRole("button", { name: "Dismiss" }).click();
+    await expect(page.getByLabel("Armor defense readout")).toContainText("18");
+    await expect(page.getByText("Carried 4/4")).toBeVisible();
 
-    const chainInventory = page.getByRole('button', {
+    const chainInventory = page.getByRole("button", {
       name: /Mara's chain armor · equipped body/,
     });
     await chainInventory.focus();
-    await chainInventory.press('Enter');
-    await expect(page.getByLabel('Armor defense readout')).toContainText('14');
-    const unequippedChain = page.getByRole('button', {
+    await chainInventory.press("Enter");
+    await expect(page.getByLabel("Armor defense readout")).toContainText("16");
+    const unequippedChain = page.getByRole("button", {
       name: "Mara's chain armor",
     });
     await unequippedChain.focus();
-    await unequippedChain.press('Space');
-    await expect(page.getByLabel('Armor defense readout')).toContainText('16');
+    await unequippedChain.press("Space");
+    await expect(page.getByLabel("Armor defense readout")).toContainText("18");
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.locator('aui-character-status')).toHaveCount(1);
-    expect(
-      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-    ).toBe(true);
-    await page.setViewportSize({ width: 1280, height: 720 });
-    await page.getByRole('button', { name: 'Enter the dungeon' }).click();
+    await expect(page.locator("aui-character-status")).toHaveCount(1);
     await expect(
       page
-        .getByRole('region', { name: 'Dungeon exploration' })
-        .getByRole('heading', { name: "Warden's Gate Pass" })
+        .getByRole("navigation", { name: "Party loadout selection" })
+        .getByRole("button"),
+    ).toHaveCount(4);
+    await page
+      .getByRole("navigation", { name: "Party loadout selection" })
+      .getByRole("button", { name: "Ilyra Fen" })
+      .click();
+    await expect(
+      page.getByLabel("Character status").getByText("Ilyra Fen", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Equipment")).toContainText(
+      "Ilyra's chain armor",
+    );
+    await page
+      .getByRole("navigation", { name: "Party loadout selection" })
+      .getByRole("button", { name: "Mara Venn" })
+      .click();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.getByRole("button", { name: "Enter the dungeon" }).click();
+    await expect(
+      page
+        .getByRole("region", { name: "Dungeon exploration" })
+        .getByRole("heading", { name: "Warden's Gate Pass" })
         .first(),
     ).toBeVisible();
     await expect(
-      page.getByRole('img', { name: /Warden's Gate Pass, facing east at cell 1, 1/ }),
+      page.getByRole("img", {
+        name: /Warden's Gate Pass, facing east at cell 1, 1/,
+      }),
     ).toBeVisible();
     for (let step = 0; step < 4; step += 1) {
-      await page.getByRole('button', { name: '↑ Forward' }).click();
+      await page.getByRole("button", { name: "↑ Forward" }).click();
     }
-    await expect(page.getByRole('heading', { name: 'Silent murder holes' })).toBeVisible();
-    await page.getByRole('button', { name: 'Inspect' }).click();
-    await expect(page.getByText('Inspected', { exact: true })).toBeVisible();
-    await testInfo.attach('first-person-dungeon-exploration.png', {
+    await expect(
+      page.getByRole("heading", { name: "Silent murder holes" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Inspect" }).click();
+    await expect(page.getByText("Inspected", { exact: true })).toBeVisible();
+    await testInfo.attach("first-person-dungeon-exploration.png", {
       body: await page.screenshot({ fullPage: true }),
-      contentType: 'image/png',
+      contentType: "image/png",
     });
     for (let step = 0; step < 4; step += 1) {
-      await page.getByRole('button', { name: '↑ Forward' }).click();
+      await page.getByRole("button", { name: "↑ Forward" }).click();
     }
 
-    await expect(page.locator('aui-character-status')).toHaveCount(2);
-    await expect(page.getByText('Mara Venn', { exact: true })).toBeVisible();
+    await expect(page.locator("aui-character-status")).toHaveCount(6);
+    await expect(page.getByText("Mara Venn", { exact: true })).toBeVisible();
     await expect(
-      page.locator('aui-character-status').nth(1).getByText('Iron Warden', { exact: true }),
+      page
+        .locator("aui-character-status")
+        .filter({ hasText: "Iron Warden" })
+        .getByText("Iron Warden", { exact: true }),
     ).toBeVisible();
-    await expect(page.getByLabel('Encounter identity')).toContainText('Engine fb608e323a8b');
-    await expect(page.getByRole('button', { name: 'Pin In Place' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Disrupt' })).toBeVisible();
+    await expect(page.getByLabel("Encounter identity")).toContainText(
+      "Engine fb608e323a8b",
+    );
+    await expect(
+      page.getByRole("button", { name: "Pin In Place" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Disrupt" })).toBeVisible();
     const translatedStrike = page
-      .locator('.action-note')
-      .filter({ hasText: 'Longsword Strike' });
-    await expect(translatedStrike).toContainText('Might vs Armor');
-    await expect(translatedStrike).toContainText('1 Standard Action');
-    await expect(translatedStrike).toContainText('range 1');
-    await expect(translatedStrike).toContainText('Training Blade');
+      .locator(".action-note")
+      .filter({ hasText: "Longsword Strike" });
+    await expect(translatedStrike).toContainText("Might vs Armor");
+    await expect(translatedStrike).toContainText("1 Standard Action");
+    await expect(translatedStrike).toContainText("range 1");
+    await expect(translatedStrike).toContainText("Training Blade");
 
-    await page.getByLabel('Target').selectOption({ label: 'Iron Warden' });
-    await page.getByRole('button', { name: 'Longsword Strike' }).click();
-    const preview = page.getByLabel('Authoritative action preview');
-    await expect(preview).toContainText('against defense 15');
-    await expect(preview).toContainText('Equipped item 201');
+    await page.getByLabel("Target").selectOption({ label: "Iron Warden" });
+    await page.getByRole("button", { name: "Longsword Strike" }).click();
+    const preview = page.getByLabel("Authoritative action preview");
+    await expect(preview).toContainText("against defense 16");
+    await expect(preview).toContainText("Equipped item 201");
 
-    await page.getByRole('button', { name: /Parry · 1 Guard/ }).click();
-    await expect(preview).toContainText('against defense 17');
-    await expect(page.getByLabel('Combat log')).toContainText('raised a reaction');
+    await page.getByRole("button", { name: /Parry · 1 Guard/ }).click();
+    await expect(preview).toContainText("against defense 18");
+    await expect(page.getByLabel("Combat log")).toContainText(
+      "raised a reaction",
+    );
 
-    await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
-    const explanation = page.getByLabel('Latest outcome explanation');
-    await expect(explanation).toContainText(/d20 \d+ \+ modifier/);
-    await expect(explanation).toContainText('Deterministic roll index 0');
-    await expect(explanation).toContainText(/Intrinsic|Equipped item|missed/);
+    await page
+      .getByRole("button", { name: "Resolve deterministic roll" })
+      .click();
+    const afterPartyAction = (await (
+      await request.get("/api/v1/session")
+    ).json()) as {
+      encounter: {
+        nextRoll: number;
+        log: Array<{ details: string[] }>;
+      };
+    };
+    expect(afterPartyAction.encounter.nextRoll).toBe(1);
+    expect(
+      afterPartyAction.encounter.log.some((entry) =>
+        entry.details.some((detail) =>
+          detail.includes("Deterministic roll index 0"),
+        ),
+      ),
+    ).toBe(true);
 
-    await page.getByRole('button', { name: 'Begin Iron Warden turn' }).first().click();
-    await expect(preview).toContainText('Iron Warden');
-    await page.getByRole('button', { name: /Parry · 1 Guard/ }).click();
-    await expect(page.getByLabel('Combat log')).toContainText('Mara Venn raised a reaction');
-    await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
-    await expect(page.getByLabel('Encounter identity')).toContainText('Turn 1');
-    await expect(page.getByLabel('Encounter identity')).toContainText('Mara Venn acting');
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+    await page
+      .getByRole("button", { name: "Begin Gate Skirmisher turn" })
+      .first()
+      .click();
+    await expect(preview).toContainText("Gate Skirmisher");
+    await page.getByRole("button", { name: /Parry · 1 Guard/ }).click();
+    await expect(page.getByLabel("Combat log")).toContainText(
+      "Veyra Quill raised a reaction",
+    );
+    await page
+      .getByRole("button", { name: "Resolve deterministic roll" })
+      .click();
+    await expect(page.getByLabel("Encounter identity")).toContainText(
+      "Round 0",
+    );
+    await expect(page.getByLabel("Encounter identity")).toContainText(
+      "Ilyra Fen acting",
+    );
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   });
 
-  test('a normal control presents a stale rejection after another client advances state', async ({
+  test("a normal control presents a stale rejection after another client advances state", async ({
     browser,
     page,
   }) => {
-    await page.goto('/');
+    await page.goto("/");
     const second = await browser.newPage();
-    await second.goto('/');
+    await second.goto("/");
     await continueIfNeeded(page);
     await continueIfNeeded(second);
 
-    await second.getByRole('button', { name: 'Precise Shot' }).click();
-    await second.getByRole('button', { name: 'Resolve deterministic roll' }).click();
-    await expect(second.getByLabel('Encounter identity')).toContainText('Iron Warden acting');
+    await second
+      .getByRole("button", { name: "End Ilyra Fen activation" })
+      .click();
+    await expect(second.getByLabel("Encounter identity")).toContainText(
+      "Iron Warden acting",
+    );
 
-    await page.getByRole('button', { name: 'Longsword Strike' }).click();
-    const alert = page.getByRole('alert');
-    await expect(alert).toContainText('stale rejection');
-    await expect(alert).toContainText('current revision');
-    await expect(page.getByRole('button', { name: 'Reload current state' })).toBeVisible();
+    await page
+      .getByRole("button", { name: "End Ilyra Fen activation" })
+      .click();
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("stale rejection");
+    await expect(alert).toContainText("current revision");
+    await expect(
+      page.getByRole("button", { name: "Reload current state" }),
+    ).toBeVisible();
     await second.close();
   });
 
-  test('mobile game shell remains usable without horizontal overflow', async ({ page }) => {
+  test("mobile game shell remains usable without horizontal overflow", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/');
+    await page.goto("/");
     await continueIfNeeded(page);
     await expect(
-      page.getByRole('button', { name: 'Begin Iron Warden turn' }).first(),
+      page.getByRole("button", { name: "Begin Iron Warden turn" }).first(),
     ).toBeVisible();
-    await expect(page.locator('aui-character-status')).toHaveCount(2);
+    await expect(page.locator("aui-character-status")).toHaveCount(6);
     expect(
-      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
     ).toBe(true);
   });
 
-  test('runtime connection failure is visibly classified and retryable', async ({ page }) => {
-    await page.route('**/api/v1/session', (route) => route.abort('connectionrefused'));
-    await page.goto('/');
+  test("runtime connection failure is visibly classified and retryable", async ({
+    page,
+  }) => {
+    await page.route("**/api/v1/session", (route) =>
+      route.abort("connectionrefused"),
+    );
+    await page.goto("/");
 
-    const alert = page.getByRole('alert');
-    await expect(alert).toContainText('network failure');
-    await expect(page.getByRole('button', { name: 'Retry connection' })).toBeVisible();
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("network failure");
+    await expect(
+      page.getByRole("button", { name: "Retry connection" }),
+    ).toBeVisible();
   });
 
-  test('invalid runtime payload fails closed at the protocol border', async ({ page }) => {
-    await page.route('**/api/v1/session', (route) =>
+  test("invalid runtime payload fails closed at the protocol border", async ({
+    page,
+  }) => {
+    await page.route("**/api/v1/session", (route) =>
       route.fulfill({
-        contentType: 'application/json',
+        contentType: "application/json",
         status: 200,
         body: '{"product":"Rusty D20"}',
       }),
     );
-    await page.goto('/');
+    await page.goto("/");
 
-    await expect(page.getByRole('alert')).toContainText('unknown failure');
-    await expect(page.getByText('Game snapshot has an unexpected or invalid shape.')).toBeVisible();
+    await expect(page.getByRole("alert")).toContainText("unknown failure");
+    await expect(
+      page.getByText("Game snapshot has an unexpected or invalid shape."),
+    ).toBeVisible();
   });
 });
 
 async function continueIfNeeded(page: Page): Promise<void> {
-  const button = page.getByRole('button', { name: 'Continue Adventure' });
+  const button = page.getByRole("button", { name: "Continue Adventure" });
   if (await button.isVisible()) {
     await button.click();
   }

@@ -1,90 +1,101 @@
-import { Injectable, InjectionToken, signal } from '@angular/core';
-import type { Provider, Signal } from '@angular/core';
+import { Injectable, InjectionToken, signal } from "@angular/core";
+import type { Provider, Signal } from "@angular/core";
 import {
   projectGameSnapshot,
   projectRuntimeReadout,
   type GameSnapshotView,
   type RuntimeReadoutView,
-} from '@rusty-d20/domain';
-import { browserHttp } from '@rusty-d20/platform';
+} from "@rusty-d20/domain";
+import { browserHttp } from "@rusty-d20/platform";
 import type {
   ClassifiedError,
   ExplorationCommandKindDto,
   GameSnapshotDto,
   Result,
   SaveStatusDto,
-} from '@rusty-d20/protocol';
-import { createHttpRustyD20Transport, type RustyD20Transport } from '@rusty-d20/transport';
+} from "@rusty-d20/protocol";
+import {
+  createHttpRustyD20Transport,
+  type RustyD20Transport,
+} from "@rusty-d20/transport";
 
 export type AsyncState<T> =
-  | { readonly kind: 'idle' }
-  | { readonly kind: 'loading' }
-  | { readonly kind: 'data'; readonly value: T }
-  | { readonly kind: 'error'; readonly error: ClassifiedError };
+  | { readonly kind: "idle" }
+  | { readonly kind: "loading" }
+  | { readonly kind: "data"; readonly value: T }
+  | { readonly kind: "error"; readonly error: ClassifiedError };
 
-export const RUSTY_D20_TRANSPORT = new InjectionToken<RustyD20Transport>('RUSTY_D20_TRANSPORT', {
-  factory: () => createHttpRustyD20Transport(browserHttp()),
-});
+export const RUSTY_D20_TRANSPORT = new InjectionToken<RustyD20Transport>(
+  "RUSTY_D20_TRANSPORT",
+  {
+    factory: () => createHttpRustyD20Transport(browserHttp()),
+  },
+);
 
 @Injectable()
 export class SessionStore {
   private readonly _readout = signal<AsyncState<RuntimeReadoutView>>({
-    kind: 'idle',
+    kind: "idle",
   });
   private readonly _session = signal<AsyncState<GameSnapshotView>>({
-    kind: 'idle',
+    kind: "idle",
   });
   private readonly _saveStatus = signal<AsyncState<SaveStatusDto>>({
-    kind: 'idle',
+    kind: "idle",
   });
   private readonly _commandError = signal<ClassifiedError | null>(null);
   private readonly _busy = signal(false);
   private generation = 0;
 
-  readonly readout: Signal<AsyncState<RuntimeReadoutView>> = this._readout.asReadonly();
-  readonly session: Signal<AsyncState<GameSnapshotView>> = this._session.asReadonly();
-  readonly saveStatus: Signal<AsyncState<SaveStatusDto>> = this._saveStatus.asReadonly();
-  readonly commandError: Signal<ClassifiedError | null> = this._commandError.asReadonly();
+  readonly readout: Signal<AsyncState<RuntimeReadoutView>> =
+    this._readout.asReadonly();
+  readonly session: Signal<AsyncState<GameSnapshotView>> =
+    this._session.asReadonly();
+  readonly saveStatus: Signal<AsyncState<SaveStatusDto>> =
+    this._saveStatus.asReadonly();
+  readonly commandError: Signal<ClassifiedError | null> =
+    this._commandError.asReadonly();
   readonly busy: Signal<boolean> = this._busy.asReadonly();
 
   constructor(private readonly transport: RustyD20Transport) {}
 
   async loadReadout(): Promise<void> {
-    this._readout.set({ kind: 'loading' });
+    this._readout.set({ kind: "loading" });
     const result = await this.transport.loadReadout();
     this._readout.set(
       result.ok
-        ? { kind: 'data', value: projectRuntimeReadout(result.value) }
-        : { kind: 'error', error: result.error },
+        ? { kind: "data", value: projectRuntimeReadout(result.value) }
+        : { kind: "error", error: result.error },
     );
   }
 
   async load(): Promise<void> {
     const generation = ++this.generation;
-    if (this._session().kind !== 'data') {
-      this._session.set({ kind: 'loading' });
+    if (this._session().kind !== "data") {
+      this._session.set({ kind: "loading" });
     }
-    this._saveStatus.set({ kind: 'loading' });
+    this._saveStatus.set({ kind: "loading" });
     this._busy.set(true);
     const saveStatus = await this.transport.loadSaveStatus();
     if (generation === this.generation) {
       this._saveStatus.set(
         saveStatus.ok
-          ? { kind: 'data', value: saveStatus.value }
-          : { kind: 'error', error: saveStatus.error },
+          ? { kind: "data", value: saveStatus.value }
+          : { kind: "error", error: saveStatus.error },
       );
     }
     if (generation !== this.generation) {
       return;
     }
-    if (saveStatus.ok && saveStatus.value.state === 'recovery-required') {
+    if (saveStatus.ok && saveStatus.value.state === "recovery-required") {
       this.publish(
         generation,
         {
           ok: false,
           error: {
-            kind: 'persistence',
-            message: saveStatus.value.persistenceError ?? 'Save recovery is required.',
+            kind: "persistence",
+            message:
+              saveStatus.value.persistenceError ?? "Save recovery is required.",
             retryable: false,
           },
         },
@@ -103,7 +114,9 @@ export class SessionStore {
   }
 
   async beginExploration(): Promise<void> {
-    await this.mutate((expectedRevision) => this.transport.beginExploration(expectedRevision));
+    await this.mutate((expectedRevision) =>
+      this.transport.beginExploration(expectedRevision),
+    );
   }
 
   async explorationCommand(command: ExplorationCommandKindDto): Promise<void> {
@@ -124,7 +137,11 @@ export class SessionStore {
     );
   }
 
-  async transferItem(itemId: number, fromOwnerId: number, toOwnerId: number): Promise<void> {
+  async transferItem(
+    itemId: number,
+    fromOwnerId: number,
+    toOwnerId: number,
+  ): Promise<void> {
     await this.mutate((expectedRevision) =>
       this.transport.transferItem({
         expectedRevision,
@@ -135,7 +152,11 @@ export class SessionStore {
     );
   }
 
-  async previewAction(actionId: string, actorId: number, targetId: number): Promise<void> {
+  async previewAction(
+    actionId: string,
+    actorId: number,
+    targetId: number,
+  ): Promise<void> {
     await this.mutate((expectedRevision) =>
       this.transport.previewAction({
         expectedRevision,
@@ -163,7 +184,13 @@ export class SessionStore {
   }
 
   async beginOppositionTurn(): Promise<void> {
-    await this.mutate((revision) => this.transport.beginOppositionTurn(revision));
+    await this.mutate((revision) =>
+      this.transport.beginOppositionTurn(revision),
+    );
+  }
+
+  async endActivation(): Promise<void> {
+    await this.mutate((revision) => this.transport.endActivation(revision));
   }
 
   async returnToCamp(): Promise<void> {
@@ -179,12 +206,12 @@ export class SessionStore {
       return;
     }
     const status = this._saveStatus();
-    if (status.kind !== 'data') {
+    if (status.kind !== "data") {
       return;
     }
     const session = this._session();
-    const recovery = status.value.state === 'recovery-required';
-    if (!recovery && session.kind !== 'data') {
+    const recovery = status.value.state === "recovery-required";
+    if (!recovery && session.kind !== "data") {
       return;
     }
     const generation = ++this.generation;
@@ -192,9 +219,15 @@ export class SessionStore {
     this._commandError.set(null);
     const result = await this.transport.resetSession({
       expectedSaveIdentity: status.value.saveIdentity,
-      expectedRevision: recovery ? null : session.kind === 'data' ? session.value.revision : null,
+      expectedRevision: recovery
+        ? null
+        : session.kind === "data"
+          ? session.value.revision
+          : null,
       expectedAdventureId:
-        recovery || session.kind !== 'data' ? null : (session.value.campaign?.id ?? null),
+        recovery || session.kind !== "data"
+          ? null
+          : (session.value.campaign?.id ?? null),
     });
     if (generation !== this.generation) {
       return;
@@ -210,12 +243,15 @@ export class SessionStore {
     }
     this._saveStatus.set(
       refreshedStatus.ok
-        ? { kind: 'data', value: refreshedStatus.value }
-        : { kind: 'error', error: refreshedStatus.error },
+        ? { kind: "data", value: refreshedStatus.value }
+        : { kind: "error", error: refreshedStatus.error },
     );
     this._busy.set(false);
     this._commandError.set(null);
-    this._session.set({ kind: 'data', value: projectGameSnapshot(result.value) });
+    this._session.set({
+      kind: "data",
+      value: projectGameSnapshot(result.value),
+    });
   }
 
   clearCommandError(): void {
@@ -229,7 +265,7 @@ export class SessionStore {
       return;
     }
     const state = this._session();
-    if (state.kind !== 'data') {
+    if (state.kind !== "data") {
       return;
     }
     const generation = ++this.generation;
@@ -251,13 +287,13 @@ export class SessionStore {
     if (result.ok) {
       this._commandError.set(null);
       this._session.set({
-        kind: 'data',
+        kind: "data",
         value: projectGameSnapshot(result.value),
       });
       return;
     }
-    if (replaceOnError && this._session().kind !== 'data') {
-      this._session.set({ kind: 'error', error: result.error });
+    if (replaceOnError && this._session().kind !== "data") {
+      this._session.set({ kind: "error", error: result.error });
     } else {
       this._commandError.set(result.error);
     }

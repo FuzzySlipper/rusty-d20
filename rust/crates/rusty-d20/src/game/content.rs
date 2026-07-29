@@ -94,46 +94,6 @@ pub(super) fn product_equipment_items(
         .collect()
 }
 
-pub(super) fn install_product_loadout(
-    rules: &D20Ruleset,
-    adventure: &AdventureDefinition,
-    session: &mut D20Session,
-) -> Result<(), GameRuntimeError> {
-    let inventory = adventure
-        .characters
-        .iter()
-        .map(|character| {
-            let definition = rules.character_template(character).ok_or_else(|| {
-                GameRuntimeError::InvalidState(format!("character template {character} is missing"))
-            })?;
-            Ok(InventorySeed {
-                owner: EntityId::new(definition.entity_id),
-                maximum_items: definition.inventory_capacity,
-            })
-        })
-        .collect::<Result<Vec<_>, GameRuntimeError>>()?;
-    let storage = adventure
-        .storage
-        .iter()
-        .map(|storage| {
-            let definition = rules.storage(storage).ok_or_else(|| {
-                GameRuntimeError::InvalidState(format!("storage {storage} is missing"))
-            })?;
-            Ok(StorageSeed {
-                entity: EntityId::new(definition.entity_id),
-                name: definition.name.clone(),
-                maximum_items: definition.capacity,
-            })
-        })
-        .collect::<Result<Vec<_>, GameRuntimeError>>()?;
-    let items = product_equipment_items(rules, adventure)?
-        .into_iter()
-        .filter(|item| session.entities().core(item.entity).is_none())
-        .collect();
-    session.install_equipment_loadout(inventory, storage, items)?;
-    equip_initial_loadout(rules, adventure, session)
-}
-
 pub(super) fn validate_product_state(
     rules: &D20Ruleset,
     adventure: &AdventureDefinition,
@@ -259,17 +219,23 @@ pub(super) fn validate_product_state(
             .ok_or_else(|| {
                 GameRuntimeError::InvalidSave("reward owner equipment is missing".to_owned())
             })?;
-        let hero = character_entity(rules, adventure, &adventure.hero)?;
         let stash = storage_entity(rules, adventure, &adventure.camp_storage)?;
+        let party = adventure
+            .party
+            .iter()
+            .map(|member| character_entity(rules, adventure, member))
+            .collect::<Result<BTreeSet<_>, _>>()?;
         let victory = campaign.completed_encounters.iter().any(|completed| {
             completed.encounter_id == encounter.id.as_str()
                 && completed.outcome == EncounterOutcome::Victory
         });
-        let reward_is_claimed = matches!(reward_owner, Some(owner) if owner == hero || owner == stash)
-            && original_equipment
-                .assignments()
-                .iter()
-                .all(|assignment| assignment.item != reward_entity);
+        let reward_is_claimed = matches!(
+            reward_owner,
+            Some(owner) if owner == stash || party.contains(&owner)
+        ) && original_equipment
+            .assignments()
+            .iter()
+            .all(|assignment| assignment.item != reward_entity);
         let reward_is_intact = reward_owner == Some(original_owner)
             && original_equipment
                 .assignments()
@@ -291,33 +257,96 @@ pub(super) fn validate_campaign_vitality(
     session: &D20Session,
     campaign: &CampaignState,
 ) -> Result<(), GameRuntimeError> {
+    let party_alive = adventure
+        .party
+        .iter()
+        .map(|member| character_entity(rules, adventure, member))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(|entity| saved_vitality(session, entity))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|vitality| *vitality > 0)
+        .count();
+    let participation = session.encounter_participants()?;
+    if matches!(
+        campaign.phase,
+        CampaignPhase::Camp | CampaignPhase::Exploration
+    ) {
+        if campaign.current_actor_id.is_some() || !participation.is_empty() || party_alive == 0 {
+            return Err(GameRuntimeError::InvalidSave(
+                "camp/exploration phase contradicts canonical party or participation state"
+                    .to_owned(),
+            ));
+        }
+        return Ok(());
+    }
     let encounter = current_encounter_definition(rules, adventure, campaign)?;
-    let player = character_entity(rules, adventure, &adventure.hero)?;
-    let opponent = character_entity(rules, adventure, &encounter.opponent)?;
-    let player_vitality = saved_vitality(session, player)?;
-    let opponent_vitality = saved_vitality(session, opponent)?;
+    let initiative_ability = id("finesse")?;
+    let expected = encounter
+        .roster
+        .iter()
+        .map(|participant| {
+            let character = rules
+                .character_template(&participant.character)
+                .expect("compiled encounter character exists");
+            Ok((
+                EntityId::new(character.entity_id),
+                (
+                    match participant.faction {
+                        EncounterFactionDefinition::Party => EncounterFaction::Party,
+                        EncounterFactionDefinition::Opposition => EncounterFaction::Opposition,
+                    },
+                    *character
+                        .abilities
+                        .get(&initiative_ability)
+                        .ok_or_else(|| {
+                            GameRuntimeError::InvalidSave(format!(
+                                "participant {} has no finesse initiative",
+                                character.id
+                            ))
+                        })?,
+                ),
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, GameRuntimeError>>()?;
+    let actual = participation
+        .iter()
+        .filter(|(_, component)| component.encounter() == &encounter.id)
+        .map(|(entity, component)| (*entity, (component.faction(), component.initiative())))
+        .collect::<BTreeMap<_, _>>();
+    if actual != expected || participation.len() != expected.len() {
+        return Err(GameRuntimeError::InvalidSave(
+            "encounter roster does not match canonical participation facts".to_owned(),
+        ));
+    }
+    let opposition_alive = actual
+        .iter()
+        .filter(|(_, (faction, _))| *faction == EncounterFaction::Opposition)
+        .map(|(entity, _)| saved_vitality(session, *entity))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|vitality| *vitality > 0)
+        .count();
     let valid = match (campaign.phase, campaign.outcome) {
-        (CampaignPhase::Encounter, None)
-        | (CampaignPhase::Camp | CampaignPhase::Exploration, None) => {
-            player_vitality > 0 && opponent_vitality > 0
+        (CampaignPhase::Encounter, None) => {
+            campaign.current_actor_id.is_some_and(|actor| {
+                actual.contains_key(&EntityId::new(actor))
+                    && saved_vitality(session, EntityId::new(actor)).is_ok_and(|value| value > 0)
+            }) && party_alive > 0
+                && opposition_alive > 0
         }
-        (
-            CampaignPhase::Outcome | CampaignPhase::Camp | CampaignPhase::Exploration,
-            Some(EncounterOutcome::Victory),
-        ) => player_vitality > 0 && opponent_vitality == 0,
+        (CampaignPhase::Outcome, Some(EncounterOutcome::Victory)) => {
+            campaign.current_actor_id.is_none() && party_alive > 0 && opposition_alive == 0
+        }
         (CampaignPhase::Outcome, Some(EncounterOutcome::Defeat)) => {
-            player_vitality == 0 && opponent_vitality > 0
+            campaign.current_actor_id.is_none() && party_alive == 0 && opposition_alive > 0
         }
-        (CampaignPhase::Camp, Some(EncounterOutcome::Defeat)) => {
-            player_vitality > 0 && opponent_vitality > 0
-        }
-        (CampaignPhase::Exploration, Some(EncounterOutcome::Defeat))
-        | (CampaignPhase::Encounter, Some(_))
-        | (CampaignPhase::Outcome, None) => false,
+        _ => false,
     };
     if !valid {
         return Err(GameRuntimeError::InvalidSave(format!(
-            "campaign phase/outcome contradict authoritative vitality: player={player_vitality}, opponent={opponent_vitality}"
+            "campaign phase/outcome contradicts canonical factions: party alive={party_alive}, opposition alive={opposition_alive}"
         )));
     }
     Ok(())
@@ -343,55 +372,6 @@ pub(super) fn saved_vitality(
                 entity.raw()
             ))
         })
-}
-
-pub(super) fn migrate_legacy_campaign(
-    rules: &D20Ruleset,
-    adventure: &AdventureDefinition,
-    session: &mut D20Session,
-    mut campaign: CampaignState,
-    next_operation: &mut u64,
-) -> Result<CampaignState, GameRuntimeError> {
-    let encounter = current_encounter_definition(rules, adventure, &campaign)?;
-    let player = character_entity(rules, adventure, &adventure.hero)?;
-    let opponent = character_entity(rules, adventure, &encounter.opponent)?;
-    let player_vitality = saved_vitality(session, player)?;
-    let opponent_vitality = saved_vitality(session, opponent)?;
-    match campaign.phase {
-        CampaignPhase::Encounter if player_vitality > 0 && opponent_vitality > 0 => {}
-        CampaignPhase::Encounter if player_vitality > 0 && opponent_vitality == 0 => {
-            transfer_victory_reward(rules, adventure, encounter, session, next_operation)?;
-            campaign.phase = CampaignPhase::Outcome;
-            campaign.resolved_encounter_id = campaign.active_encounter_id.clone();
-            campaign.turn_owner = None;
-            campaign.outcome = Some(EncounterOutcome::Victory);
-            campaign.completed_encounters.push(CompletedEncounter {
-                encounter_id: encounter.id.to_string(),
-                outcome: EncounterOutcome::Victory,
-            });
-        }
-        CampaignPhase::Encounter if player_vitality == 0 && opponent_vitality > 0 => {
-            campaign.phase = CampaignPhase::Outcome;
-            campaign.resolved_encounter_id = campaign.active_encounter_id.clone();
-            campaign.turn_owner = None;
-            campaign.outcome = Some(EncounterOutcome::Defeat);
-            campaign.completed_encounters.push(CompletedEncounter {
-                encounter_id: encounter.id.to_string(),
-                outcome: EncounterOutcome::Defeat,
-            });
-        }
-        CampaignPhase::Camp | CampaignPhase::Exploration
-            if player_vitality > 0 && opponent_vitality > 0 => {}
-        CampaignPhase::Encounter
-        | CampaignPhase::Camp
-        | CampaignPhase::Exploration
-        | CampaignPhase::Outcome => {
-            return Err(GameRuntimeError::InvalidSave(format!(
-                "legacy campaign has an impossible phase/vitality combination: player={player_vitality}, opponent={opponent_vitality}"
-            )));
-        }
-    }
-    Ok(campaign)
 }
 
 pub(super) fn transfer_victory_reward(

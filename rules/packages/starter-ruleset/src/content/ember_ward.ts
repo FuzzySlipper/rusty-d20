@@ -43,6 +43,7 @@ export const emberWardModule = defineD20Module(
         bonus: 3,
         resource: 'focus',
         cost: 1,
+        activationCosts: [{ budget: 'reaction', amount: 1 }],
         effect: 'ember-ward',
       }),
     ],

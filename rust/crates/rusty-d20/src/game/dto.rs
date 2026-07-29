@@ -107,24 +107,43 @@ pub struct PendingActionDto {
 #[ts(rename_all = "camelCase")]
 pub struct EncounterDto {
     #[ts(type = "number")]
-    pub turn: u64,
+    pub round: u64,
     #[ts(type = "number")]
     pub next_roll: u64,
-    #[ts(type = "number")]
-    pub player_id: u64,
-    pub turn_owner: Option<EncounterTurnOwnerDto>,
-    pub characters: Vec<CharacterDto>,
+    #[ts(type = "number | null")]
+    pub current_actor_id: Option<u64>,
+    pub participants: Vec<EncounterParticipantDto>,
     pub actions: Vec<ActionDto>,
+    pub legal_targets: Vec<ActionTargetsDto>,
     pub pending_action: Option<PendingActionDto>,
     pub log: Vec<GameLogEntryDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ActionTargetsDto {
+    pub action_id: String,
+    #[ts(type = "number[]")]
+    pub target_ids: Vec<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 #[ts(rename_all = "kebab-case")]
-pub enum EncounterTurnOwnerDto {
-    Player,
+pub enum EncounterFactionDto {
+    Party,
     Opposition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct EncounterParticipantDto {
+    pub character: CharacterDto,
+    pub faction: EncounterFactionDto,
+    pub initiative: i16,
+    pub defeated: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -332,12 +351,19 @@ pub struct CampaignDto {
     pub id: String,
     pub title: String,
     pub phase: CampaignPhaseDto,
-    pub hero: CharacterDto,
-    pub loadout: LoadoutDto,
+    pub party: Vec<PartyMemberDto>,
     pub active_encounter_id: Option<String>,
     pub available_encounters: Vec<EncounterChoiceDto>,
     pub latest_outcome: Option<CampaignOutcomeDto>,
     pub completed_encounters: Vec<CompletedEncounterDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct PartyMemberDto {
+    pub character: CharacterDto,
+    pub loadout: LoadoutDto,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

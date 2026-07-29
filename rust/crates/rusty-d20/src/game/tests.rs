@@ -38,6 +38,129 @@ fn defense_value(loadout: &LoadoutDto, defense: &str) -> i64 {
 }
 
 #[test]
+fn multi_party_roster_initiative_and_activation_budgets_are_canonical() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    let started = start_test_encounter(&mut runtime);
+    let encounter = started.encounter.as_ref().unwrap();
+    assert_eq!(
+        encounter
+            .participants
+            .iter()
+            .map(|participant| (
+                participant.character.id,
+                participant.faction,
+                participant.initiative,
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (101, EncounterFactionDto::Party, 18),
+            (107, EncounterFactionDto::Opposition, 17),
+            (104, EncounterFactionDto::Party, 16),
+            (102, EncounterFactionDto::Opposition, 14),
+            (105, EncounterFactionDto::Party, 13),
+            (106, EncounterFactionDto::Party, 12),
+        ]
+    );
+    assert_eq!(encounter.current_actor_id, Some(101));
+    assert_eq!(encounter.actions.len(), 4);
+    assert!(encounter
+        .legal_targets
+        .iter()
+        .all(|entry| entry.target_ids == vec![107, 102]));
+    let standard_action = id("standard-action").unwrap();
+    assert_eq!(
+        runtime
+            .session()
+            .unwrap()
+            .activation_budgets(PLAYER)
+            .unwrap()
+            .current(&standard_action),
+        Some(1)
+    );
+
+    let previewed = runtime
+        .preview_action(PreviewActionRequestDto {
+            expected_revision: started.revision,
+            actor_id: PLAYER.raw(),
+            target_id: 107,
+            action_id: "longsword-strike".to_owned(),
+        })
+        .unwrap();
+    let token = previewed
+        .encounter
+        .as_ref()
+        .unwrap()
+        .pending_action
+        .as_ref()
+        .unwrap()
+        .token
+        .clone();
+    let applied = runtime
+        .apply_action(ApplyActionRequestDto {
+            expected_revision: previewed.revision,
+            preview_token: token,
+        })
+        .unwrap();
+    assert_eq!(
+        runtime
+            .session()
+            .unwrap()
+            .activation_budgets(PLAYER)
+            .unwrap()
+            .current(&standard_action),
+        Some(0)
+    );
+    assert_eq!(
+        applied.encounter.as_ref().unwrap().current_actor_id,
+        Some(107)
+    );
+    assert!(applied.encounter.as_ref().unwrap().actions.is_empty());
+}
+
+#[test]
+fn encounter_projection_rejects_a_current_actor_without_canonical_participation() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    start_test_encounter(&mut runtime);
+    runtime.campaign.as_mut().unwrap().current_actor_id = Some(CAMP_STASH.raw());
+
+    assert!(matches!(
+        runtime.snapshot(),
+        Err(GameRuntimeError::InvalidState(message))
+            if message == "current actor 103 is not an encounter participant"
+    ));
+}
+
+#[test]
+fn schema_eight_fresh_save_round_trips_and_old_product_or_session_schemas_reject() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    start_test_encounter(&mut runtime);
+    let encoded = runtime.encode_save().unwrap();
+    assert_eq!(
+        GameRuntime::decode_save(&encoded)
+            .unwrap()
+            .encode_save()
+            .unwrap(),
+        encoded
+    );
+
+    let mut old_product: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    old_product["schemaVersion"] = json!(7);
+    assert!(matches!(
+        GameRuntime::decode_save(&serde_json::to_string(&old_product).unwrap()),
+        Err(GameRuntimeError::UnsupportedSaveSchema { actual: 7 })
+    ));
+
+    let mut old_session: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    old_session["session"]["schemaVersion"] = json!(2);
+    assert!(matches!(
+        GameRuntime::decode_save(&serde_json::to_string(&old_session).unwrap()),
+        Err(GameRuntimeError::Save(
+            SessionSaveError::UnsupportedSchema { actual: 2 }
+        ))
+    ));
+}
+
+#[test]
 fn dungeon_exploration_is_authoritative_atomic_persistent_and_triggers_encounters() {
     let mut runtime = GameRuntime::empty().unwrap();
     let camp = runtime.new_adventure(0).unwrap();
@@ -214,9 +337,12 @@ fn alternate_ember_adventure_selection_is_atomic_distinct_and_persistent() {
     let campaign = camp.campaign.as_ref().unwrap();
     assert_eq!(campaign.id, "embers-wake");
     assert_eq!(campaign.title, "Ember's Wake");
-    assert_eq!(campaign.hero.id, 111);
-    assert_eq!(campaign.hero.name, "Sera Vale");
+    assert_eq!(campaign.party[0].character.id, 111);
+    assert_eq!(campaign.party[0].character.name, "Sera Vale");
     let nerve = campaign
+        .party
+        .first()
+        .unwrap()
         .loadout
         .defenses
         .iter()
@@ -253,7 +379,16 @@ fn alternate_ember_adventure_selection_is_atomic_distinct_and_persistent() {
         vec!["fire-bolt", "mind-spike"]
     );
     assert_eq!(
-        encounter.encounter.as_ref().unwrap().characters[1].name,
+        encounter
+            .encounter
+            .as_ref()
+            .unwrap()
+            .participants
+            .iter()
+            .find(|participant| participant.character.id == 112)
+            .unwrap()
+            .character
+            .name,
         "Ash Seer"
     );
 
@@ -331,10 +466,10 @@ fn content_only_adventure_uses_shared_orchestration_and_exact_composition() {
 fn camp_loadout_is_engine_backed_typed_atomic_and_persistent() {
     let mut runtime = GameRuntime::empty().unwrap();
     let camp = runtime.new_adventure(0).unwrap();
-    let loadout = &camp.campaign.as_ref().unwrap().loadout;
+    let loadout = &camp.campaign.as_ref().unwrap().party[0].loadout;
     assert_eq!(loadout.capacity.used, 4);
     assert_eq!(loadout.capacity.maximum, 4);
-    assert_eq!(defense_value(loadout, "armor"), 16);
+    assert_eq!(defense_value(loadout, "armor"), 18);
     assert_eq!(
         loadout
             .equipment_slots
@@ -388,8 +523,11 @@ fn camp_loadout_is_engine_backed_typed_atomic_and_persistent() {
         })
         .unwrap();
     assert_eq!(
-        defense_value(&chain_removed.campaign.as_ref().unwrap().loadout, "armor",),
-        14
+        defense_value(
+            &chain_removed.campaign.as_ref().unwrap().party[0].loadout,
+            "armor",
+        ),
+        16
     );
     let chain_restored = runtime
         .equip_item(EquipItemRequestDto {
@@ -399,8 +537,11 @@ fn camp_loadout_is_engine_backed_typed_atomic_and_persistent() {
         })
         .unwrap();
     assert_eq!(
-        defense_value(&chain_restored.campaign.as_ref().unwrap().loadout, "armor",),
-        16
+        defense_value(
+            &chain_restored.campaign.as_ref().unwrap().party[0].loadout,
+            "armor",
+        ),
+        18
     );
 
     let buckler_removed = runtime
@@ -432,7 +573,7 @@ fn camp_loadout_is_engine_backed_typed_atomic_and_persistent() {
             slot_id: "off-hand".to_owned(),
         })
         .unwrap();
-    let equipped_loadout = &equipped.campaign.as_ref().unwrap().loadout;
+    let equipped_loadout = &equipped.campaign.as_ref().unwrap().party[0].loadout;
     assert_eq!(equipped_loadout.capacity.used, 4);
     assert_eq!(
         equipped_loadout
@@ -462,7 +603,7 @@ fn camp_loadout_is_engine_backed_typed_atomic_and_persistent() {
     assert_eq!(reopened.encode_save().unwrap(), encoded);
     let reopened_snapshot = reopened.snapshot().unwrap();
     assert_eq!(
-        reopened_snapshot.campaign.as_ref().unwrap().loadout,
+        reopened_snapshot.campaign.as_ref().unwrap().party[0].loadout,
         equipped_loadout.clone()
     );
     let encounter = reopened
@@ -472,10 +613,7 @@ fn camp_loadout_is_engine_backed_typed_atomic_and_persistent() {
         })
         .unwrap();
     assert_eq!(
-        encounter
-            .campaign
-            .as_ref()
-            .unwrap()
+        encounter.campaign.as_ref().unwrap().party[0]
             .loadout
             .equipment_slots
             .iter()
@@ -533,55 +671,71 @@ fn translated_action_rejections_keep_public_invalid_and_stale_identities() {
 #[test]
 fn opposition_filters_condition_forbidden_actions_without_retry_deadlock() {
     let mut runtime = GameRuntime::empty().unwrap();
-    let mut current = start_test_encounter(&mut runtime);
+    start_test_encounter(&mut runtime);
 
-    for _ in 0..8 {
-        let previewed = runtime
-            .preview_action(PreviewActionRequestDto {
-                expected_revision: current.revision,
-                actor_id: PLAYER.raw(),
-                target_id: OPPONENT.raw(),
-                action_id: "disrupt".to_owned(),
-            })
-            .unwrap();
-        let token = previewed
-            .encounter
-            .as_ref()
-            .unwrap()
-            .pending_action
-            .as_ref()
-            .unwrap()
-            .token
-            .clone();
-        let applied = runtime
-            .apply_action(ApplyActionRequestDto {
-                expected_revision: previewed.revision,
-                preview_token: token,
-            })
-            .unwrap();
-        let unsettled = applied
-            .encounter
-            .as_ref()
-            .unwrap()
-            .characters
+    for _ in 0..96 {
+        let current = runtime.snapshot().unwrap();
+        let encounter = current.encounter.as_ref().unwrap();
+        let current_actor = encounter.current_actor_id.unwrap();
+        let participant = encounter
+            .participants
             .iter()
-            .find(|character| character.id == OPPONENT.raw())
+            .find(|participant| participant.character.id == current_actor)
+            .unwrap();
+        let opponent_unsettled = encounter
+            .participants
+            .iter()
+            .find(|participant| participant.character.id == OPPONENT.raw())
             .unwrap()
+            .character
             .effects
             .iter()
             .any(|effect| effect.starts_with("Unsettled"));
 
+        if participant.faction == EncounterFactionDto::Party {
+            if current_actor == PLAYER.raw() {
+                let previewed = runtime
+                    .preview_action(PreviewActionRequestDto {
+                        expected_revision: current.revision,
+                        actor_id: PLAYER.raw(),
+                        target_id: OPPONENT.raw(),
+                        action_id: "disrupt".to_owned(),
+                    })
+                    .unwrap();
+                let token = previewed
+                    .encounter
+                    .as_ref()
+                    .unwrap()
+                    .pending_action
+                    .as_ref()
+                    .unwrap()
+                    .token
+                    .clone();
+                runtime
+                    .apply_action(ApplyActionRequestDto {
+                        expected_revision: previewed.revision,
+                        preview_token: token,
+                    })
+                    .unwrap();
+            } else {
+                runtime.end_activation(current.revision).unwrap();
+            }
+            continue;
+        }
+
         let opposition = runtime
-            .begin_opposition_turn(applied.revision)
+            .begin_opposition_turn(current.revision)
             .expect("a forbidden deterministic choice must not deadlock opposition");
-        let pending = opposition
+        let Some(pending) = opposition
             .encounter
             .as_ref()
             .unwrap()
             .pending_action
             .as_ref()
-            .unwrap();
-        if unsettled {
+        else {
+            continue;
+        };
+        if current_actor == OPPONENT.raw() && opponent_unsettled {
             assert!(
                 matches!(
                     pending.action_id.as_str(),
@@ -591,7 +745,7 @@ fn opposition_filters_condition_forbidden_actions_without_retry_deadlock() {
             );
             return;
         }
-        current = runtime
+        runtime
             .apply_action(ApplyActionRequestDto {
                 expected_revision: opposition.revision,
                 preview_token: pending.token.clone(),
@@ -603,46 +757,61 @@ fn opposition_filters_condition_forbidden_actions_without_retry_deadlock() {
 }
 
 #[test]
-fn opposition_with_no_legal_action_explicitly_advances_the_round() {
+fn opposition_with_no_legal_action_explicitly_advances_the_activation() {
     let mut runtime = GameRuntime::empty().unwrap();
-    let mut current = start_test_encounter(&mut runtime);
+    start_test_encounter(&mut runtime);
 
-    for _ in 0..8 {
-        let previewed = runtime
-            .preview_action(PreviewActionRequestDto {
-                expected_revision: current.revision,
-                actor_id: PLAYER.raw(),
-                target_id: OPPONENT.raw(),
-                action_id: "disrupt".to_owned(),
-            })
-            .unwrap();
-        let token = previewed
-            .encounter
-            .as_ref()
-            .unwrap()
-            .pending_action
-            .as_ref()
-            .unwrap()
-            .token
-            .clone();
-        let applied = runtime
-            .apply_action(ApplyActionRequestDto {
-                expected_revision: previewed.revision,
-                preview_token: token,
-            })
-            .unwrap();
-        let unsettled = applied
-            .encounter
-            .as_ref()
-            .unwrap()
-            .characters
+    for _ in 0..96 {
+        let current = runtime.snapshot().unwrap();
+        let encounter = current.encounter.as_ref().unwrap();
+        let current_actor = encounter.current_actor_id.unwrap();
+        let participant = encounter
+            .participants
             .iter()
-            .find(|character| character.id == OPPONENT.raw())
+            .find(|participant| participant.character.id == current_actor)
+            .unwrap();
+        let opponent_unsettled = encounter
+            .participants
+            .iter()
+            .find(|participant| participant.character.id == OPPONENT.raw())
             .unwrap()
+            .character
             .effects
             .iter()
             .any(|effect| effect.starts_with("Unsettled"));
-        if unsettled {
+
+        if participant.faction == EncounterFactionDto::Party {
+            if current_actor == PLAYER.raw() {
+                let previewed = runtime
+                    .preview_action(PreviewActionRequestDto {
+                        expected_revision: current.revision,
+                        actor_id: PLAYER.raw(),
+                        target_id: OPPONENT.raw(),
+                        action_id: "disrupt".to_owned(),
+                    })
+                    .unwrap();
+                let token = previewed
+                    .encounter
+                    .as_ref()
+                    .unwrap()
+                    .pending_action
+                    .as_ref()
+                    .unwrap()
+                    .token
+                    .clone();
+                runtime
+                    .apply_action(ApplyActionRequestDto {
+                        expected_revision: previewed.revision,
+                        preview_token: token,
+                    })
+                    .unwrap();
+            } else {
+                runtime.end_activation(current.revision).unwrap();
+            }
+            continue;
+        }
+
+        if current_actor == OPPONENT.raw() && opponent_unsettled {
             runtime
                 .session_mut()
                 .unwrap()
@@ -662,27 +831,32 @@ fn opposition_with_no_legal_action_explicitly_advances_the_round() {
                 )
                 .unwrap();
 
-            let progressed = runtime.begin_opposition_turn(applied.revision).unwrap();
+            let progressed = runtime.begin_opposition_turn(current.revision).unwrap();
             let encounter = progressed.encounter.as_ref().unwrap();
-            assert_eq!(encounter.turn, 1);
-            assert_eq!(encounter.turn_owner, Some(EncounterTurnOwnerDto::Player));
+            assert_ne!(encounter.current_actor_id, Some(OPPONENT.raw()));
             assert!(encounter.pending_action.is_none());
-            assert!(encounter.log.last().unwrap().details.iter().any(|detail| {
-                detail.contains("no legal authored action")
-                    && detail.contains("4 unavailable choice(s)")
-            }));
+            assert!(
+                encounter.log.last().unwrap().details.iter().any(|detail| {
+                    detail.contains("no legal authored action")
+                        && detail.contains("16 unavailable choice(s)")
+                }),
+                "{:?}",
+                encounter.log.last().unwrap()
+            );
             return;
         }
 
-        let opposition = runtime.begin_opposition_turn(applied.revision).unwrap();
-        let pending = opposition
+        let opposition = runtime.begin_opposition_turn(current.revision).unwrap();
+        let Some(pending) = opposition
             .encounter
             .as_ref()
             .unwrap()
             .pending_action
             .as_ref()
-            .unwrap();
-        current = runtime
+        else {
+            continue;
+        };
+        runtime
             .apply_action(ApplyActionRequestDto {
                 expected_revision: opposition.revision,
                 preview_token: pending.token.clone(),
@@ -699,7 +873,7 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
     assert!(runtime.snapshot().unwrap().encounter.is_none());
     let started = start_test_encounter(&mut runtime);
     let encounter = started.encounter.unwrap();
-    assert_eq!(encounter.characters.len(), 2);
+    assert_eq!(encounter.participants.len(), 6);
     assert_eq!(encounter.actions.len(), 4);
 
     let before_stale = runtime.encode_save().unwrap();
@@ -748,7 +922,7 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
         .pending_action
         .as_ref()
         .unwrap();
-    assert_eq!(pending.defense, 17);
+    assert_eq!(pending.defense, 18);
     let applied = runtime
         .apply_action(ApplyActionRequestDto {
             expected_revision: reacted.revision,
@@ -775,8 +949,12 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
         .pending_action
         .is_none());
     assert_eq!(
-        reopened_snapshot.encounter.as_ref().unwrap().turn_owner,
-        Some(EncounterTurnOwnerDto::Opposition)
+        reopened_snapshot
+            .encounter
+            .as_ref()
+            .unwrap()
+            .current_actor_id,
+        Some(107)
     );
     let opposition = reopened
         .begin_opposition_turn(reopened_snapshot.revision)
@@ -796,12 +974,8 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
         .pending_action
         .as_ref()
         .unwrap();
-    assert_eq!(pending.actor_id, OPPONENT.raw());
-    assert_eq!(pending.target_id, PLAYER.raw());
-    assert!(matches!(
-        pending.action_id.as_str(),
-        "longsword-strike" | "precise-shot"
-    ));
+    assert_eq!(pending.actor_id, 107);
+    assert!(matches!(pending.target_id, 101 | 104 | 105 | 106));
     let token = pending.token.clone();
     let advanced = reopened
         .apply_action(ApplyActionRequestDto {
@@ -810,20 +984,12 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
         })
         .unwrap();
     let advanced_encounter = advanced.encounter.as_ref().unwrap();
-    assert_eq!(advanced_encounter.turn, 1);
-    assert_eq!(
-        advanced_encounter.turn_owner,
-        Some(EncounterTurnOwnerDto::Player)
-    );
+    assert_eq!(advanced_encounter.round, 0);
+    assert_eq!(advanced_encounter.current_actor_id, Some(104));
     assert!(advanced_encounter
         .log
         .last()
-        .is_some_and(|entry| entry.source == "Round"
-            && entry.text.contains("round 0 to 1")
-            && entry
-                .details
-                .iter()
-                .any(|detail| detail.contains("1 scheduled effect(s) expired"))));
+        .is_some_and(|entry| entry.source == "Initiative" && entry.text.contains("Ilyra Fen")));
 }
 
 #[test]
@@ -841,12 +1007,12 @@ fn complete_encounter_victory_grants_reward_once_and_reopens_exactly() {
         campaign.latest_outcome.as_ref().unwrap().reward_item_id,
         Some(OPPONENT_ARMOR.raw())
     );
-    assert!(campaign
+    assert!(campaign.party[0]
         .loadout
         .stash_items
         .iter()
         .any(|item| item.entity_id == OPPONENT_ARMOR.raw()));
-    assert_eq!(outcome.encounter.as_ref().unwrap().turn_owner, None);
+    assert_eq!(outcome.encounter.as_ref().unwrap().current_actor_id, None);
     assert!(outcome
         .encounter
         .as_ref()
@@ -878,7 +1044,7 @@ fn complete_encounter_victory_grants_reward_once_and_reopens_exactly() {
     );
     assert_eq!(campaign.completed_encounters.len(), 1);
     assert_eq!(
-        campaign
+        campaign.party[0]
             .loadout
             .stash_items
             .iter()
@@ -925,14 +1091,15 @@ fn ordered_campaign_advances_through_two_encounters_without_duplicate_reward() {
             encounter_id: "wardens-reckoning".to_owned(),
         })
         .unwrap();
-    let opponent = entered
+    let opponent = &entered
         .encounter
         .as_ref()
         .unwrap()
-        .characters
+        .participants
         .iter()
-        .find(|character| character.id == OPPONENT.raw())
-        .unwrap();
+        .find(|participant| participant.character.id == OPPONENT.raw())
+        .unwrap()
+        .character;
     assert_eq!(opponent.health_current, opponent.health_maximum);
     assert!(entered
         .encounter
@@ -960,7 +1127,7 @@ fn ordered_campaign_advances_through_two_encounters_without_duplicate_reward() {
         vec!["iron-warden", "wardens-reckoning"]
     );
     assert_eq!(
-        second_campaign
+        second_campaign.party[0]
             .loadout
             .stash_items
             .iter()
@@ -1012,7 +1179,7 @@ fn complete_encounter_defeat_has_no_reward_and_applies_bounded_recovery() {
             encounter_id: ENCOUNTER_ID.to_owned(),
         })
         .unwrap();
-    let outcome = play_to_outcome(&mut runtime, "longsword-strike", true, false);
+    let outcome = play_to_outcome(&mut runtime, "pass", true, false);
     let campaign = outcome.campaign.as_ref().unwrap();
     assert_eq!(campaign.phase, CampaignPhaseDto::Outcome);
     assert_eq!(
@@ -1023,13 +1190,13 @@ fn complete_encounter_defeat_has_no_reward_and_applies_bounded_recovery() {
         campaign.latest_outcome.as_ref().unwrap().reward_item_id,
         None
     );
-    assert!(!campaign
+    assert!(!campaign.party[0]
         .loadout
         .stash_items
         .iter()
         .any(|item| item.entity_id == OPPONENT_ARMOR.raw()));
     assert_eq!(
-        campaign.hero.health_current, 0,
+        campaign.party[0].character.health_current, 0,
         "defeat is derived from authoritative vitality"
     );
 
@@ -1039,7 +1206,9 @@ fn complete_encounter_defeat_has_no_reward_and_applies_bounded_recovery() {
         .return_to_camp(reopened.snapshot().unwrap().revision)
         .unwrap();
     assert_eq!(
-        camp.campaign.as_ref().unwrap().hero.health_current,
+        camp.campaign.as_ref().unwrap().party[0]
+            .character
+            .health_current,
         i64::from(DEFEAT_RECOVERY_VITALITY)
     );
     assert!(camp
@@ -1149,314 +1318,85 @@ fn complete_encounter_defeat_has_no_reward_and_applies_bounded_recovery() {
     );
 }
 
-#[test]
-fn schema_four_rejects_outcome_that_disagrees_with_authoritative_vitality() {
-    let mut active_runtime = GameRuntime::empty().unwrap();
-    start_test_encounter(&mut active_runtime);
-    let active_save = schema_four_save(&active_runtime.encode_save().unwrap());
-
-    let mut forged_defeat = active_save.clone();
-    forged_defeat["campaign"]["phase"] = json!("outcome");
-    forged_defeat["campaign"]["turnOwner"] = serde_json::Value::Null;
-    forged_defeat["campaign"]["outcome"] = json!("defeat");
-    assert_vitality_mismatch_rejected(&forged_defeat);
-
-    let mut dead_active_encounter = active_save;
-    set_saved_vitality(&mut dead_active_encounter, PLAYER, 0);
-    assert_vitality_mismatch_rejected(&dead_active_encounter);
-
-    let mut victory_runtime = GameRuntime::empty().unwrap();
-    start_test_encounter(&mut victory_runtime);
-    let victory = play_to_outcome(&mut victory_runtime, "precise-shot", false, true);
-    let victory_save =
-        serde_json::to_string(&schema_four_save(&victory_runtime.encode_save().unwrap())).unwrap();
-    GameRuntime::decode_save(&victory_save).unwrap();
-
-    let mut forged_victory: serde_json::Value = serde_json::from_str(&victory_save).unwrap();
-    set_saved_vitality(&mut forged_victory, OPPONENT, 1);
-    assert_vitality_mismatch_rejected(&forged_victory);
-
-    victory_runtime.return_to_camp(victory.revision).unwrap();
-    GameRuntime::decode_save(
-        &serde_json::to_string(&schema_four_save(&victory_runtime.encode_save().unwrap())).unwrap(),
-    )
-    .unwrap();
-
-    let mut defeat_runtime = GameRuntime::empty().unwrap();
-    let camp = defeat_runtime.new_adventure(0).unwrap();
-    let without_chain = defeat_runtime
-        .unequip_item(UnequipItemRequestDto {
-            expected_revision: camp.revision,
-            item_id: PLAYER_CHAIN_ARMOR.raw(),
-        })
-        .unwrap();
-    let without_armor = defeat_runtime
-        .unequip_item(UnequipItemRequestDto {
-            expected_revision: without_chain.revision,
-            item_id: PLAYER_BUCKLER.raw(),
-        })
-        .unwrap();
-    defeat_runtime
-        .enter_encounter(EnterEncounterRequestDto {
-            expected_revision: without_armor.revision,
-            encounter_id: ENCOUNTER_ID.to_owned(),
-        })
-        .unwrap();
-    let defeat = play_to_outcome(&mut defeat_runtime, "longsword-strike", true, false);
-    GameRuntime::decode_save(
-        &serde_json::to_string(&schema_four_save(&defeat_runtime.encode_save().unwrap())).unwrap(),
-    )
-    .unwrap();
-    defeat_runtime.return_to_camp(defeat.revision).unwrap();
-    GameRuntime::decode_save(
-        &serde_json::to_string(&schema_four_save(&defeat_runtime.encode_save().unwrap())).unwrap(),
-    )
-    .unwrap();
-}
-
-#[test]
-fn schema_five_warden_save_migrates_fingerprint_and_completed_prefix() {
-    let mut runtime = GameRuntime::empty().unwrap();
-    start_test_encounter(&mut runtime);
-    let victory = play_to_outcome(&mut runtime, "precise-shot", false, true);
-    runtime.return_to_camp(victory.revision).unwrap();
-    let mut legacy: serde_json::Value =
-        serde_json::from_str(&runtime.encode_save().unwrap()).unwrap();
-    legacy["schemaVersion"] = json!(5);
-    legacy["compositionFingerprint"] = json!(persistence::LEGACY_D20G1_WARDEN_FINGERPRINT);
-    legacy["session"]["rulesetFingerprint"] = json!(persistence::LEGACY_D20G1_WARDEN_FINGERPRINT);
-    legacy["campaign"]
-        .as_object_mut()
-        .unwrap()
-        .remove("completedEncounters");
-    legacy["campaign"]
-        .as_object_mut()
-        .unwrap()
-        .remove("exploration");
-
-    let migrated = GameRuntime::decode_save(&serde_json::to_string(&legacy).unwrap()).unwrap();
-    let snapshot = migrated.snapshot().unwrap();
-    let campaign = snapshot.campaign.as_ref().unwrap();
-    assert_eq!(
-        campaign
-            .completed_encounters
-            .iter()
-            .map(|entry| entry.encounter_id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["iron-warden"]
-    );
-    assert_eq!(
-        campaign
-            .available_encounters
-            .iter()
-            .map(|entry| entry.id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["wardens-reckoning"]
-    );
-    let encoded = migrated.encode_save().unwrap();
-    let current: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(current["schemaVersion"], json!(GAME_SAVE_SCHEMA_VERSION));
-    assert_ne!(
-        current["compositionFingerprint"],
-        json!(persistence::LEGACY_D20G1_WARDEN_FINGERPRINT)
-    );
-    assert_eq!(
-        GameRuntime::decode_save(&encoded)
-            .unwrap()
-            .encode_save()
-            .unwrap(),
-        encoded
-    );
-}
-
-#[test]
-fn schema_six_active_encounter_migrates_to_its_authored_dungeon_trigger() {
-    let mut runtime = GameRuntime::empty().unwrap();
-    let encounter = start_test_encounter(&mut runtime);
-    let mut legacy: serde_json::Value =
-        serde_json::from_str(&runtime.encode_save().unwrap()).unwrap();
-    legacy["schemaVersion"] = json!(6);
-    legacy["compositionFingerprint"] = json!(persistence::SCHEMA_SIX_WARDEN_FINGERPRINT);
-    legacy["session"]["rulesetFingerprint"] = json!(persistence::SCHEMA_SIX_WARDEN_FINGERPRINT);
-    legacy["campaign"]
-        .as_object_mut()
-        .unwrap()
-        .remove("exploration");
-
-    let migrated = GameRuntime::decode_save(&serde_json::to_string(&legacy).unwrap()).unwrap();
-    let snapshot = migrated.snapshot().unwrap();
-    assert_eq!(snapshot.revision, encounter.revision);
-    assert_eq!(
-        snapshot.campaign.as_ref().unwrap().phase,
-        CampaignPhaseDto::Encounter
-    );
-    let exploration = snapshot.exploration.as_ref().unwrap();
-    assert_eq!((exploration.x, exploration.y), (9, 1));
-    assert_eq!(exploration.facing, ExplorationFacingDto::East);
-    assert!(exploration
-        .discovered_cells
-        .iter()
-        .any(|cell| (cell.x, cell.y) == (9, 1)));
-
-    let current: serde_json::Value =
-        serde_json::from_str(&migrated.encode_save().unwrap()).unwrap();
-    assert_eq!(current["schemaVersion"], json!(GAME_SAVE_SCHEMA_VERSION));
-    assert_eq!(
-        current["campaign"]["exploration"]["position"],
-        json!({ "x": 9, "y": 1 })
-    );
-}
-
-#[test]
-fn schema_three_terminal_encounter_remains_migratable() {
-    let mut encounter_runtime = GameRuntime::empty().unwrap();
-    start_test_encounter(&mut encounter_runtime);
-    let encounter_save = encounter_runtime.encode_save().unwrap();
-
-    for schema in 1..=3 {
-        let live = legacy_product_save(&encounter_save, schema);
-        let live_snapshot = GameRuntime::decode_save(&serde_json::to_string(&live).unwrap())
-            .unwrap()
-            .snapshot()
-            .unwrap();
-        assert_eq!(
-            live_snapshot.campaign.as_ref().unwrap().phase,
-            CampaignPhaseDto::Encounter
-        );
-        assert_eq!(
-            live_snapshot.encounter.as_ref().unwrap().turn_owner,
-            Some(EncounterTurnOwnerDto::Player)
-        );
-
-        let mut legacy_victory = live.clone();
-        set_saved_vitality(&mut legacy_victory, OPPONENT, 0);
-        let mut migrated_victory =
-            GameRuntime::decode_save(&serde_json::to_string(&legacy_victory).unwrap()).unwrap();
-        let victory = migrated_victory.snapshot().unwrap();
-        let campaign = victory.campaign.as_ref().unwrap();
-        assert_eq!(campaign.phase, CampaignPhaseDto::Outcome);
-        assert_eq!(
-            campaign.latest_outcome.as_ref().unwrap().kind,
-            EncounterOutcomeKindDto::Victory
-        );
-        assert_eq!(
-            campaign
-                .loadout
-                .stash_items
-                .iter()
-                .filter(|item| item.entity_id == OPPONENT_ARMOR.raw())
-                .count(),
-            1
-        );
-        let schema_four_victory = migrated_victory.encode_save().unwrap();
-        let schema_four_value: serde_json::Value =
-            serde_json::from_str(&schema_four_victory).unwrap();
-        assert_eq!(
-            schema_four_value["schemaVersion"],
-            json!(GAME_SAVE_SCHEMA_VERSION)
-        );
-        assert_eq!(schema_four_value["nextOperation"], json!(3));
-        assert_eq!(
-            GameRuntime::decode_save(&schema_four_victory)
-                .unwrap()
-                .encode_save()
-                .unwrap(),
-            schema_four_victory
-        );
-        let camp = migrated_victory.return_to_camp(victory.revision).unwrap();
-        assert_eq!(
-            camp.campaign
-                .as_ref()
-                .unwrap()
-                .loadout
-                .stash_items
-                .iter()
-                .filter(|item| item.entity_id == OPPONENT_ARMOR.raw())
-                .count(),
-            1
-        );
-
-        let mut legacy_defeat = live.clone();
-        set_saved_vitality(&mut legacy_defeat, PLAYER, 0);
-        let mut migrated_defeat =
-            GameRuntime::decode_save(&serde_json::to_string(&legacy_defeat).unwrap()).unwrap();
-        let defeat = migrated_defeat.snapshot().unwrap();
-        let campaign = defeat.campaign.as_ref().unwrap();
-        assert_eq!(campaign.phase, CampaignPhaseDto::Outcome);
-        assert_eq!(
-            campaign.latest_outcome.as_ref().unwrap().kind,
-            EncounterOutcomeKindDto::Defeat
-        );
-        assert!(!campaign
-            .loadout
-            .stash_items
-            .iter()
-            .any(|item| item.entity_id == OPPONENT_ARMOR.raw()));
-        let schema_four_defeat = migrated_defeat.encode_save().unwrap();
-        assert_eq!(
-            GameRuntime::decode_save(&schema_four_defeat)
-                .unwrap()
-                .encode_save()
-                .unwrap(),
-            schema_four_defeat
-        );
-        let recovered = migrated_defeat.return_to_camp(defeat.revision).unwrap();
-        assert_eq!(
-            recovered.campaign.as_ref().unwrap().hero.health_current,
-            i64::from(DEFEAT_RECOVERY_VITALITY)
-        );
-
-        let mut impossible = live;
-        set_saved_vitality(&mut impossible, PLAYER, 0);
-        set_saved_vitality(&mut impossible, OPPONENT, 0);
-        assert_legacy_vitality_rejected(&impossible);
-    }
-
-    let mut camp_runtime = GameRuntime::empty().unwrap();
-    camp_runtime.new_adventure(0).unwrap();
-    let camp_save = camp_runtime.encode_save().unwrap();
-    for schema in 2..=3 {
-        let live_camp = legacy_product_save(&camp_save, schema);
-        let migrated = GameRuntime::decode_save(&serde_json::to_string(&live_camp).unwrap())
-            .unwrap()
-            .snapshot()
-            .unwrap();
-        assert_eq!(
-            migrated.campaign.as_ref().unwrap().phase,
-            CampaignPhaseDto::Camp
-        );
-
-        let mut impossible_camp = live_camp;
-        set_saved_vitality(&mut impossible_camp, OPPONENT, 0);
-        assert_legacy_vitality_rejected(&impossible_camp);
-    }
-}
-
 fn play_to_outcome(
     runtime: &mut GameRuntime,
     player_action: &str,
     opponent_reacts: bool,
     player_reacts: bool,
 ) -> GameSnapshotDto {
-    for _ in 0..64 {
-        let before_player = runtime.snapshot().unwrap();
-        let previewed = runtime
-            .preview_action(PreviewActionRequestDto {
-                expected_revision: before_player.revision,
-                actor_id: PLAYER.raw(),
-                target_id: OPPONENT.raw(),
-                action_id: player_action.to_owned(),
+    for _ in 0..512 {
+        let before = runtime.snapshot().unwrap();
+        let encounter = before.encounter.as_ref().unwrap();
+        let party_activation = encounter
+            .current_actor_id
+            .and_then(|actor| {
+                encounter
+                    .participants
+                    .iter()
+                    .find(|participant| participant.character.id == actor)
             })
-            .unwrap();
-        let mut pending = previewed
+            .is_some_and(|participant| participant.faction == EncounterFactionDto::Party);
+        let mut current = if party_activation {
+            if player_action == "pass" {
+                let skipped = runtime.end_activation(before.revision).unwrap();
+                if skipped.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
+                    return skipped;
+                }
+                continue;
+            }
+            let Some(action) = encounter
+                .actions
+                .iter()
+                .find(|action| action.id == player_action)
+                .or_else(|| encounter.actions.first())
+            else {
+                let skipped = runtime.end_activation(before.revision).unwrap();
+                if skipped.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
+                    return skipped;
+                }
+                continue;
+            };
+            let target = encounter
+                .legal_targets
+                .iter()
+                .find(|entry| entry.action_id == action.id)
+                .and_then(|entry| entry.target_ids.first())
+                .copied()
+                .unwrap();
+            runtime
+                .preview_action(PreviewActionRequestDto {
+                    expected_revision: before.revision,
+                    actor_id: encounter.current_actor_id.unwrap(),
+                    target_id: target,
+                    action_id: action.id.clone(),
+                })
+                .unwrap()
+        } else {
+            let selected = runtime.begin_opposition_turn(before.revision).unwrap();
+            if selected
+                .encounter
+                .as_ref()
+                .unwrap()
+                .pending_action
+                .is_none()
+            {
+                continue;
+            }
+            selected
+        };
+        let react = if party_activation {
+            opponent_reacts
+        } else {
+            player_reacts
+        };
+        let mut pending = current
             .encounter
             .as_ref()
             .unwrap()
             .pending_action
             .clone()
             .unwrap();
-        let mut current = previewed;
-        if opponent_reacts && !pending.reactions.is_empty() {
+        if react && !pending.reactions.is_empty() {
             current = runtime
                 .apply_reaction(ApplyReactionRequestDto {
                     expected_revision: current.revision,
@@ -1472,370 +1412,17 @@ fn play_to_outcome(
                 .clone()
                 .unwrap();
         }
-        let player_result = runtime
+        let result = runtime
             .apply_action(ApplyActionRequestDto {
                 expected_revision: current.revision,
                 preview_token: pending.token,
             })
             .unwrap();
-        if player_result.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
-            return player_result;
-        }
-
-        let opposition = runtime
-            .begin_opposition_turn(player_result.revision)
-            .unwrap();
-        let mut pending = opposition
-            .encounter
-            .as_ref()
-            .unwrap()
-            .pending_action
-            .clone()
-            .unwrap();
-        let mut current = opposition;
-        if player_reacts && !pending.reactions.is_empty() {
-            current = runtime
-                .apply_reaction(ApplyReactionRequestDto {
-                    expected_revision: current.revision,
-                    preview_token: pending.token.clone(),
-                    reaction_id: pending.reactions[0].id.clone(),
-                })
-                .unwrap();
-            pending = current
-                .encounter
-                .as_ref()
-                .unwrap()
-                .pending_action
-                .clone()
-                .unwrap();
-        }
-        let opposition_result = runtime
-            .apply_action(ApplyActionRequestDto {
-                expected_revision: current.revision,
-                preview_token: pending.token,
-            })
-            .unwrap();
-        if opposition_result.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
-            return opposition_result;
+        if result.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
+            return result;
         }
     }
-    panic!("deterministic encounter did not reach an outcome within 64 rounds");
-}
-
-fn set_saved_vitality(save: &mut serde_json::Value, entity: EntityId, current: i64) {
-    let tracks = save["session"]["entityState"]["registeredComponents"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|registered| registered["typeId"] == "rusty.mechanics.tracks")
-        .unwrap();
-    let entity_tracks = tracks["values"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|entry| entry["entity"] == json!(entity.raw()))
-        .unwrap();
-    let vitality = entity_tracks["value"]["values"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|track| track["track"] == "vitality")
-        .unwrap();
-    vitality["current"] = json!(current);
-}
-
-fn assert_vitality_mismatch_rejected(save: &serde_json::Value) {
-    let error = GameRuntime::decode_save(&serde_json::to_string(save).unwrap()).unwrap_err();
-    assert!(
-        matches!(
-            &error,
-            GameRuntimeError::InvalidSave(message)
-                if message.contains("contradict authoritative vitality")
-        ),
-        "unexpected save rejection: {error:?}"
-    );
-}
-
-fn assert_legacy_vitality_rejected(save: &serde_json::Value) {
-    let error = GameRuntime::decode_save(&serde_json::to_string(save).unwrap()).unwrap_err();
-    assert!(
-        matches!(
-            &error,
-            GameRuntimeError::InvalidSave(message)
-                if message.contains("impossible phase/vitality combination")
-        ),
-        "unexpected legacy save rejection: {error:?}"
-    );
-}
-
-fn legacy_product_save(input: &str, schema: u32) -> serde_json::Value {
-    let mut save: serde_json::Value = if schema <= 2 {
-        serde_json::from_str(&downgrade_to_pre_loadout_v2(input)).unwrap()
-    } else {
-        serde_json::from_str(input).unwrap()
-    };
-    save["schemaVersion"] = json!(schema);
-    save.as_object_mut()
-        .unwrap()
-        .remove("compositionFingerprint");
-    save["campaign"]
-        .as_object_mut()
-        .unwrap()
-        .remove("completedEncounters");
-    save["campaign"]
-        .as_object_mut()
-        .unwrap()
-        .remove("exploration");
-    save["session"]["rulesetFingerprint"] = json!(legacy_rules_fingerprint());
-    if schema == 1 {
-        save.as_object_mut().unwrap().remove("campaign");
-    } else {
-        save["campaign"]
-            .as_object_mut()
-            .unwrap()
-            .remove("turnOwner");
-        save["campaign"].as_object_mut().unwrap().remove("outcome");
-        save["campaign"]
-            .as_object_mut()
-            .unwrap()
-            .remove("resolvedEncounterId");
-    }
-    save
-}
-
-fn schema_four_save(input: &str) -> serde_json::Value {
-    let mut save: serde_json::Value = serde_json::from_str(input).unwrap();
-    save["schemaVersion"] = json!(4);
-    save.as_object_mut()
-        .unwrap()
-        .remove("compositionFingerprint");
-    save["campaign"]
-        .as_object_mut()
-        .unwrap()
-        .remove("resolvedEncounterId");
-    save["campaign"]
-        .as_object_mut()
-        .unwrap()
-        .remove("completedEncounters");
-    save["campaign"]
-        .as_object_mut()
-        .unwrap()
-        .remove("exploration");
-    save["session"]["rulesetFingerprint"] = json!(legacy_rules_fingerprint());
-    save
-}
-
-fn legacy_rules_fingerprint() -> String {
-    AuthoredAdventureCatalog::builtin()
-        .unwrap()
-        .rules_for_package("steel-guard")
-        .unwrap()
-        .fingerprint()
-        .to_owned()
-}
-
-#[test]
-fn campaign_phases_and_legacy_migration_are_strict_and_fail_atomic() {
-    let mut runtime = GameRuntime::empty().unwrap();
-    assert!(runtime.snapshot().unwrap().campaign.is_none());
-    assert!(matches!(
-        runtime.new_adventure(1),
-        Err(GameRuntimeError::StaleCommand(_))
-    ));
-    assert!(runtime.snapshot().unwrap().campaign.is_none());
-
-    let camp = runtime.new_adventure(0).unwrap();
-    assert_eq!(
-        camp.campaign.as_ref().unwrap().phase,
-        CampaignPhaseDto::Camp
-    );
-    assert!(camp.encounter.is_none());
-    let camp_save = runtime.encode_save().unwrap();
-    assert_eq!(
-        GameRuntime::decode_save(&camp_save)
-            .unwrap()
-            .snapshot()
-            .unwrap(),
-        {
-            let mut saved = camp.clone();
-            saved.saved = true;
-            saved
-        }
-    );
-
-    let before_invalid = runtime.snapshot().unwrap();
-    assert!(matches!(
-        runtime.enter_encounter(EnterEncounterRequestDto {
-            expected_revision: camp.revision,
-            encounter_id: "unknown".to_owned(),
-        }),
-        Err(GameRuntimeError::InvalidCommand(_))
-    ));
-    assert_eq!(runtime.snapshot().unwrap(), before_invalid);
-    assert!(matches!(
-        runtime.preview_action(PreviewActionRequestDto {
-            expected_revision: camp.revision,
-            actor_id: PLAYER.raw(),
-            target_id: OPPONENT.raw(),
-            action_id: "longsword-strike".to_owned(),
-        }),
-        Err(GameRuntimeError::WrongPhase(_))
-    ));
-    assert_eq!(runtime.snapshot().unwrap(), before_invalid);
-
-    let encounter = runtime
-        .enter_encounter(EnterEncounterRequestDto {
-            expected_revision: camp.revision,
-            encounter_id: ENCOUNTER_ID.to_owned(),
-        })
-        .unwrap();
-    assert_eq!(
-        encounter.campaign.as_ref().unwrap().phase,
-        CampaignPhaseDto::Encounter
-    );
-    assert!(encounter.encounter.is_some());
-    let before_duplicate = runtime.snapshot().unwrap();
-    assert!(matches!(
-        runtime.enter_encounter(EnterEncounterRequestDto {
-            expected_revision: encounter.revision,
-            encounter_id: ENCOUNTER_ID.to_owned(),
-        }),
-        Err(GameRuntimeError::InvalidCommand(_))
-    ));
-    assert_eq!(runtime.snapshot().unwrap(), before_duplicate);
-
-    let legacy_v2 = downgrade_to_pre_loadout_v2(&runtime.encode_save().unwrap());
-    let mut legacy: serde_json::Value = serde_json::from_str(&legacy_v2).unwrap();
-    legacy["schemaVersion"] = json!(1);
-    legacy.as_object_mut().unwrap().remove("campaign");
-    let migrated = GameRuntime::decode_save(&serde_json::to_string(&legacy).unwrap()).unwrap();
-    assert_eq!(
-        migrated.snapshot().unwrap().campaign.unwrap().phase,
-        CampaignPhaseDto::Encounter
-    );
-    let migrated_save: serde_json::Value =
-        serde_json::from_str(&migrated.encode_save().unwrap()).unwrap();
-    assert_eq!(
-        migrated_save["schemaVersion"],
-        json!(GAME_SAVE_SCHEMA_VERSION)
-    );
-
-    let migrated_v2 = GameRuntime::decode_save(&legacy_v2).unwrap();
-    let migrated_loadout = migrated_v2.snapshot().unwrap().campaign.unwrap().loadout;
-    assert_eq!(migrated_loadout.capacity.used, 4);
-    assert_eq!(defense_value(&migrated_loadout, "armor"), 16);
-    assert_eq!(migrated_loadout.stash_items.len(), 1);
-
-    let mut wrong_legacy_catalog: serde_json::Value = serde_json::from_str(&legacy_v2).unwrap();
-    let registered = wrong_legacy_catalog["session"]["entityState"]["registeredComponents"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|registered| registered["typeId"] == "rusty.mechanics.stats")
-        .unwrap();
-    registered["values"][0]["value"]["catalogVersion"] = json!("rusty-d20.v2");
-    assert!(matches!(
-        GameRuntime::decode_save(&serde_json::to_string(&wrong_legacy_catalog).unwrap()),
-        Err(GameRuntimeError::Save(SessionSaveError::InvalidState(
-            D20SessionError::LegacyCatalogVersionMismatch { .. }
-        )))
-    ));
-
-    let mut invalid: serde_json::Value =
-        serde_json::from_str(&runtime.encode_save().unwrap()).unwrap();
-    invalid["campaign"]["activeEncounterId"] = serde_json::Value::Null;
-    assert!(matches!(
-        GameRuntime::decode_save(&serde_json::to_string(&invalid).unwrap()),
-        Err(GameRuntimeError::InvalidSave(_))
-    ));
-
-    let mut partial_loadout: serde_json::Value =
-        serde_json::from_str(&runtime.encode_save().unwrap()).unwrap();
-    let inventory = partial_loadout["session"]["entityState"]["registeredComponents"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|registered| registered["typeId"] == "rusty.mechanics.inventory")
-        .unwrap();
-    inventory["values"]
-        .as_array_mut()
-        .unwrap()
-        .retain(|entry| entry["entity"] != json!(CAMP_STASH.raw()));
-    assert!(matches!(
-        GameRuntime::decode_save(&serde_json::to_string(&partial_loadout).unwrap()),
-        Err(GameRuntimeError::InvalidSave(_))
-    ));
-}
-
-fn downgrade_to_pre_loadout_v2(input: &str) -> String {
-    let mut save: serde_json::Value = serde_json::from_str(input).unwrap();
-    save["schemaVersion"] = json!(2);
-    save.as_object_mut()
-        .unwrap()
-        .remove("compositionFingerprint");
-    save["campaign"]
-        .as_object_mut()
-        .unwrap()
-        .remove("turnOwner");
-    save["campaign"].as_object_mut().unwrap().remove("outcome");
-    save["campaign"]
-        .as_object_mut()
-        .unwrap()
-        .remove("resolvedEncounterId");
-    save["campaign"]
-        .as_object_mut()
-        .unwrap()
-        .remove("completedEncounters");
-    save["campaign"]
-        .as_object_mut()
-        .unwrap()
-        .remove("exploration");
-    save["session"]["rulesetFingerprint"] = json!(legacy_rules_fingerprint());
-    save["session"]["schemaVersion"] = json!(1);
-    let state = save["session"]["entityState"].as_object_mut().unwrap();
-    state
-        .get_mut("entities")
-        .unwrap()
-        .as_array_mut()
-        .unwrap()
-        .retain(|entity| !matches!(entity["id"].as_u64().unwrap(), 103 | 202 | 203 | 204));
-    for registered in state
-        .get_mut("registeredComponents")
-        .unwrap()
-        .as_array_mut()
-        .unwrap()
-    {
-        let type_id = registered["typeId"].as_str().unwrap().to_owned();
-        registered
-            .get_mut("values")
-            .unwrap()
-            .as_array_mut()
-            .unwrap()
-            .retain(|entry| !matches!(entry["entity"].as_u64().unwrap(), 103 | 202 | 203 | 204));
-        if type_id.starts_with("rusty.mechanics.") {
-            for entry in registered["values"].as_array_mut().unwrap() {
-                if let Some(value) = entry["value"].as_object_mut() {
-                    if value.contains_key("catalogVersion") {
-                        value.insert("catalogVersion".to_owned(), json!("rusty-d20.v1"));
-                    }
-                }
-            }
-        }
-        if type_id == "rusty.mechanics.equipment" {
-            for entry in registered["values"].as_array_mut().unwrap() {
-                if entry["entity"] == json!(PLAYER.raw()) {
-                    entry["value"]["assignments"] = json!([]);
-                }
-            }
-        }
-    }
-    state
-        .get_mut("registeredComponents")
-        .unwrap()
-        .as_array_mut()
-        .unwrap()
-        .retain(|registered| registered["typeId"] != "rusty.mechanics.inventory");
-    serde_json::to_string(&save).unwrap()
+    panic!("deterministic encounter did not reach an outcome within 512 activations");
 }
 
 #[test]
@@ -1873,9 +1460,10 @@ fn preview_only_and_reacted_pending_saves_reject_without_mutation() {
         .encounter
         .as_ref()
         .unwrap()
-        .characters
+        .participants
         .iter()
-        .find(|character| character.id == OPPONENT.raw())
+        .find(|participant| participant.character.id == OPPONENT.raw())
+        .map(|participant| &participant.character)
         .unwrap();
     assert!(opponent
         .resources

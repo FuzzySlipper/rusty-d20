@@ -7,41 +7,50 @@ import {
   inject,
   signal,
   viewChild,
-} from '@angular/core';
-import type { ElementRef, OnInit } from '@angular/core';
-import { browserAnimationFrame, browserClock } from '@rusty-d20/platform';
+} from "@angular/core";
+import type { ElementRef, OnInit } from "@angular/core";
+import { browserAnimationFrame, browserClock } from "@rusty-d20/platform";
 import type {
   CharacterDto,
   ExplorationCommandKindDto,
   LoadoutItemDto,
-} from '@rusty-d20/protocol';
+} from "@rusty-d20/protocol";
 import {
   DungeonViewportComponent,
   type DungeonViewportView,
-} from '@rusty-d20/renderer';
-import { SessionStore } from '@rusty-d20/store';
-import { CharacterStatusComponent, type CharacterStatusView } from '@rusty-d20/ui-character-status';
-import { CombatLogComponent, type CombatLogEntryView } from '@rusty-d20/ui-combat-log';
-import { HotbarComponent, type HotbarSlotView } from '@rusty-d20/ui-hotbar';
+} from "@rusty-d20/renderer";
+import { SessionStore } from "@rusty-d20/store";
+import {
+  CharacterStatusComponent,
+  type CharacterStatusView,
+} from "@rusty-d20/ui-character-status";
+import {
+  CombatLogComponent,
+  type CombatLogEntryView,
+} from "@rusty-d20/ui-combat-log";
+import { HotbarComponent, type HotbarSlotView } from "@rusty-d20/ui-hotbar";
 import {
   EquipmentPanelComponent,
   type EquipmentDropEvent,
   type EquipmentSlotView,
-} from '@rusty-d20/ui-equipment';
-import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-inventory';
+} from "@rusty-d20/ui-equipment";
+import {
+  InventoryGridComponent,
+  type InventoryItemView,
+} from "@rusty-d20/ui-inventory";
 import {
   CompassComponent,
   type CompassMarkerView,
-} from '@rusty-d20/ui-compass';
+} from "@rusty-d20/ui-compass";
 import {
   MinimapComponent,
   type MinimapMarkerView,
-} from '@rusty-d20/ui-minimap';
+} from "@rusty-d20/ui-minimap";
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    '(window:keydown)': 'handleExplorationKeydown($event)',
+    "(window:keydown)": "handleExplorationKeydown($event)",
   },
   imports: [
     CharacterStatusComponent,
@@ -53,7 +62,7 @@ import {
     InventoryGridComponent,
     MinimapComponent,
   ],
-  selector: 'aui-main-menu-screen',
+  selector: "aui-main-menu-screen",
   standalone: true,
   styles: [
     `
@@ -88,7 +97,11 @@ import {
       }
 
       .mark {
-        background: linear-gradient(145deg, var(--rusty-engine-accent), var(--rusty-engine-cool));
+        background: linear-gradient(
+          145deg,
+          var(--rusty-engine-accent),
+          var(--rusty-engine-cool)
+        );
         border-radius: 10px;
         color: var(--rusty-engine-bg);
         display: grid;
@@ -582,16 +595,18 @@ import {
                 [class.save-state--saved]="snapshot.saved"
                 aria-live="polite"
               >
-                {{ snapshot.saved ? 'Saved' : 'Unsaved changes' }}
+                {{ snapshot.saved ? "Saved" : "Unsaved changes" }}
               </span>
               <button
                 type="button"
                 [disabled]="
                   store.busy() ||
-                  (snapshot.encounter !== null && snapshot.encounter.pendingAction !== null)
+                  (snapshot.encounter !== null &&
+                    snapshot.encounter.pendingAction !== null)
                 "
                 [attr.title]="
-                  snapshot.encounter !== null && snapshot.encounter.pendingAction !== null
+                  snapshot.encounter !== null &&
+                  snapshot.encounter.pendingAction !== null
                     ? 'Resolve the pending action before saving'
                     : null
                 "
@@ -607,14 +622,17 @@ import {
               >
                 Reset / New Adventure
               </button>
-              @if (snapshot.encounter !== null && snapshot.encounter.pendingAction !== null) {
+              @if (
+                snapshot.encounter !== null &&
+                snapshot.encounter.pendingAction !== null
+              ) {
                 <span class="save-hint" role="status">
                   Resolve the pending action before saving.
                 </span>
               }
               @if (
-                snapshot.campaign.phase === 'encounter' &&
-                snapshot.encounter?.turnOwner === 'opposition' &&
+                snapshot.campaign.phase === "encounter" &&
+                snapshot.encounter?.currentFaction === "opposition" &&
                 snapshot.encounter.pendingAction === null
               ) {
                 <button
@@ -644,7 +662,8 @@ import {
         <p class="eyebrow">Destructive save operation</p>
         <h2 id="reset-title">Discard this adventure?</h2>
         <p id="reset-description">
-          This removes the save at <strong>{{ saveStatus()?.saveIdentity }}</strong>
+          This removes the save at
+          <strong>{{ saveStatus()?.saveIdentity }}</strong>
           @if (game()?.campaign; as campaign) {
             and discards {{ campaign.title }} at revision {{ game()?.revision }}
           } @else {
@@ -675,22 +694,28 @@ import {
       </dialog>
 
       @switch (store.session().kind) {
-        @case ('idle') {
+        @case ("idle") {
           <section class="rusty-engine-panel empty" aria-live="polite">
             <p>Preparing the authoritative session…</p>
           </section>
         }
-        @case ('loading') {
-          <section class="rusty-engine-panel empty" aria-live="polite" aria-busy="true">
+        @case ("loading") {
+          <section
+            class="rusty-engine-panel empty"
+            aria-live="polite"
+            aria-busy="true"
+          >
             <p>Loading authored rules and Rust state…</p>
           </section>
         }
-        @case ('error') {
+        @case ("error") {
           <section class="rusty-engine-panel fatal" role="alert">
             <p class="eyebrow">{{ sessionError().kind }} failure</p>
-            @if (saveStatus()?.state === 'recovery-required') {
+            @if (saveStatus()?.state === "recovery-required") {
               <h2>Saved adventure needs recovery</h2>
-              <p>The runtime rejected the persisted session without changing it.</p>
+              <p>
+                The runtime rejected the persisted session without changing it.
+              </p>
               <div class="identity-readout">
                 <strong>Recovery required</strong>
                 <span>{{ saveStatus()?.saveIdentity }}</span>
@@ -711,19 +736,23 @@ import {
               <h2>Could not reach the game runtime</h2>
               <p>{{ sessionError().message }}</p>
               @if (sessionError().retryable) {
-                <button class="primary" type="button" (click)="reload()">Retry connection</button>
+                <button class="primary" type="button" (click)="reload()">
+                  Retry connection
+                </button>
               }
             }
           </section>
         }
-        @case ('data') {
+        @case ("data") {
           @if (store.commandError(); as error) {
             <section class="command-error" role="alert">
               <strong>{{ error.kind }} rejection</strong>
               <span>{{ error.message }}</span>
               <div class="command-error__actions">
                 @if (error.retryable) {
-                  <button type="button" (click)="reload()">Reload current state</button>
+                  <button type="button" (click)="reload()">
+                    Reload current state
+                  </button>
                 }
                 <button type="button" (click)="dismissError()">Dismiss</button>
               </div>
@@ -731,15 +760,22 @@ import {
           }
 
           @if (game()?.campaign === null) {
-            <section class="rusty-engine-panel empty" aria-label="New adventure">
+            <section
+              class="rusty-engine-panel empty"
+              aria-label="New adventure"
+            >
               <p class="eyebrow">Rust-compiled authored catalog</p>
               <h2 #newAdventureHeading tabindex="-1">Choose an adventure</h2>
               <p class="lede">
-                Each path has its own authored cast, loadout, actions, defenses, effects,
-                opposition, and reward. Selection becomes immutable when the Rust campaign starts.
+                Each path has its own authored cast, loadout, actions, defenses,
+                effects, opposition, and reward. Selection becomes immutable
+                when the Rust campaign starts.
               </p>
               <div class="adventure-catalog">
-                @for (choice of game()?.availableAdventures ?? []; track choice.id) {
+                @for (
+                  choice of game()?.availableAdventures ?? [];
+                  track choice.id
+                ) {
                   <article class="adventure-choice">
                     <div>
                       <p class="meta-label">Authored path · {{ choice.id }}</p>
@@ -768,30 +804,42 @@ import {
                   <strong>{{ status.saveIdentity }}</strong>
                 </div>
               }
-              <p class="muted">Engine {{ game()?.engineRevisionShort }} · exact checked catalog</p>
+              <p class="muted">
+                Engine {{ game()?.engineRevisionShort }} · exact checked catalog
+              </p>
             </section>
           } @else if (!campaignEntered()) {
-            <section class="rusty-engine-panel empty" aria-label="Continue adventure">
+            <section
+              class="rusty-engine-panel empty"
+              aria-label="Continue adventure"
+            >
               <p class="eyebrow">Durable campaign found</p>
               <h2>Continue {{ game()?.campaign?.title }}</h2>
               <p class="lede">
                 Resume in
                 {{
-                  game()?.campaign?.phase === 'camp'
-                    ? 'camp'
-                    : game()?.campaign?.phase === 'exploration'
-                      ? 'the dungeon'
-                      : 'the active encounter'
+                  game()?.campaign?.phase === "camp"
+                    ? "camp"
+                    : game()?.campaign?.phase === "exploration"
+                      ? "the dungeon"
+                      : "the active encounter"
                 }}
                 at state revision {{ game()?.revision }}.
               </p>
               @if (saveStatus(); as status) {
                 <div class="identity-readout">
                   <strong>{{ status.saveIdentity }}</strong>
-                  <span>Adventure {{ status.campaignId }} · revision {{ status.revision }}</span>
+                  <span
+                    >Adventure {{ status.campaignId }} · revision
+                    {{ status.revision }}</span
+                  >
                 </div>
               }
-              <button class="primary" type="button" (click)="continueCampaign()">
+              <button
+                class="primary"
+                type="button"
+                (click)="continueCampaign()"
+              >
                 Continue Adventure
               </button>
               <button
@@ -803,22 +851,25 @@ import {
                 Reset / New Adventure
               </button>
             </section>
-          } @else if (game()?.campaign?.phase === 'camp') {
+          } @else if (game()?.campaign?.phase === "camp") {
             @if (game()?.campaign; as campaign) {
               <section class="camp" aria-label="Adventure camp">
                 <header class="rusty-engine-panel camp__header">
                   <div>
-                    <p class="eyebrow">Rust-owned camp · Engine-backed loadout</p>
+                    <p class="eyebrow">
+                      Rust-owned camp · Engine-backed loadout
+                    </p>
                     <h2>{{ campaign.title }} Camp</h2>
                     <p class="lede">
-                      Equip {{ campaign.hero.name }} from canonical inventory state, move spare gear
-                      through the camp stash, and inspect every attributed defense before entering
-                      the encounter.
+                      Equip every party member from canonical inventory state,
+                      move spare gear through the camp stash, and inspect every
+                      attributed defense before entering the encounter.
                     </p>
                   </div>
                   <span class="capacity">
-                    Carried {{ campaign.loadout.capacity.used }}/{{
-                      campaign.loadout.capacity.maximum
+                    Carried
+                    {{ activePartyMember()?.loadout?.capacity?.used }}/{{
+                      activePartyMember()?.loadout?.capacity?.maximum
                     }}
                   </span>
                 </header>
@@ -844,18 +895,47 @@ import {
 
                 <section class="camp__layout">
                   <div class="loadout">
+                    <nav
+                      class="reaction-list"
+                      aria-label="Party loadout selection"
+                    >
+                      @for (
+                        member of campaign.party;
+                        track member.character.id
+                      ) {
+                        <button
+                          type="button"
+                          [class.primary]="
+                            activePartyMember()?.character?.id ===
+                            member.character.id
+                          "
+                          (click)="selectPartyMember(member.character.id)"
+                        >
+                          {{ member.character.name }}
+                        </button>
+                      }
+                    </nav>
                     <article class="character-card">
-                      <aui-character-status [status]="characterStatus(campaign.hero)" />
+                      @if (activePartyMember(); as member) {
+                        <aui-character-status
+                          [status]="characterStatus(member.character)"
+                        />
+                      }
                     </article>
 
                     <section class="loadout" aria-label="Defense readout">
-                      @for (defense of campaign.loadout.defenses; track defense.id) {
+                      @for (
+                        defense of activePartyMember()?.loadout?.defenses ?? [];
+                        track defense.id
+                      ) {
                         <article
                           class="defense-readout"
                           [attr.aria-label]="defense.label + ' defense readout'"
                         >
                           <div>
-                            <p class="meta-label">Derived {{ defense.label }} defense</p>
+                            <p class="meta-label">
+                              Derived {{ defense.label }} defense
+                            </p>
                             <strong>{{ defense.value }}</strong>
                           </div>
                           <details>
@@ -884,13 +964,18 @@ import {
                       />
                     </div>
 
-                    <section class="rusty-engine-panel" aria-label="Inventory item actions">
+                    <section
+                      class="rusty-engine-panel"
+                      aria-label="Inventory item actions"
+                    >
                       <p class="meta-label">Carried gear</p>
                       <ul class="stash__items">
                         @for (item of carriedItems(); track item.entityId) {
                           <li class="stash__item">
                             <span class="stash__identity">
-                              <span class="stash__icon" aria-hidden="true">{{ item.icon }}</span>
+                              <span class="stash__icon" aria-hidden="true">{{
+                                item.icon
+                              }}</span>
                               <span>
                                 {{ item.name }}
                                 @if (item.equippedSlotId !== null) {
@@ -900,7 +985,9 @@ import {
                             </span>
                             <button
                               type="button"
-                              [disabled]="store.busy() || item.equippedSlotId !== null"
+                              [disabled]="
+                                store.busy() || item.equippedSlotId !== null
+                              "
                               [attr.title]="
                                 item.equippedSlotId !== null
                                   ? 'Unequip this item before moving it to the stash'
@@ -916,19 +1003,31 @@ import {
                     </section>
                   </div>
 
-                  <aside class="stash rusty-engine-panel" aria-label="Camp stash">
+                  <aside
+                    class="stash rusty-engine-panel"
+                    aria-label="Camp stash"
+                  >
                     <div>
                       <p class="meta-label">Canonical storage</p>
                       <h2>Camp stash</h2>
                     </div>
-                    @if (campaign.loadout.stashItems.length === 0) {
+                    @if (
+                      (activePartyMember()?.loadout?.stashItems?.length ??
+                        0) === 0
+                    ) {
                       <p class="muted">The stash is empty.</p>
                     } @else {
                       <ul class="stash__items">
-                        @for (item of campaign.loadout.stashItems; track item.entityId) {
+                        @for (
+                          item of activePartyMember()?.loadout?.stashItems ??
+                            [];
+                          track item.entityId
+                        ) {
                           <li class="stash__item">
                             <span class="stash__identity">
-                              <span class="stash__icon" aria-hidden="true">{{ item.icon }}</span>
+                              <span class="stash__icon" aria-hidden="true">{{
+                                item.icon
+                              }}</span>
                               <span>{{ item.name }}</span>
                             </span>
                             <button
@@ -943,16 +1042,17 @@ import {
                       </ul>
                     }
                     <p class="muted">
-                      Capacity, containment, equipped-item, and stale-state rejections come from the
-                      Rust owner without changing the live loadout.
+                      Capacity, containment, equipped-item, and stale-state
+                      rejections come from the Rust owner without changing the
+                      live loadout.
                     </p>
 
                     @if (campaign.availableEncounters.length > 0) {
                       <article class="action-note encounter-choice">
                         <strong>Begin the expedition</strong>
                         <span>
-                          Enter the authored dungeon. Encounters begin only when the party reaches
-                          their hidden Rust-owned trigger.
+                          Enter the authored dungeon. Encounters begin only when
+                          the party reaches their hidden Rust-owned trigger.
                         </span>
                         <button
                           class="primary"
@@ -965,10 +1065,19 @@ import {
                       </article>
                     }
                     @if (campaign.completedEncounters.length > 0) {
-                      <section class="identity-readout" aria-label="Completed encounters">
+                      <section
+                        class="identity-readout"
+                        aria-label="Completed encounters"
+                      >
                         <strong>Campaign progress</strong>
-                        @for (completed of campaign.completedEncounters; track completed.encounterId) {
-                          <span>{{ completed.title }} · {{ completed.outcome }}</span>
+                        @for (
+                          completed of campaign.completedEncounters;
+                          track completed.encounterId
+                        ) {
+                          <span
+                            >{{ completed.title }} ·
+                            {{ completed.outcome }}</span
+                          >
                         }
                       </section>
                     }
@@ -976,7 +1085,7 @@ import {
                 </section>
               </section>
             }
-          } @else if (game()?.campaign?.phase === 'exploration') {
+          } @else if (game()?.campaign?.phase === "exploration") {
             @if (game()?.exploration; as exploration) {
               <section class="exploration" aria-label="Dungeon exploration">
                 <div class="exploration__main">
@@ -984,14 +1093,20 @@ import {
                     <p class="eyebrow">Rust-owned dungeon exploration</p>
                     <h2>{{ exploration.dungeonTitle }}</h2>
                     <p class="lede">
-                      Move one square at a time. Only visited cells reach the automap, and authored
-                      encounters remain hidden until the party steps onto them.
+                      Move one square at a time. Only visited cells reach the
+                      automap, and authored encounters remain hidden until the
+                      party steps onto them.
                     </p>
                   </header>
                   <aui-dungeon-viewport [view]="dungeonViewport()" />
                   @if (exploration.landmark; as landmark) {
-                    <section class="rusty-engine-panel landmark" aria-label="Dungeon landmark">
-                      <p class="meta-label">{{ landmark.inspected ? 'Inspected' : 'Landmark' }}</p>
+                    <section
+                      class="rusty-engine-panel landmark"
+                      aria-label="Dungeon landmark"
+                    >
+                      <p class="meta-label">
+                        {{ landmark.inspected ? "Inspected" : "Landmark" }}
+                      </p>
                       <h3>{{ landmark.title }}</h3>
                       <p>{{ landmark.text }}</p>
                       <button
@@ -999,11 +1114,16 @@ import {
                         [disabled]="store.busy() || landmark.inspected"
                         (click)="explorationCommand('interact')"
                       >
-                        {{ landmark.inspected ? 'Already inspected' : 'Inspect' }}
+                        {{
+                          landmark.inspected ? "Already inspected" : "Inspect"
+                        }}
                       </button>
                     </section>
                   }
-                  <nav class="rusty-engine-panel movement-pad" aria-label="Dungeon movement">
+                  <nav
+                    class="rusty-engine-panel movement-pad"
+                    aria-label="Dungeon movement"
+                  >
                     <button
                       class="movement-pad__forward"
                       type="button"
@@ -1049,13 +1169,22 @@ import {
                     [playerXPercent]="minimapPlayerX()"
                     [playerYPercent]="minimapPlayerY()"
                   />
-                  <section class="rusty-engine-panel exploration__status" aria-label="Party status">
+                  <section
+                    class="rusty-engine-panel exploration__status"
+                    aria-label="Party status"
+                  >
                     <p class="meta-label">Exploring party</p>
-                    <aui-character-status [status]="characterStatus(game()!.campaign!.hero)" />
+                    @for (
+                      member of game()!.campaign!.party;
+                      track member.character.id
+                    ) {
+                      <aui-character-status
+                        [status]="characterStatus(member.character)"
+                      />
+                    }
                     <span class="muted">
-                      Facing {{ exploration.facing }} · cell {{ exploration.x }},{{
-                        exploration.y
-                      }}
+                      Facing {{ exploration.facing }} · cell
+                      {{ exploration.x }},{{ exploration.y }}
                     </span>
                     <span class="muted">
                       {{ exploration.discoveredCells.length }} cells discovered
@@ -1066,19 +1195,22 @@ import {
             }
           } @else {
             <section class="encounter-meta" aria-label="Encounter identity">
-              <span>Turn {{ encounter().turn }}</span>
+              <span>Round {{ encounter().round }}</span>
               <span>
                 {{
-                  encounter().turnOwner === 'player'
-                    ? encounter().player.name + ' acting'
-                    : encounter().turnOwner === 'opposition'
-                      ? opponentName() + ' acting'
-                      : 'Encounter resolved'
+                  encounter().currentFaction === "party"
+                    ? encounter().currentActor?.name + " acting"
+                    : encounter().currentFaction === "opposition"
+                      ? encounter().currentActor?.name + " acting"
+                      : "Encounter resolved"
                 }}
               </span>
               <span>Next deterministic roll {{ encounter().nextRoll }}</span>
               <span>State revision {{ game()?.revision }}</span>
-              @for (defense of game()?.campaign?.loadout?.defenses ?? []; track defense.id) {
+              @for (
+                defense of activePartyMember()?.loadout?.defenses ?? [];
+                track defense.id
+              ) {
                 <span>{{ defense.label }} defense {{ defense.value }}</span>
               }
               <span
@@ -1086,18 +1218,51 @@ import {
               >
               <span>
                 Rules
-                <code [title]="game()?.rulesetFingerprint">{{ game()?.campaign?.title }}</code>
+                <code [title]="game()?.rulesetFingerprint">{{
+                  game()?.campaign?.title
+                }}</code>
               </span>
             </section>
 
             <section class="characters" aria-label="Character status">
-              @for (character of encounter().characters; track character.id) {
-                <article class="character-card">
-                  <aui-character-status [status]="characterStatus(character)" />
-                  <div class="resources" [attr.aria-label]="character.name + ' resources'">
-                    @for (resource of character.resources; track resource.id) {
+              @for (
+                participant of encounter().participants;
+                track participant.character.id
+              ) {
+                <article
+                  class="character-card"
+                  [class.defeated]="participant.defeated"
+                  [attr.data-faction]="participant.faction"
+                >
+                  <p class="meta-label">
+                    {{ participant.faction }} · initiative
+                    {{ participant.initiative }}
+                    @if (
+                      participant.character.id === encounter().currentActorId
+                    ) {
+                      · acting
+                    }
+                    @if (participant.defeated) {
+                      · defeated
+                    }
+                  </p>
+                  <aui-character-status
+                    [status]="characterStatus(participant.character)"
+                  />
+                  <div
+                    class="resources"
+                    [attr.aria-label]="
+                      participant.character.name + ' resources'
+                    "
+                  >
+                    @for (
+                      resource of participant.character.resources;
+                      track resource.id
+                    ) {
                       <span class="resource-chip">
-                        {{ resource.label }} {{ resource.current }}/{{ resource.maximum }}
+                        {{ resource.label }} {{ resource.current }}/{{
+                          resource.maximum
+                        }}
                       </span>
                     }
                   </div>
@@ -1105,7 +1270,7 @@ import {
               }
             </section>
 
-            @if (game()?.campaign?.phase === 'outcome') {
+            @if (game()?.campaign?.phase === "outcome") {
               @if (game()?.campaign?.latestOutcome; as outcome) {
                 <section class="workspace">
                   <article
@@ -1121,13 +1286,15 @@ import {
                         {{ outcome.reward }} · canonical entity
                         {{ outcome.rewardItemId }}
                       </p>
-                    } @else if (outcome.kind === 'defeat') {
+                    } @else if (outcome.kind === "defeat") {
                       <p class="muted">
-                        Returning to camp applies bounded recovery without granting a reward.
+                        Returning to camp applies bounded recovery without
+                        granting a reward.
                       </p>
                     } @else {
                       <p class="muted">
-                        This victory advances the campaign without granting another item.
+                        This victory advances the campaign without granting
+                        another item.
                       </p>
                     }
                     <button
@@ -1137,17 +1304,23 @@ import {
                       (click)="returnToCamp()"
                     >
                       {{
-                        outcome.kind === 'victory' && game()?.exploration !== null
-                          ? 'Continue adventure'
-                          : 'Return to ' + game()?.campaign?.title + ' Camp'
+                        outcome.kind === "victory" &&
+                        game()?.exploration !== null
+                          ? "Continue adventure"
+                          : "Return to " + game()?.campaign?.title + " Camp"
                       }}
                     </button>
                   </article>
                   <aside class="rusty-engine-panel outcome">
                     <aui-combat-log [entries]="combatLog()" />
                     @if (latestLog(); as latest) {
-                      <section class="latest" aria-label="Latest outcome explanation">
-                        <p class="meta-label">Latest receipt · turn {{ latest.turn }}</p>
+                      <section
+                        class="latest"
+                        aria-label="Latest outcome explanation"
+                      >
+                        <p class="meta-label">
+                          Latest receipt · turn {{ latest.turn }}
+                        </p>
                         <strong>{{ latest.source }}</strong>
                         <p>{{ latest.text }}</p>
                         <ul class="detail-list">
@@ -1162,145 +1335,185 @@ import {
               }
             } @else {
               <section class="workspace">
-              <div class="action-workbench">
-                <section class="rusty-engine-panel">
-                  <header class="actions__header">
-                    <div>
-                      <p class="meta-label">
-                        {{
-                          encounter().turnOwner === 'player'
-                            ? 'Authored player actions'
-                            : 'Deterministic opposition'
-                        }}
-                      </p>
-                      <h2>
-                        {{
-                          encounter().turnOwner === 'player'
-                            ? 'Choose an action'
-                            : encounter().pendingAction === null
-                              ? opponentName() + ' is ready'
-                              : 'Respond to ' + opponentName()
-                        }}
-                      </h2>
-                    </div>
-                    @if (encounter().turnOwner === 'player') {
-                      <div class="target-control">
-                      <label for="target">Target</label>
-                      <select id="target" [value]="targetId()" (change)="selectTarget($event)">
-                        @for (target of encounter().targets; track target.id) {
-                          <option [value]="target.id">{{ target.name }}</option>
-                        }
-                      </select>
+                <div class="action-workbench">
+                  <section class="rusty-engine-panel">
+                    <header class="actions__header">
+                      <div>
+                        <p class="meta-label">
+                          {{
+                            encounter().currentFaction === "party"
+                              ? "Authored party actions"
+                              : "Deterministic opposition"
+                          }}
+                        </p>
+                        <h2>
+                          {{
+                            encounter().currentFaction === "party"
+                              ? "Choose an action"
+                              : encounter().pendingAction === null
+                                ? opponentName() + " is ready"
+                                : "Respond to " + opponentName()
+                          }}
+                        </h2>
                       </div>
-                    }
-                  </header>
-
-                  @if (encounter().turnOwner === 'player') {
-                    <aui-hotbar [slots]="hotbarSlots()" (slotSelected)="chooseAction($event)" />
-
-                    <div class="action-catalog">
-                      @for (action of encounter().actions; track action.id) {
-                        <div class="action-note">
-                          <strong>{{ action.label }}</strong>
-                          <span>
-                            {{ action.ability }} vs {{ action.defense }} ·
-                            {{ action.damage }}
-                            · range {{ action.range }} ·
-                            {{ action.activation.join(' + ') }} ·
-                            {{ action.target }}
-                            @if (action.implement !== null) {
-                              · {{ action.implement }}
+                      @if (encounter().currentFaction === "party") {
+                        <div class="target-control">
+                          <label for="target">Target</label>
+                          <select
+                            id="target"
+                            [value]="targetId()"
+                            (change)="selectTarget($event)"
+                          >
+                            @for (
+                              target of encounter().targets;
+                              track target.id
+                            ) {
+                              <option [value]="target.id">
+                                {{ target.name }}
+                              </option>
                             }
-                            @if (action.effect !== null) {
-                              · {{ action.effect }}
-                            }
-                          </span>
+                          </select>
                         </div>
                       }
-                    </div>
-                  } @else if (encounter().pendingAction === null) {
-                    <p class="lede">
-                      Begin the explicit opposition phase to let Rust choose
-                      {{ opponentName() }}'s action from admitted definitions. You can inspect and
-                      answer its preview before the roll.
-                    </p>
-                    <button
-                      class="primary resolve"
-                      type="button"
-                      [disabled]="store.busy()"
-                      (click)="beginOppositionTurn()"
-                    >
-                      Begin {{ opponentName() }} turn
-                    </button>
-                  }
-                </section>
+                    </header>
 
-                @if (encounter().pendingAction; as pending) {
-                  <section
-                    class="rusty-engine-panel preview"
-                    aria-label="Authoritative action preview"
-                  >
-                    <p class="meta-label">
-                      Rust preview · {{ pendingActorName(pending.actorId) }} ·
-                      {{ pending.actionLabel }}
-                    </p>
-                    <p class="preview__math">
-                      Ability {{ pending.abilityScore }} ({{ signed(pending.abilityModifier) }})
-                      against defense {{ pending.defense }}
-                    </p>
-                    <div>
-                      <h3>Defense attribution</h3>
-                      <ul class="source-list">
-                        @for (source of pending.defenseSources; track source) {
-                          <li>{{ source }}</li>
-                        }
-                      </ul>
-                    </div>
+                    @if (encounter().currentFaction === "party") {
+                      <aui-hotbar
+                        [slots]="hotbarSlots()"
+                        (slotSelected)="chooseAction($event)"
+                      />
 
-                    @if (pending.reactions.length > 0) {
-                      <div class="reaction-list" aria-label="Available reactions">
-                        @for (reaction of pending.reactions; track reaction.id) {
-                          <button
-                            class="reaction"
-                            type="button"
-                            [disabled]="store.busy()"
-                            (click)="applyReaction(pending.token, reaction.id)"
-                          >
-                            {{ reaction.label }} · {{ reaction.cost }} {{ reaction.resource }} ·
-                            {{ signed(reaction.bonus) }} defense
-                          </button>
+                      <button
+                        type="button"
+                        [disabled]="
+                          store.busy() || encounter().pendingAction !== null
+                        "
+                        (click)="endActivation()"
+                      >
+                        End {{ encounter().currentActor?.name }} activation
+                      </button>
+
+                      <div class="action-catalog">
+                        @for (action of encounter().actions; track action.id) {
+                          <div class="action-note">
+                            <strong>{{ action.label }}</strong>
+                            <span>
+                              {{ action.ability }} vs {{ action.defense }} ·
+                              {{ action.damage }}
+                              · range {{ action.range }} ·
+                              {{ action.activation.join(" + ") }} ·
+                              {{ action.target }}
+                              @if (action.implement !== null) {
+                                · {{ action.implement }}
+                              }
+                              @if (action.effect !== null) {
+                                · {{ action.effect }}
+                              }
+                            </span>
+                          </div>
                         }
                       </div>
+                    } @else if (encounter().pendingAction === null) {
+                      <p class="lede">
+                        Begin the explicit opposition phase to let Rust choose
+                        {{ opponentName() }}'s action from admitted definitions.
+                        You can inspect and answer its preview before the roll.
+                      </p>
+                      <button
+                        class="primary resolve"
+                        type="button"
+                        [disabled]="store.busy()"
+                        (click)="beginOppositionTurn()"
+                      >
+                        Begin {{ opponentName() }} turn
+                      </button>
                     }
+                  </section>
 
-                    <button
-                      class="primary resolve"
-                      type="button"
-                      [disabled]="store.busy()"
-                      (click)="resolveAction(pending.token)"
+                  @if (encounter().pendingAction; as pending) {
+                    <section
+                      class="rusty-engine-panel preview"
+                      aria-label="Authoritative action preview"
                     >
-                      Resolve deterministic roll
-                    </button>
-                  </section>
-                }
-              </div>
+                      <p class="meta-label">
+                        Rust preview · {{ pendingActorName(pending.actorId) }} ·
+                        {{ pending.actionLabel }}
+                      </p>
+                      <p class="preview__math">
+                        Ability {{ pending.abilityScore }} ({{
+                          signed(pending.abilityModifier)
+                        }}) against defense {{ pending.defense }}
+                      </p>
+                      <div>
+                        <h3>Defense attribution</h3>
+                        <ul class="source-list">
+                          @for (
+                            source of pending.defenseSources;
+                            track source
+                          ) {
+                            <li>{{ source }}</li>
+                          }
+                        </ul>
+                      </div>
 
-              <aside class="rusty-engine-panel outcome">
-                <aui-combat-log [entries]="combatLog()" />
-                @if (latestLog(); as latest) {
-                  <section class="latest" aria-label="Latest outcome explanation">
-                    <p class="meta-label">Latest receipt · turn {{ latest.turn }}</p>
-                    <strong>{{ latest.source }}</strong>
-                    <p>{{ latest.text }}</p>
-                    <ul class="detail-list">
-                      @for (detail of latest.details; track detail) {
-                        <li>{{ detail }}</li>
+                      @if (pending.reactions.length > 0) {
+                        <div
+                          class="reaction-list"
+                          aria-label="Available reactions"
+                        >
+                          @for (
+                            reaction of pending.reactions;
+                            track reaction.id
+                          ) {
+                            <button
+                              class="reaction"
+                              type="button"
+                              [disabled]="store.busy()"
+                              (click)="
+                                applyReaction(pending.token, reaction.id)
+                              "
+                            >
+                              {{ reaction.label }} · {{ reaction.cost }}
+                              {{ reaction.resource }} ·
+                              {{ signed(reaction.bonus) }} defense
+                            </button>
+                          }
+                        </div>
                       }
-                    </ul>
-                  </section>
-                }
-              </aside>
-            </section>
+
+                      <button
+                        class="primary resolve"
+                        type="button"
+                        [disabled]="store.busy()"
+                        (click)="resolveAction(pending.token)"
+                      >
+                        Resolve deterministic roll
+                      </button>
+                    </section>
+                  }
+                </div>
+
+                <aside class="rusty-engine-panel outcome">
+                  <aui-combat-log [entries]="combatLog()" />
+                  @if (latestLog(); as latest) {
+                    <section
+                      class="latest"
+                      aria-label="Latest outcome explanation"
+                    >
+                      <p class="meta-label">
+                        Latest receipt · turn {{ latest.turn }}
+                      </p>
+                      <strong>{{ latest.source }}</strong>
+                      <p>{{ latest.text }}</p>
+                      <ul class="detail-list">
+                        @for (detail of latest.details; track detail) {
+                          <li>{{ detail }}</li>
+                        }
+                      </ul>
+                    </section>
+                  }
+                </aside>
+              </section>
             }
           }
         }
@@ -1312,15 +1525,17 @@ export class MainMenuScreenComponent implements OnInit {
   protected readonly store = inject(SessionStore);
   private readonly selectedTarget = signal<number | null>(null);
   private readonly selectedLoadoutItem = signal<number | null>(null);
+  private readonly selectedPartyMember = signal<number | null>(null);
   protected readonly campaignEntered = signal(false);
   private readonly resetDialog =
-    viewChild.required<ElementRef<HTMLDialogElement>>('resetDialog');
+    viewChild.required<ElementRef<HTMLDialogElement>>("resetDialog");
   private readonly resetCancelButton =
-    viewChild.required<ElementRef<HTMLButtonElement>>('resetCancelButton');
+    viewChild.required<ElementRef<HTMLButtonElement>>("resetCancelButton");
   private readonly resetConfirmButton =
-    viewChild.required<ElementRef<HTMLButtonElement>>('resetConfirmButton');
-  private readonly newAdventureHeading =
-    viewChild<ElementRef<HTMLHeadingElement>>('newAdventureHeading');
+    viewChild.required<ElementRef<HTMLButtonElement>>("resetConfirmButton");
+  private readonly newAdventureHeading = viewChild<
+    ElementRef<HTMLHeadingElement>
+  >("newAdventureHeading");
   private readonly injector = inject(Injector);
   private readonly animationFrame = browserAnimationFrame;
   private readonly clock = browserClock;
@@ -1329,18 +1544,28 @@ export class MainMenuScreenComponent implements OnInit {
 
   protected readonly game = computed(() => {
     const state = this.store.session();
-    return state.kind === 'data' ? state.value : null;
+    return state.kind === "data" ? state.value : null;
   });
 
   protected readonly saveStatus = computed(() => {
     const state = this.store.saveStatus();
-    return state.kind === 'data' ? state.value : null;
+    return state.kind === "data" ? state.value : null;
+  });
+
+  protected readonly activePartyMember = computed(() => {
+    const party = this.game()?.campaign?.party ?? [];
+    const selected = this.selectedPartyMember();
+    return (
+      party.find((member) => member.character.id === selected) ??
+      party[0] ??
+      null
+    );
   });
 
   protected readonly dungeonViewport = computed<DungeonViewportView>(() => {
     const exploration = this.game()?.exploration;
     if (exploration === null || exploration === undefined) {
-      throw new Error('Dungeon exploration is not available.');
+      throw new Error("Dungeon exploration is not available.");
     }
     return {
       title: exploration.dungeonTitle,
@@ -1354,26 +1579,34 @@ export class MainMenuScreenComponent implements OnInit {
 
   protected readonly compassHeading = computed(() => {
     const facing = this.game()?.exploration?.facing;
-    return facing === 'east' ? 90 : facing === 'south' ? 180 : facing === 'west' ? 270 : 0;
+    return facing === "east"
+      ? 90
+      : facing === "south"
+        ? 180
+        : facing === "west"
+          ? 270
+          : 0;
   });
 
-  protected readonly minimapMarkers = computed<readonly MinimapMarkerView[]>(() => {
-    const exploration = this.game()?.exploration;
-    if (exploration === null || exploration === undefined) {
-      return [];
-    }
-    const xDivisor = Math.max(1, exploration.width - 1);
-    const yDivisor = Math.max(1, exploration.height - 1);
-    return exploration.discoveredCells
-      .filter((cell) => cell.x !== exploration.x || cell.y !== exploration.y)
-      .map((cell) => ({
-        id: `${cell.x}:${cell.y}`,
-        label: `Discovered cell ${cell.x},${cell.y}`,
-        kind: 'poi' as const,
-        x: (cell.x / xDivisor) * 100,
-        y: (cell.y / yDivisor) * 100,
-      }));
-  });
+  protected readonly minimapMarkers = computed<readonly MinimapMarkerView[]>(
+    () => {
+      const exploration = this.game()?.exploration;
+      if (exploration === null || exploration === undefined) {
+        return [];
+      }
+      const xDivisor = Math.max(1, exploration.width - 1);
+      const yDivisor = Math.max(1, exploration.height - 1);
+      return exploration.discoveredCells
+        .filter((cell) => cell.x !== exploration.x || cell.y !== exploration.y)
+        .map((cell) => ({
+          id: `${cell.x}:${cell.y}`,
+          label: `Discovered cell ${cell.x},${cell.y}`,
+          kind: "poi" as const,
+          x: (cell.x / xDivisor) * 100,
+          y: (cell.y / yDivisor) * 100,
+        }));
+    },
+  );
 
   protected readonly minimapPlayerX = computed(() => {
     const exploration = this.game()?.exploration;
@@ -1389,8 +1622,10 @@ export class MainMenuScreenComponent implements OnInit {
       : (exploration.y / Math.max(1, exploration.height - 1)) * 100;
   });
 
-  protected readonly inventorySlots = computed<readonly (InventoryItemView | null)[]>(() =>
-    (this.game()?.campaign?.loadout.inventorySlots ?? []).map((item) =>
+  protected readonly inventorySlots = computed<
+    readonly (InventoryItemView | null)[]
+  >(() =>
+    (this.activePartyMember()?.loadout.inventorySlots ?? []).map((item) =>
       item === null ? null : this.inventoryItem(item),
     ),
   );
@@ -1400,24 +1635,25 @@ export class MainMenuScreenComponent implements OnInit {
     return selected === null ? null : String(selected);
   });
 
-  protected readonly equipmentSlots = computed<readonly EquipmentSlotView[]>(() =>
-    (this.game()?.campaign?.loadout.equipmentSlots ?? []).map((slot) => ({
-      id: slot.id,
-      label: slot.label,
-      equipped:
-        slot.equipped === null
-          ? null
-          : {
-              id: String(slot.equipped.entityId),
-              name: slot.equipped.name,
-              icon: slot.equipped.icon,
-              rarity: slot.equipped.rarity,
-            },
-    })),
+  protected readonly equipmentSlots = computed<readonly EquipmentSlotView[]>(
+    () =>
+      (this.activePartyMember()?.loadout.equipmentSlots ?? []).map((slot) => ({
+        id: slot.id,
+        label: slot.label,
+        equipped:
+          slot.equipped === null
+            ? null
+            : {
+                id: String(slot.equipped.entityId),
+                name: slot.equipped.name,
+                icon: slot.equipped.icon,
+                rarity: slot.equipped.rarity,
+              },
+      })),
   );
 
   protected readonly carriedItems = computed<readonly LoadoutItemDto[]>(() =>
-    (this.game()?.campaign?.loadout.inventorySlots ?? []).filter(
+    (this.activePartyMember()?.loadout.inventorySlots ?? []).filter(
       (item): item is LoadoutItemDto => item !== null,
     ),
   );
@@ -1427,7 +1663,7 @@ export class MainMenuScreenComponent implements OnInit {
       index,
       keybind: String(index + 1),
       label: action.label,
-      icon: index === 0 ? '⚔' : '➶',
+      icon: index === 0 ? "⚔" : "➶",
       empty: false,
     })),
   );
@@ -1438,13 +1674,13 @@ export class MainMenuScreenComponent implements OnInit {
       source: `T${entry.turn} ${entry.source}`,
       text: entry.text,
       severity:
-        entry.kind === 'hit'
-          ? 'hit'
-          : entry.kind === 'miss'
-            ? 'miss'
-            : entry.kind === 'system'
-              ? 'system'
-              : 'info',
+        entry.kind === "hit"
+          ? "hit"
+          : entry.kind === "miss"
+            ? "miss"
+            : entry.kind === "system"
+              ? "system"
+              : "info",
     })),
   );
 
@@ -1460,22 +1696,24 @@ export class MainMenuScreenComponent implements OnInit {
   protected encounter() {
     const encounter = this.game()?.encounter;
     if (encounter === null || encounter === undefined) {
-      throw new Error('Encounter is not available.');
+      throw new Error("Encounter is not available.");
     }
     return encounter;
   }
 
   protected sessionError() {
     const state = this.store.session();
-    if (state.kind !== 'error') {
-      throw new Error('Session error is not available.');
+    if (state.kind !== "error") {
+      throw new Error("Session error is not available.");
     }
     return state.error;
   }
 
   protected characterStatus(character: CharacterDto): CharacterStatusView {
-    const resource = character.resources.find((entry) => entry.id === 'guard') ??
-      character.resources[0] ?? { label: 'Resource', current: 0, maximum: 0 };
+    const resource = character.resources.find(
+      (entry) => entry.id === "guard",
+    ) ??
+      character.resources[0] ?? { label: "Resource", current: 0, maximum: 0 };
     return {
       name: character.name,
       level: character.level,
@@ -1497,6 +1735,11 @@ export class MainMenuScreenComponent implements OnInit {
     return this.selectedTarget() ?? this.encounter().targets[0]?.id ?? 0;
   }
 
+  protected selectPartyMember(memberId: number): void {
+    this.selectedPartyMember.set(memberId);
+    this.selectedLoadoutItem.set(null);
+  }
+
   protected selectTarget(event: Event): void {
     const target = event.target;
     if (target instanceof HTMLSelectElement) {
@@ -1507,7 +1750,18 @@ export class MainMenuScreenComponent implements OnInit {
   protected chooseAction(slot: HotbarSlotView): void {
     const action = this.encounter().actions[slot.index];
     if (action !== undefined) {
-      void this.store.previewAction(action.id, this.encounter().playerId, this.targetId());
+      const targets =
+        this.encounter().legalTargets.find(
+          (entry) => entry.actionId === action.id,
+        )?.targetIds ?? [];
+      const target = targets.includes(this.targetId())
+        ? this.targetId()
+        : (targets[0] ?? 0);
+      const actor = this.encounter().currentActorId;
+      if (actor !== null && target !== 0) {
+        this.selectedTarget.set(target);
+        void this.store.previewAction(action.id, actor, target);
+      }
     }
   }
 
@@ -1531,7 +1785,7 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected handleExplorationKeydown(event: KeyboardEvent): void {
-    if (this.game()?.campaign?.phase !== 'exploration' || this.store.busy()) {
+    if (this.game()?.campaign?.phase !== "exploration" || this.store.busy()) {
       return;
     }
     const target = event.target;
@@ -1544,16 +1798,16 @@ export class MainMenuScreenComponent implements OnInit {
       return;
     }
     const command: ExplorationCommandKindDto | undefined =
-      event.key === 'ArrowUp' || event.key.toLowerCase() === 'w'
-        ? 'step-forward'
-        : event.key === 'ArrowDown' || event.key.toLowerCase() === 's'
-          ? 'step-backward'
-          : event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a'
-            ? 'turn-left'
-            : event.key === 'ArrowRight' || event.key.toLowerCase() === 'd'
-              ? 'turn-right'
-              : event.key.toLowerCase() === 'e'
-                ? 'interact'
+      event.key === "ArrowUp" || event.key.toLowerCase() === "w"
+        ? "step-forward"
+        : event.key === "ArrowDown" || event.key.toLowerCase() === "s"
+          ? "step-backward"
+          : event.key === "ArrowLeft" || event.key.toLowerCase() === "a"
+            ? "turn-left"
+            : event.key === "ArrowRight" || event.key.toLowerCase() === "d"
+              ? "turn-right"
+              : event.key.toLowerCase() === "e"
+                ? "interact"
                 : undefined;
     if (command !== undefined) {
       event.preventDefault();
@@ -1568,7 +1822,10 @@ export class MainMenuScreenComponent implements OnInit {
     }
     this.selectedLoadoutItem.set(authoritative.entityId);
     if (authoritative.equippedSlotId === null) {
-      void this.store.equipItem(authoritative.entityId, authoritative.equipmentSlotId);
+      void this.store.equipItem(
+        authoritative.entityId,
+        authoritative.equipmentSlotId,
+      );
     } else {
       void this.store.unequipItem(authoritative.entityId);
     }
@@ -1588,16 +1845,24 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected storeItem(item: LoadoutItemDto): void {
-    const loadout = this.game()?.campaign?.loadout;
+    const loadout = this.activePartyMember()?.loadout;
     if (loadout !== undefined && item.equippedSlotId === null) {
-      void this.store.transferItem(item.entityId, loadout.ownerId, loadout.stashOwnerId);
+      void this.store.transferItem(
+        item.entityId,
+        loadout.ownerId,
+        loadout.stashOwnerId,
+      );
     }
   }
 
   protected takeItem(item: LoadoutItemDto): void {
-    const loadout = this.game()?.campaign?.loadout;
+    const loadout = this.activePartyMember()?.loadout;
     if (loadout !== undefined) {
-      void this.store.transferItem(item.entityId, loadout.stashOwnerId, loadout.ownerId);
+      void this.store.transferItem(
+        item.entityId,
+        loadout.stashOwnerId,
+        loadout.ownerId,
+      );
     }
   }
 
@@ -1611,6 +1876,10 @@ export class MainMenuScreenComponent implements OnInit {
 
   protected beginOppositionTurn(): void {
     void this.store.beginOppositionTurn();
+  }
+
+  protected endActivation(): void {
+    void this.store.endActivation();
   }
 
   protected returnToCamp(): void {
@@ -1632,7 +1901,7 @@ export class MainMenuScreenComponent implements OnInit {
       }
       this.animationFrame.request(() => {
         this.animationFrame.request(() => {
-          if (dialog.open && !dialog.matches(':focus-within')) {
+          if (dialog.open && !dialog.matches(":focus-within")) {
             this.resetCancelButton().nativeElement.focus();
           }
         });
@@ -1646,7 +1915,7 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected handleResetDialogKeydown(event: KeyboardEvent): void {
-    if (event.key !== 'Tab') {
+    if (event.key !== "Tab") {
       return;
     }
 
@@ -1667,7 +1936,10 @@ export class MainMenuScreenComponent implements OnInit {
       this.closeResetDialog(false);
       afterNextRender(
         () => {
-          this.clock.setTimeout(() => this.newAdventureHeading()?.nativeElement.focus(), 0);
+          this.clock.setTimeout(
+            () => this.newAdventureHeading()?.nativeElement.focus(),
+            0,
+          );
         },
         { injector: this.injector },
       );
@@ -1700,20 +1972,25 @@ export class MainMenuScreenComponent implements OnInit {
 
   protected pendingActorName(actorId: number): string {
     return (
-      this.encounter().characters.find((character) => character.id === actorId)?.name ??
-      `Entity ${actorId}`
+      this.encounter().participants.find(
+        (entry) => entry.character.id === actorId,
+      )?.character.name ?? `Entity ${actorId}`
     );
   }
 
   protected opponentName(): string {
-    return this.encounter().targets[0]?.name ?? 'Opposition';
+    return this.encounter().currentFaction === "opposition"
+      ? (this.encounter().currentActor?.name ?? "Opposition")
+      : (this.encounter().targets[0]?.name ?? "Opposition");
   }
 
   private inventoryItem(item: LoadoutItemDto): InventoryItemView {
     return {
       id: String(item.entityId),
       name:
-        item.equippedSlotId === null ? item.name : `${item.name} · equipped ${item.equippedSlotId}`,
+        item.equippedSlotId === null
+          ? item.name
+          : `${item.name} · equipped ${item.equippedSlotId}`,
       icon: item.icon,
       rarity: item.rarity,
       quantity: item.quantity,

@@ -1,21 +1,20 @@
 use core_ids::EntityId;
 use entity_state::{
-    decode_snapshot_with_registry, encode_snapshot, ComponentAccessError,
-    ComponentRegistrationError, ComponentRevision, EntityAuthoringError, EntityAuthoringService,
-    EntityComponent, EntityDefinition, EntityDefinitionError, EntityState,
+    encode_snapshot, ComponentAccessError, ComponentRegistrationError, ComponentRevision,
+    EntityAuthoringError, EntityAuthoringService, EntityComponent, EntityDefinition,
+    EntityDefinitionError, EntityState,
 };
 use gameplay_mechanics::{
-    decode_snapshot_with_catalog_and_registry, ActiveEffectsComponent, CatalogVersion, DamagePart,
-    DamageReceipt, DamageRequest, DamageService, EffectApplyRequest, EffectInstanceId,
-    EffectMutationReceipt, EffectRefreshRequest, EffectRemovalRequest, EffectService,
-    EquipmentComponent, EquipmentEquipRequest, EquipmentMutationReceipt, EquipmentService,
-    EquipmentUnequipRequest, IntrinsicSourceBinding, IntrinsicSourcesComponent,
-    InventoryCapacityLimit, InventoryComponent, InventoryService, InventoryView, ItemComponent,
-    ItemTransferReceipt, ItemTransferRequest, MechanicsComponentKind, MechanicsError,
-    MechanicsScalar, MechanicsSnapshotError, ObservedComponentRevision, OperationId,
-    SourceInstanceId, SourceInstanceIdentity, StatEvaluation, StatService, StatValue,
-    StatsComponent, TrackMutationReceipt, TrackMutationRequest, TrackService, TrackValue,
-    TracksComponent,
+    decode_snapshot_with_catalog_and_registry, ActiveEffectsComponent, DamagePart, DamageReceipt,
+    DamageRequest, DamageService, EffectApplyRequest, EffectInstanceId, EffectMutationReceipt,
+    EffectRefreshRequest, EffectRemovalRequest, EffectService, EquipmentComponent,
+    EquipmentEquipRequest, EquipmentMutationReceipt, EquipmentService, EquipmentUnequipRequest,
+    IntrinsicSourceBinding, IntrinsicSourcesComponent, InventoryCapacityLimit, InventoryComponent,
+    InventoryService, InventoryView, ItemComponent, ItemTransferReceipt, ItemTransferRequest,
+    MechanicsComponentKind, MechanicsError, MechanicsScalar, MechanicsSnapshotError,
+    ObservedComponentRevision, OperationId, SourceInstanceId, SourceInstanceIdentity,
+    StatEvaluation, StatService, StatValue, StatsComponent, TrackMutationReceipt,
+    TrackMutationRequest, TrackService, TrackValue, TracksComponent,
 };
 use serde::{Deserialize, Serialize};
 use svc_rng::{RngSeed, ScopedRng};
@@ -26,13 +25,14 @@ use crate::compiler::{
 };
 use crate::{
     d20_component_registry, AbilityScore, AbilityScoresComponent, ActionAttackDefinition,
-    ActionDefinition, ActionResource, ActionResourcesComponent, ConditionClauseDefinition,
-    D20ComponentDataError, D20Id, D20Ruleset, DamageDefinition, EquipmentReferenceDefinition,
-    ScheduledEffect, ScheduledEffectsComponent, ENGINE_REVISION,
+    ActionDefinition, ActionResource, ActionResourcesComponent, ActivationBudget,
+    ActivationBudgetsComponent, ActivationCostDefinition, ConditionClauseDefinition,
+    D20ComponentDataError, D20Id, D20Ruleset, DamageDefinition, EncounterFaction,
+    EncounterParticipationComponent, EquipmentReferenceDefinition, ScheduledEffect,
+    ScheduledEffectsComponent, ENGINE_REVISION,
 };
 
-const D20_SAVE_SCHEMA_VERSION: u32 = 2;
-const LEGACY_D20_SAVE_SCHEMA_VERSION: u32 = 1;
+const D20_SAVE_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,6 +95,13 @@ pub struct StorageSeed {
     pub entity: EntityId,
     pub name: String,
     pub maximum_items: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncounterParticipationSeed {
+    pub entity: EntityId,
+    pub faction: EncounterFaction,
+    pub initiative: i16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -178,9 +185,11 @@ pub struct ActionPreview {
     defense: StatEvaluation,
     reactions: Vec<ReactionOption>,
     actor_abilities_revision: ComponentRevision,
+    actor_activation_budgets_revision: ComponentRevision,
     actor_equipment_revision: ComponentRevision,
     actor_scheduled_effects_revision: ComponentRevision,
     target_resources_revision: ComponentRevision,
+    target_activation_budgets_revision: ComponentRevision,
     target_tracks_revision: ComponentRevision,
     target_scheduled_effects_revision: ComponentRevision,
     turn: u64,
@@ -350,6 +359,16 @@ impl D20Session {
             attach(
                 &mut entities,
                 character.entity,
+                ActivationBudgetsComponent::new(
+                    rules
+                        .activation_budgets()
+                        .map(|budget| ActivationBudget::new(budget.id.clone(), budget.initial))
+                        .collect(),
+                )?,
+            )?;
+            attach(
+                &mut entities,
+                character.entity,
                 ScheduledEffectsComponent::new(vec![])?,
             )?;
 
@@ -468,6 +487,126 @@ impl D20Session {
             ),
         );
         rng.next_bounded_u32(upper)
+    }
+
+    pub fn install_encounter_participation(
+        &mut self,
+        encounter: D20Id,
+        participants: Vec<EncounterParticipationSeed>,
+    ) -> Result<(), D20SessionError> {
+        if participants.is_empty() {
+            return Err(D20SessionError::InvalidEncounterParticipation(
+                "an encounter requires at least one participant".to_owned(),
+            ));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for participant in &participants {
+            if !seen.insert(participant.entity) {
+                return Err(D20SessionError::InvalidEncounterParticipation(
+                    "encounter participants must be distinct".to_owned(),
+                ));
+            }
+            if self
+                .entities
+                .component::<AbilityScoresComponent>(participant.entity)?
+                .is_none()
+            {
+                return Err(D20SessionError::MissingComponent {
+                    entity: participant.entity,
+                    component: AbilityScoresComponent::LABEL,
+                });
+            }
+        }
+
+        let mut staged = self.entities.clone();
+        let existing = staged
+            .components::<EncounterParticipationComponent>()?
+            .map(|(entity, _)| entity)
+            .collect::<Vec<_>>();
+        for entity in existing {
+            let revision = staged.component_revision::<EncounterParticipationComponent>(entity)?;
+            EntityAuthoringService.detach_component::<EncounterParticipationComponent>(
+                &mut staged,
+                revision,
+                entity,
+            )?;
+        }
+        for participant in participants {
+            attach(
+                &mut staged,
+                participant.entity,
+                EncounterParticipationComponent::new(
+                    encounter.clone(),
+                    participant.faction,
+                    participant.initiative,
+                ),
+            )?;
+        }
+        self.entities = staged;
+        Ok(())
+    }
+
+    pub fn clear_encounter_participation(&mut self) -> Result<(), D20SessionError> {
+        let mut staged = self.entities.clone();
+        let existing = staged
+            .components::<EncounterParticipationComponent>()?
+            .map(|(entity, _)| entity)
+            .collect::<Vec<_>>();
+        for entity in existing {
+            let revision = staged.component_revision::<EncounterParticipationComponent>(entity)?;
+            EntityAuthoringService.detach_component::<EncounterParticipationComponent>(
+                &mut staged,
+                revision,
+                entity,
+            )?;
+        }
+        self.entities = staged;
+        Ok(())
+    }
+
+    pub fn encounter_participants(
+        &self,
+    ) -> Result<Vec<(EntityId, EncounterParticipationComponent)>, D20SessionError> {
+        Ok(self
+            .entities
+            .components::<EncounterParticipationComponent>()?
+            .map(|(entity, component)| (entity, component.clone()))
+            .collect())
+    }
+
+    pub fn encounter_participation(
+        &self,
+        entity: EntityId,
+    ) -> Result<Option<&EncounterParticipationComponent>, D20SessionError> {
+        Ok(self
+            .entities
+            .component::<EncounterParticipationComponent>(entity)?)
+    }
+
+    pub fn activation_budgets(
+        &self,
+        entity: EntityId,
+    ) -> Result<&ActivationBudgetsComponent, D20SessionError> {
+        self.entities
+            .component::<ActivationBudgetsComponent>(entity)?
+            .ok_or(D20SessionError::MissingComponent {
+                entity,
+                component: ActivationBudgetsComponent::LABEL,
+            })
+    }
+
+    pub fn reset_activation_budgets(&mut self, entity: EntityId) -> Result<(), D20SessionError> {
+        let reset = ActivationBudgetsComponent::new(
+            self.rules
+                .activation_budgets()
+                .map(|budget| ActivationBudget::new(budget.id.clone(), budget.initial))
+                .collect(),
+        )?;
+        let revision = self
+            .entities
+            .component_revision::<ActivationBudgetsComponent>(entity)?;
+        EntityAuthoringService.replace_component(&mut self.entities, revision, entity, reset)?;
+        Ok(())
     }
 
     pub fn restore_vitality(
@@ -701,6 +840,7 @@ impl D20Session {
             .rules
             .action(action)
             .ok_or_else(|| D20SessionError::UnknownAction(action.clone()))?;
+        self.ensure_activation_costs(actor, &action_definition.activation_costs)?;
         let resolved = self.resolve_action_definition(actor, action_definition)?;
         let abilities = self
             .entities
@@ -732,13 +872,29 @@ impl D20Session {
                 entity: target,
                 component: ActionResourcesComponent::LABEL,
             })?;
-        let reactions = self
+        let target_budgets = self.activation_budgets(target)?;
+        let target_template = self
             .rules
-            .reactions()
+            .character_templates()
+            .find(|character| character.entity_id == target.raw())
+            .ok_or_else(|| {
+                D20SessionError::InvalidEncounterParticipation(format!(
+                    "entity {target} is not a compiled character"
+                ))
+            })?;
+        let reactions = target_template
+            .reactions
+            .iter()
+            .filter_map(|reaction_id| self.rules.reaction(reaction_id))
             .filter(|reaction| reaction.defense == resolved.defense)
             .filter_map(|reaction| {
                 let available = resources.current(&reaction.resource)?;
-                (available >= reaction.cost).then(|| ReactionOption {
+                let budgets_available = reaction.activation_costs.iter().all(|cost| {
+                    target_budgets
+                        .current(&cost.budget)
+                        .is_some_and(|available| available >= cost.amount)
+                });
+                (available >= reaction.cost && budgets_available).then(|| ReactionOption {
                     reaction: reaction.id.clone(),
                     resource: reaction.resource.clone(),
                     cost: reaction.cost,
@@ -761,6 +917,9 @@ impl D20Session {
             actor_abilities_revision: self
                 .entities
                 .component_revision::<AbilityScoresComponent>(actor)?,
+            actor_activation_budgets_revision: self
+                .entities
+                .component_revision::<ActivationBudgetsComponent>(actor)?,
             actor_equipment_revision: self
                 .entities
                 .component_revision::<EquipmentComponent>(actor)?,
@@ -770,6 +929,9 @@ impl D20Session {
             target_resources_revision: self
                 .entities
                 .component_revision::<ActionResourcesComponent>(target)?,
+            target_activation_budgets_revision: self
+                .entities
+                .component_revision::<ActivationBudgetsComponent>(target)?,
             target_tracks_revision: self
                 .entities
                 .component_revision::<TracksComponent>(target)?,
@@ -854,6 +1016,26 @@ impl D20Session {
         }
     }
 
+    fn ensure_activation_costs(
+        &self,
+        entity: EntityId,
+        costs: &[ActivationCostDefinition],
+    ) -> Result<(), D20SessionError> {
+        let budgets = self.activation_budgets(entity)?;
+        for cost in costs {
+            let available = budgets.current(&cost.budget).unwrap_or(0);
+            if available < cost.amount {
+                return Err(D20SessionError::ActivationBudgetUnavailable {
+                    entity,
+                    budget: cost.budget.clone(),
+                    required: cost.amount,
+                    available,
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn active_attack_penalty(
         &self,
         actor: EntityId,
@@ -928,6 +1110,9 @@ impl D20Session {
         let after_component = before_component
             .spend(&definition.resource, definition.cost)
             .ok_or_else(|| D20SessionError::ReactionUnavailable(reaction.clone()))?;
+        let before_budgets = self.activation_budgets(preview.target)?;
+        let after_budgets =
+            spend_activation_costs(before_budgets, preview.target, &definition.activation_costs)?;
 
         let mut staged = self.entities.clone();
         EntityAuthoringService.replace_component(
@@ -935,6 +1120,12 @@ impl D20Session {
             preview.target_resources_revision.clone(),
             preview.target,
             after_component,
+        )?;
+        EntityAuthoringService.replace_component(
+            &mut staged,
+            preview.target_activation_budgets_revision.clone(),
+            preview.target,
+            after_budgets,
         )?;
         let expires_at_turn = self
             .current_turn
@@ -998,6 +1189,18 @@ impl D20Session {
         let applied_damage = adjusted_damage.max(0);
 
         let mut staged = self.entities.clone();
+        let actor_budgets = self.activation_budgets(request.preview.actor)?;
+        let after_actor_budgets = spend_activation_costs(
+            actor_budgets,
+            request.preview.actor,
+            &action.activation_costs,
+        )?;
+        EntityAuthoringService.replace_component(
+            &mut staged,
+            request.preview.actor_activation_budgets_revision.clone(),
+            request.preview.actor,
+            after_actor_budgets,
+        )?;
         let damage = if hit {
             Some(DamageService::apply(
                 &mut staged,
@@ -1146,9 +1349,7 @@ impl D20Session {
 
     pub fn decode_save(rules: D20Ruleset, input: &str) -> Result<Self, SessionSaveError> {
         let save: D20SessionSave = serde_json::from_str(input)?;
-        if save.schema_version != D20_SAVE_SCHEMA_VERSION
-            && save.schema_version != LEGACY_D20_SAVE_SCHEMA_VERSION
-        {
+        if save.schema_version != D20_SAVE_SCHEMA_VERSION {
             return Err(SessionSaveError::UnsupportedSchema {
                 actual: save.schema_version,
             });
@@ -1167,17 +1368,8 @@ impl D20Session {
         }
         let entity_state = serde_json::to_string(&save.entity_state)?;
         let registry = d20_component_registry()?;
-        let entities = if save.schema_version == LEGACY_D20_SAVE_SCHEMA_VERSION {
-            let mut entities = decode_snapshot_with_registry(&entity_state, registry)?;
-            upgrade_legacy_mechanics_catalog(&mut entities, &rules)
-                .map_err(SessionSaveError::InvalidState)?;
-            gameplay_mechanics::validate_state_against_catalog(&entities, rules.mechanics())
-                .map_err(D20SessionError::from)
-                .map_err(SessionSaveError::InvalidState)?;
-            entities
-        } else {
-            decode_snapshot_with_catalog_and_registry(&entity_state, registry, rules.mechanics())?
-        };
+        let entities =
+            decode_snapshot_with_catalog_and_registry(&entity_state, registry, rules.mechanics())?;
         validate_restored_d20_state(&entities, &rules)?;
         Ok(Self {
             rules,
@@ -1202,6 +1394,12 @@ impl D20Session {
         )?;
         ensure_component_revision(
             &self.entities,
+            &preview.actor_activation_budgets_revision,
+            self.entities
+                .component_revision::<ActivationBudgetsComponent>(preview.actor)?,
+        )?;
+        ensure_component_revision(
+            &self.entities,
             &preview.actor_equipment_revision,
             self.entities
                 .component_revision::<EquipmentComponent>(preview.actor)?,
@@ -1217,6 +1415,12 @@ impl D20Session {
             &preview.target_resources_revision,
             self.entities
                 .component_revision::<ActionResourcesComponent>(preview.target)?,
+        )?;
+        ensure_component_revision(
+            &self.entities,
+            &preview.target_activation_budgets_revision,
+            self.entities
+                .component_revision::<ActivationBudgetsComponent>(preview.target)?,
         )?;
         ensure_component_revision(
             &self.entities,
@@ -1298,11 +1502,13 @@ pub enum D20SessionError {
         action: D20Id,
         effect: D20Id,
     },
-    LegacyCatalogVersionMismatch {
+    ActivationBudgetUnavailable {
         entity: EntityId,
-        component: &'static str,
-        actual: String,
+        budget: D20Id,
+        required: u16,
+        available: u16,
     },
+    InvalidEncounterParticipation(String),
     ReactionUnavailable(D20Id),
     MissingEffectInstance(D20Id),
     UnscheduledActiveEffect {
@@ -1551,6 +1757,26 @@ fn attach<T: EntityComponent>(
     Ok(())
 }
 
+fn spend_activation_costs(
+    component: &ActivationBudgetsComponent,
+    entity: EntityId,
+    costs: &[ActivationCostDefinition],
+) -> Result<ActivationBudgetsComponent, D20SessionError> {
+    let mut after = component.clone();
+    for cost in costs {
+        let available = after.current(&cost.budget).unwrap_or(0);
+        after = after.spend(&cost.budget, cost.amount).ok_or_else(|| {
+            D20SessionError::ActivationBudgetUnavailable {
+                entity,
+                budget: cost.budget.clone(),
+                required: cost.amount,
+                available,
+            }
+        })?;
+    }
+    Ok(after)
+}
+
 fn attach_inventory(
     state: &mut EntityState,
     rules: &D20Ruleset,
@@ -1569,149 +1795,6 @@ fn attach_inventory(
             )],
         )?,
     )
-}
-
-fn upgrade_legacy_mechanics_catalog(
-    state: &mut EntityState,
-    rules: &D20Ruleset,
-) -> Result<(), D20SessionError> {
-    let version = rules.mechanics().version().clone();
-
-    let stats = state
-        .components::<StatsComponent>()?
-        .map(|(entity, component)| {
-            ensure_legacy_catalog_version(
-                entity,
-                StatsComponent::LABEL,
-                component.catalog_version(),
-            )?;
-            Ok((entity, component.values().to_vec()))
-        })
-        .collect::<Result<Vec<_>, D20SessionError>>()?;
-    for (entity, values) in stats {
-        replace(state, entity, StatsComponent::new(version.clone(), values)?)?;
-    }
-
-    let tracks = state
-        .components::<TracksComponent>()?
-        .map(|(entity, component)| {
-            ensure_legacy_catalog_version(
-                entity,
-                TracksComponent::LABEL,
-                component.catalog_version(),
-            )?;
-            Ok((entity, component.values().to_vec()))
-        })
-        .collect::<Result<Vec<_>, D20SessionError>>()?;
-    for (entity, values) in tracks {
-        replace(
-            state,
-            entity,
-            TracksComponent::new(version.clone(), values)?,
-        )?;
-    }
-
-    let intrinsic = state
-        .components::<IntrinsicSourcesComponent>()?
-        .map(|(entity, component)| {
-            ensure_legacy_catalog_version(
-                entity,
-                IntrinsicSourcesComponent::LABEL,
-                component.catalog_version(),
-            )?;
-            Ok((entity, component.bindings().to_vec()))
-        })
-        .collect::<Result<Vec<_>, D20SessionError>>()?;
-    for (entity, bindings) in intrinsic {
-        replace(
-            state,
-            entity,
-            IntrinsicSourcesComponent::new(version.clone(), bindings)?,
-        )?;
-    }
-
-    let active = state
-        .components::<ActiveEffectsComponent>()?
-        .map(|(entity, component)| {
-            ensure_legacy_catalog_version(
-                entity,
-                ActiveEffectsComponent::LABEL,
-                component.catalog_version(),
-            )?;
-            Ok((entity, component.effects().to_vec()))
-        })
-        .collect::<Result<Vec<_>, D20SessionError>>()?;
-    for (entity, effects) in active {
-        replace(
-            state,
-            entity,
-            ActiveEffectsComponent::new(version.clone(), effects)?,
-        )?;
-    }
-
-    let equipment = state
-        .components::<EquipmentComponent>()?
-        .map(|(entity, component)| {
-            ensure_legacy_catalog_version(
-                entity,
-                EquipmentComponent::LABEL,
-                component.catalog_version(),
-            )?;
-            Ok((entity, component.assignments().to_vec()))
-        })
-        .collect::<Result<Vec<_>, D20SessionError>>()?;
-    for (entity, assignments) in equipment {
-        replace(
-            state,
-            entity,
-            EquipmentComponent::new(version.clone(), assignments)?,
-        )?;
-    }
-
-    let items = state
-        .components::<ItemComponent>()?
-        .map(|(entity, component)| {
-            ensure_legacy_catalog_version(
-                entity,
-                ItemComponent::LABEL,
-                component.catalog_version(),
-            )?;
-            Ok((entity, component.definition().clone()))
-        })
-        .collect::<Result<Vec<_>, D20SessionError>>()?;
-    for (entity, definition) in items {
-        replace(
-            state,
-            entity,
-            ItemComponent::new(version.clone(), definition),
-        )?;
-    }
-    Ok(())
-}
-
-fn ensure_legacy_catalog_version(
-    entity: EntityId,
-    component: &'static str,
-    actual: &CatalogVersion,
-) -> Result<(), D20SessionError> {
-    if actual.as_str() != "rusty-d20.v1" {
-        return Err(D20SessionError::LegacyCatalogVersionMismatch {
-            entity,
-            component,
-            actual: actual.to_string(),
-        });
-    }
-    Ok(())
-}
-
-fn replace<T: EntityComponent + PartialEq>(
-    state: &mut EntityState,
-    entity: EntityId,
-    component: T,
-) -> Result<(), D20SessionError> {
-    let revision = state.component_revision::<T>(entity)?;
-    EntityAuthoringService.replace_component(state, revision, entity, component)?;
-    Ok(())
 }
 
 fn request_source(operation: &OperationId, label: &str) -> SourceInstanceIdentity {
@@ -1896,6 +1979,36 @@ fn validate_restored_d20_state(
                     component: ActiveEffectsComponent::LABEL,
                 })
             })?;
+        let budgets = state
+            .component::<ActivationBudgetsComponent>(entity)
+            .map_err(D20SessionError::from)
+            .map_err(SessionSaveError::InvalidState)?
+            .ok_or({
+                SessionSaveError::InvalidState(D20SessionError::MissingComponent {
+                    entity,
+                    component: ActivationBudgetsComponent::LABEL,
+                })
+            })?;
+        for definition in rules.activation_budgets() {
+            let current = budgets.current(&definition.id).ok_or_else(|| {
+                SessionSaveError::InvalidState(D20SessionError::ActivationBudgetUnavailable {
+                    entity,
+                    budget: definition.id.clone(),
+                    required: 0,
+                    available: 0,
+                })
+            })?;
+            if current > definition.initial {
+                return Err(SessionSaveError::InvalidState(
+                    D20SessionError::ActivationBudgetUnavailable {
+                        entity,
+                        budget: definition.id.clone(),
+                        required: current,
+                        available: definition.initial,
+                    },
+                ));
+            }
+        }
         validate_character_seed(
             rules,
             &CharacterSeed {
@@ -1924,6 +2037,32 @@ fn validate_restored_d20_state(
                     entity,
                     component: AbilityScoresComponent::LABEL,
                 },
+            ));
+        }
+    }
+    for (entity, participation) in state
+        .components::<EncounterParticipationComponent>()
+        .map_err(D20SessionError::from)
+        .map_err(SessionSaveError::InvalidState)?
+    {
+        if !state
+            .has_component::<AbilityScoresComponent>(entity)
+            .map_err(D20SessionError::from)
+            .map_err(SessionSaveError::InvalidState)?
+        {
+            return Err(SessionSaveError::InvalidState(
+                D20SessionError::InvalidEncounterParticipation(format!(
+                    "entity {entity} participates in {} without character facts",
+                    participation.encounter()
+                )),
+            ));
+        }
+        if rules.encounter(participation.encounter()).is_none() {
+            return Err(SessionSaveError::InvalidState(
+                D20SessionError::InvalidEncounterParticipation(format!(
+                    "entity {entity} references unknown encounter {}",
+                    participation.encounter()
+                )),
             ));
         }
     }

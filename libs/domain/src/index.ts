@@ -3,12 +3,12 @@ import type {
   CampaignDto,
   CharacterDto,
   EncounterDto,
+  EncounterParticipantDto,
   GameLogEntryDto,
   GameSnapshotDto,
-  LoadoutDto,
   PendingActionDto,
   RuntimeReadoutDto,
-} from '@rusty-d20/protocol';
+} from "@rusty-d20/protocol";
 
 export interface RuntimeReadoutView {
   readonly product: string;
@@ -28,49 +28,55 @@ export interface GameSnapshotView {
   readonly rulesetFingerprintShort: string;
   readonly revision: number;
   readonly saved: boolean;
-  readonly availableAdventures: GameSnapshotDto['availableAdventures'];
+  readonly availableAdventures: GameSnapshotDto["availableAdventures"];
   readonly campaign: CampaignView | null;
-  readonly exploration: GameSnapshotDto['exploration'];
+  readonly exploration: GameSnapshotDto["exploration"];
   readonly encounter: EncounterView | null;
 }
 
 export interface CampaignView {
   readonly id: string;
   readonly title: string;
-  readonly phase: CampaignDto['phase'];
-  readonly hero: CharacterDto;
-  readonly loadout: LoadoutDto;
+  readonly phase: CampaignDto["phase"];
+  readonly party: CampaignDto["party"];
   readonly activeEncounterId: string | null;
-  readonly availableEncounters: CampaignDto['availableEncounters'];
-  readonly latestOutcome: CampaignDto['latestOutcome'];
-  readonly completedEncounters: CampaignDto['completedEncounters'];
+  readonly availableEncounters: CampaignDto["availableEncounters"];
+  readonly latestOutcome: CampaignDto["latestOutcome"];
+  readonly completedEncounters: CampaignDto["completedEncounters"];
 }
 
 export interface EncounterView {
-  readonly turn: number;
+  readonly round: number;
   readonly nextRoll: number;
-  readonly playerId: number;
-  readonly turnOwner: EncounterDto['turnOwner'];
-  readonly player: CharacterDto;
+  readonly currentActorId: number | null;
+  readonly currentActor: CharacterDto | null;
+  readonly currentFaction: EncounterParticipantDto["faction"] | null;
+  readonly party: readonly CharacterDto[];
   readonly targets: readonly CharacterDto[];
-  readonly characters: readonly CharacterDto[];
+  readonly participants: readonly EncounterParticipantDto[];
   readonly actions: readonly ActionDto[];
+  readonly legalTargets: EncounterDto["legalTargets"];
   readonly pendingAction: PendingActionDto | null;
   readonly log: readonly GameLogEntryDto[];
 }
 
-export function projectRuntimeReadout(readout: RuntimeReadoutDto): RuntimeReadoutView {
+export function projectRuntimeReadout(
+  readout: RuntimeReadoutDto,
+): RuntimeReadoutView {
   return {
     product: readout.product,
     version: readout.version,
     engineRevision: readout.engineRevision,
     engineRevisionShort: readout.engineRevision.slice(0, 12),
-    statusLabel: readout.status === 'ready' ? 'Runtime ready' : 'Runtime unavailable',
+    statusLabel:
+      readout.status === "ready" ? "Runtime ready" : "Runtime unavailable",
     entityCount: readout.entityCount,
   };
 }
 
-export function projectGameSnapshot(snapshot: GameSnapshotDto): GameSnapshotView {
+export function projectGameSnapshot(
+  snapshot: GameSnapshotDto,
+): GameSnapshotView {
   return {
     product: snapshot.product,
     version: snapshot.version,
@@ -81,9 +87,11 @@ export function projectGameSnapshot(snapshot: GameSnapshotDto): GameSnapshotView
     revision: snapshot.revision,
     saved: snapshot.saved,
     availableAdventures: snapshot.availableAdventures,
-    campaign: snapshot.campaign === null ? null : projectCampaign(snapshot.campaign),
+    campaign:
+      snapshot.campaign === null ? null : projectCampaign(snapshot.campaign),
     exploration: snapshot.exploration,
-    encounter: snapshot.encounter === null ? null : projectEncounter(snapshot.encounter),
+    encounter:
+      snapshot.encounter === null ? null : projectEncounter(snapshot.encounter),
   };
 }
 
@@ -92,8 +100,7 @@ function projectCampaign(campaign: CampaignDto): CampaignView {
     id: campaign.id,
     title: campaign.title,
     phase: campaign.phase,
-    hero: campaign.hero,
-    loadout: campaign.loadout,
+    party: campaign.party,
     activeEncounterId: campaign.activeEncounterId,
     availableEncounters: campaign.availableEncounters,
     latestOutcome: campaign.latestOutcome,
@@ -102,19 +109,27 @@ function projectCampaign(campaign: CampaignDto): CampaignView {
 }
 
 function projectEncounter(encounter: EncounterDto): EncounterView {
-  const player = encounter.characters.find((character) => character.id === encounter.playerId);
-  if (player === undefined) {
-    throw new Error('Rust projection did not include the encounter player.');
-  }
+  const current = encounter.participants.find(
+    (participant) => participant.character.id === encounter.currentActorId,
+  );
   return {
-    turn: encounter.turn,
+    round: encounter.round,
     nextRoll: encounter.nextRoll,
-    playerId: encounter.playerId,
-    turnOwner: encounter.turnOwner,
-    player,
-    targets: encounter.characters.filter((character) => character.id !== encounter.playerId),
-    characters: encounter.characters,
+    currentActorId: encounter.currentActorId,
+    currentActor: current?.character ?? null,
+    currentFaction: current?.faction ?? null,
+    party: encounter.participants
+      .filter((participant) => participant.faction === "party")
+      .map((participant) => participant.character),
+    targets: encounter.participants
+      .filter(
+        (participant) =>
+          participant.faction === "opposition" && !participant.defeated,
+      )
+      .map((participant) => participant.character),
+    participants: encounter.participants,
     actions: encounter.actions,
+    legalTargets: encounter.legalTargets,
     pendingAction: encounter.pendingAction,
     log: encounter.log,
   };
