@@ -247,6 +247,31 @@ pub(super) fn validate_product_state(
             ));
         }
     }
+    let stash = storage_entity(rules, adventure, &adventure.camp_storage)?;
+    let party = adventure
+        .party
+        .iter()
+        .map(|member| character_entity(rules, adventure, member))
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    for treasure in &adventure.dungeon.treasures {
+        let item = rules
+            .item_instance(&treasure.item)
+            .expect("compiled treasure item exists");
+        let item_entity = EntityId::new(item.entity_id);
+        let owner = session.entities().contained_in(item_entity);
+        let original_owner = owner_entity(rules, adventure, &item.owner)?;
+        let collected = campaign.exploration.as_ref().is_some_and(|exploration| {
+            exploration
+                .collected_treasures
+                .contains(treasure.id.as_str())
+        });
+        let claimed = owner.is_some_and(|owner| owner == stash || party.contains(&owner));
+        if (collected && !claimed) || (!collected && owner != Some(original_owner)) {
+            return Err(GameRuntimeError::InvalidSave(
+                "dungeon treasure ownership contradicts the authoritative event state".to_owned(),
+            ));
+        }
+    }
     validate_campaign_vitality(rules, adventure, session, campaign)?;
     Ok(())
 }
@@ -271,7 +296,7 @@ pub(super) fn validate_campaign_vitality(
     let participation = session.encounter_participants()?;
     if matches!(
         campaign.phase,
-        CampaignPhase::Camp | CampaignPhase::Exploration
+        CampaignPhase::Camp | CampaignPhase::Exploration | CampaignPhase::AdventureComplete
     ) {
         if campaign.current_actor_id.is_some()
             || !participation.is_empty()

@@ -17,8 +17,10 @@ screen, where the player manages Engine-backed inventory/equipment and camp
 storage, inspects attributed defenses, chooses authored actions and targets,
 applies optional reactions, resolves deterministic source-attributed
 damage/effects, faces an explicit opposition turn, and plays through victory or
-defeat. Warden's Gate is an ordered two-encounter campaign; Ember's Wake is a
-distinct single-encounter path.
+defeat. Warden's Gate is a complete bounded three-encounter expedition with a
+four-character party, inspectable landmarks, a claimed sigil treasure, a
+treasure-gated door, a durable safe-return checkpoint, and an authored terminal
+victory or defeat. Ember's Wake remains a distinct single-encounter path.
 Victory transfers the path's
 canonical reward into camp storage; defeat applies its authored bounded
 recovery. A fresh Rust process continues the exact selected composition,
@@ -69,12 +71,10 @@ start at [docs/design.md](docs/design.md) and
 
 ## Current phase boundary
 
-The GM7 reference slice and first Gold Box exploration milestone are connected
-end to end. It is not yet the complete Ruleweaver game: overhead tactical grid
-combat, authoritative multi-combatant party/initiative turns, translated
-Ruleweaver vocabulary/content, spellcasting, advancement, content publication,
-broader item/content catalogs, and branching campaign graphs remain later
-milestones. See
+The first bounded Ruleweaver-derived Gold Box adventure is connected end to
+end. It is not a sprawling campaign: spellcasting, advancement, content
+publication, broader item/content catalogs, multiple dungeon floors, and
+branching campaign graphs remain later milestones. See
 [docs/known-limitations.md](docs/known-limitations.md).
 
 ## Provenance
@@ -82,6 +82,6 @@ milestones. See
 The UI was copied from `FuzzySlipper/rusty-engine-ui` at exact reviewed commit
 `68ddfa5430ec3bc2cf7ca96963982db9511e79ba`. Rusty Engine crates are pinned to
 exact reviewed commit `fb608e323a8b44a55195f5720101224ff37fd5db` with public
-Git dependencies. The reviewed Ruleweaver and Asha D20 Fantasy translation
-references are recorded, but no content from them enters this exploration
-milestone. See [docs/source-provenance.md](docs/source-provenance.md).
+Git dependencies. The reviewed Ruleweaver and Asha D20 Fantasy references,
+including the bounded Crosswind role-shape adaptation used by Warden's Gate,
+are recorded in [docs/source-provenance.md](docs/source-provenance.md).

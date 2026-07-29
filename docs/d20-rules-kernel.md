@@ -69,8 +69,8 @@ canonical packages:
 - `ember-ward` contributes Nerve equipment, a focus reaction, a temporary
   ward, and two energy/resolve actions;
 - `wardens-gate` contributes its cast, concrete loadout/storage, ordered
-  two-encounter sequence, consequences, exactly-once reward, and default
-  adventure;
+  three-encounter sequence, dungeon treasure/door/checkpoint, terminal copy,
+  consequences, exactly-once rewards, and default adventure;
 - `embers-wake` contributes its distinct cast, Resolve loadout/storage, Ash
   Seer encounter, consequences, reward, and selectable adventure;
 - `catalog-probe` contributes a non-default, non-selectable content-only

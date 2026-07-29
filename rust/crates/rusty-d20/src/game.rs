@@ -23,7 +23,7 @@ use crate::{
     TacticalBoardDefinition, TacticalPosition, ENGINE_REVISION,
 };
 
-const GAME_SAVE_SCHEMA_VERSION: u32 = 9;
+const GAME_SAVE_SCHEMA_VERSION: u32 = 10;
 const MAX_LOG_ENTRIES: usize = 64;
 const MAX_LOG_DETAILS: usize = 32;
 const MAX_LOG_SOURCE_BYTES: usize = 128;
@@ -67,6 +67,7 @@ enum CampaignPhase {
     Exploration,
     Encounter,
     Outcome,
+    AdventureComplete,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,6 +98,9 @@ struct ExplorationState {
     facing: DungeonFacingDefinition,
     discovered: BTreeSet<DungeonPosition>,
     inspected_landmarks: BTreeSet<String>,
+    checkpoint_id: String,
+    opened_doors: BTreeSet<String>,
+    collected_treasures: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1310,23 +1314,35 @@ impl GameRuntime {
             .campaign
             .as_ref()
             .ok_or(GameRuntimeError::NoEncounter)?;
+        let adventure_complete =
+            next_available_encounter_definition(&self.rules, &adventure, campaign)?.is_none();
         let continue_exploring = outcome == EncounterOutcome::Victory
             && campaign.exploration.is_some()
-            && next_available_encounter_definition(&self.rules, &adventure, campaign)?.is_some();
+            && !adventure_complete;
         {
             let campaign = self.campaign_mut()?;
-            campaign.phase = if continue_exploring {
+            campaign.phase = if adventure_complete {
+                CampaignPhase::AdventureComplete
+            } else if continue_exploring {
                 CampaignPhase::Exploration
             } else {
                 CampaignPhase::Camp
             };
             campaign.active_encounter_id = None;
             campaign.current_actor_id = None;
-            if !continue_exploring {
+            if !continue_exploring && !adventure_complete {
                 if let Some(exploration) = campaign.exploration.as_mut() {
+                    let checkpoint = adventure
+                        .dungeon
+                        .checkpoint(&exploration.checkpoint_id)
+                        .ok_or_else(|| {
+                            GameRuntimeError::InvalidState(
+                                "active dungeon checkpoint is missing".to_owned(),
+                            )
+                        })?;
                     exploration.position = DungeonPosition {
-                        x: adventure.dungeon.checkpoint_x,
-                        y: adventure.dungeon.checkpoint_y,
+                        x: checkpoint.x,
+                        y: checkpoint.y,
                     };
                     exploration.facing = adventure.dungeon.start_facing;
                     exploration.discovered.insert(exploration.position);
@@ -1336,14 +1352,24 @@ impl GameRuntime {
         self.session_mut()?.clear_encounter_participation()?;
         self.bump_revision()?;
         self.saved_revision = None;
+        if adventure_complete {
+            details.extend(adventure.completion.details.clone());
+        }
         self.push_log(
             GameLogKindDto::System,
-            if continue_exploring {
+            if adventure_complete {
+                &adventure.completion.source
+            } else if continue_exploring {
                 "Expedition"
             } else {
                 "Camp"
             },
-            if continue_exploring {
+            if adventure_complete {
+                match outcome {
+                    EncounterOutcome::Victory => &adventure.completion.victory_text,
+                    EncounterOutcome::Defeat => &adventure.completion.defeat_text,
+                }
+            } else if continue_exploring {
                 "The party returns to the exact dungeon location."
             } else {
                 "The encounter consequence is now part of the durable camp state."
@@ -1865,11 +1891,14 @@ impl GameRuntime {
     fn ensure_encounter_phase(&self) -> Result<(), GameRuntimeError> {
         match self.campaign.as_ref().map(|campaign| campaign.phase) {
             Some(CampaignPhase::Encounter) => Ok(()),
-            Some(CampaignPhase::Camp | CampaignPhase::Exploration | CampaignPhase::Outcome) => {
-                Err(GameRuntimeError::WrongPhase(
-                    "this command is only available during an active encounter".to_owned(),
-                ))
-            }
+            Some(
+                CampaignPhase::Camp
+                | CampaignPhase::Exploration
+                | CampaignPhase::Outcome
+                | CampaignPhase::AdventureComplete,
+            ) => Err(GameRuntimeError::WrongPhase(
+                "this command is only available during an active encounter".to_owned(),
+            )),
             None => Err(GameRuntimeError::NoEncounter),
         }
     }
@@ -1878,7 +1907,10 @@ impl GameRuntime {
         match self.campaign.as_ref().map(|campaign| campaign.phase) {
             Some(CampaignPhase::Camp) => Ok(()),
             Some(
-                CampaignPhase::Exploration | CampaignPhase::Encounter | CampaignPhase::Outcome,
+                CampaignPhase::Exploration
+                | CampaignPhase::Encounter
+                | CampaignPhase::Outcome
+                | CampaignPhase::AdventureComplete,
             ) => Err(GameRuntimeError::WrongPhase(
                 "loadout changes are only available at camp".to_owned(),
             )),
@@ -1889,11 +1921,14 @@ impl GameRuntime {
     fn ensure_outcome_phase(&self) -> Result<(), GameRuntimeError> {
         match self.campaign.as_ref().map(|campaign| campaign.phase) {
             Some(CampaignPhase::Outcome) => Ok(()),
-            Some(CampaignPhase::Camp | CampaignPhase::Exploration | CampaignPhase::Encounter) => {
-                Err(GameRuntimeError::WrongPhase(
-                    "return to camp is only available after an encounter outcome".to_owned(),
-                ))
-            }
+            Some(
+                CampaignPhase::Camp
+                | CampaignPhase::Exploration
+                | CampaignPhase::Encounter
+                | CampaignPhase::AdventureComplete,
+            ) => Err(GameRuntimeError::WrongPhase(
+                "return to camp is only available after an encounter outcome".to_owned(),
+            )),
             None => Err(GameRuntimeError::NoEncounter),
         }
     }

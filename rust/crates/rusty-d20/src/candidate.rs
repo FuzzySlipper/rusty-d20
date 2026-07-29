@@ -15,7 +15,7 @@ use crate::{
     MAX_D20_TACTICAL_BOARD_HEIGHT, MAX_D20_TACTICAL_BOARD_WIDTH, MAX_D20_TACTICAL_RANGE,
 };
 
-pub const D20_CANDIDATE_SCHEMA_VERSION: u32 = 4;
+pub const D20_CANDIDATE_SCHEMA_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -518,6 +518,42 @@ pub struct DungeonLandmarkCandidate {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
+pub struct DungeonDoorCandidate {
+    pub id: D20Id,
+    pub x: u16,
+    pub y: u16,
+    pub facing: DungeonFacingCandidate,
+    pub title: String,
+    pub text: String,
+    pub requires_treasure: Option<D20Id>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct DungeonTreasureCandidate {
+    pub id: D20Id,
+    pub x: u16,
+    pub y: u16,
+    pub item: D20Id,
+    pub title: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct DungeonCheckpointCandidate {
+    pub id: D20Id,
+    pub x: u16,
+    pub y: u16,
+    pub title: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct DungeonCandidate {
     pub title: String,
     pub wall_style: D20Id,
@@ -526,11 +562,25 @@ pub struct DungeonCandidate {
     pub rows: Vec<String>,
     pub start_x: u16,
     pub start_y: u16,
-    pub checkpoint_x: u16,
-    pub checkpoint_y: u16,
+    pub start_checkpoint: D20Id,
     pub start_facing: DungeonFacingCandidate,
     pub encounters: Vec<DungeonEncounterCandidate>,
     pub landmarks: Vec<DungeonLandmarkCandidate>,
+    pub doors: Vec<DungeonDoorCandidate>,
+    pub treasures: Vec<DungeonTreasureCandidate>,
+    pub checkpoints: Vec<DungeonCheckpointCandidate>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct AdventureCompletionCandidate {
+    pub source: String,
+    pub victory_title: String,
+    pub victory_text: String,
+    pub defeat_title: String,
+    pub defeat_text: String,
+    pub details: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -551,6 +601,7 @@ pub struct AdventureCandidate {
     pub start_source: String,
     pub start_text: String,
     pub start_details: Vec<String>,
+    pub completion: AdventureCompletionCandidate,
 }
 
 #[derive(Debug, Clone)]
@@ -624,7 +675,11 @@ pub fn generated_d20_candidate_typescript() -> String {
         DungeonFacingCandidate::decl(),
         DungeonEncounterCandidate::decl(),
         DungeonLandmarkCandidate::decl(),
+        DungeonDoorCandidate::decl(),
+        DungeonTreasureCandidate::decl(),
+        DungeonCheckpointCandidate::decl(),
         DungeonCandidate::decl(),
+        AdventureCompletionCandidate::decl(),
         AdventureCandidate::decl(),
         D20RulesCandidate::decl(),
     ]

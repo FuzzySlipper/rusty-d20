@@ -362,6 +362,36 @@ pub struct DungeonLandmarkDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonDoorDefinition {
+    pub id: D20Id,
+    pub x: u16,
+    pub y: u16,
+    pub facing: DungeonFacingDefinition,
+    pub title: String,
+    pub text: String,
+    pub requires_treasure: Option<D20Id>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonTreasureDefinition {
+    pub id: D20Id,
+    pub x: u16,
+    pub y: u16,
+    pub item: D20Id,
+    pub title: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonCheckpointDefinition {
+    pub id: D20Id,
+    pub x: u16,
+    pub y: u16,
+    pub title: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DungeonDefinition {
     pub title: String,
     pub wall_style: D20Id,
@@ -370,11 +400,13 @@ pub struct DungeonDefinition {
     pub rows: Vec<String>,
     pub start_x: u16,
     pub start_y: u16,
-    pub checkpoint_x: u16,
-    pub checkpoint_y: u16,
+    pub start_checkpoint: D20Id,
     pub start_facing: DungeonFacingDefinition,
     pub encounters: Vec<DungeonEncounterDefinition>,
     pub landmarks: Vec<DungeonLandmarkDefinition>,
+    pub doors: Vec<DungeonDoorDefinition>,
+    pub treasures: Vec<DungeonTreasureDefinition>,
+    pub checkpoints: Vec<DungeonCheckpointDefinition>,
 }
 
 impl DungeonDefinition {
@@ -384,6 +416,31 @@ impl DungeonDefinition {
             .and_then(|row| row.as_bytes().get(usize::from(x)))
             .is_some_and(|cell| *cell == b'.')
     }
+
+    pub fn checkpoint(&self, id: &str) -> Option<&DungeonCheckpointDefinition> {
+        self.checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.id.as_str() == id)
+    }
+}
+
+fn dungeon_offset(x: u16, y: u16, facing: DungeonFacingCandidate) -> Option<(u16, u16)> {
+    match facing {
+        DungeonFacingCandidate::North => y.checked_sub(1).map(|y| (x, y)),
+        DungeonFacingCandidate::East => x.checked_add(1).map(|x| (x, y)),
+        DungeonFacingCandidate::South => y.checked_add(1).map(|y| (x, y)),
+        DungeonFacingCandidate::West => x.checked_sub(1).map(|x| (x, y)),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdventureCompletionDefinition {
+    pub source: String,
+    pub victory_title: String,
+    pub victory_text: String,
+    pub defeat_title: String,
+    pub defeat_text: String,
+    pub details: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -402,6 +459,7 @@ pub struct AdventureDefinition {
     pub start_source: String,
     pub start_text: String,
     pub start_details: Vec<String>,
+    pub completion: AdventureCompletionDefinition,
 }
 
 #[derive(Debug, Clone)]
@@ -1478,6 +1536,23 @@ impl DefinitionCollector {
             ("dungeon/title", value.dungeon.title.as_str()),
             ("startSource", value.start_source.as_str()),
             ("startText", value.start_text.as_str()),
+            ("completion/source", value.completion.source.as_str()),
+            (
+                "completion/victoryTitle",
+                value.completion.victory_title.as_str(),
+            ),
+            (
+                "completion/victoryText",
+                value.completion.victory_text.as_str(),
+            ),
+            (
+                "completion/defeatTitle",
+                value.completion.defeat_title.as_str(),
+            ),
+            (
+                "completion/defeatText",
+                value.completion.defeat_text.as_str(),
+            ),
         ] {
             self.validate_text(
                 package,
@@ -1495,7 +1570,11 @@ impl DefinitionCollector {
             ("encounters", value.encounters.len()),
             ("dungeon/encounters", value.dungeon.encounters.len()),
             ("dungeon/landmarks", value.dungeon.landmarks.len()),
+            ("dungeon/doors", value.dungeon.doors.len()),
+            ("dungeon/treasures", value.dungeon.treasures.len()),
+            ("dungeon/checkpoints", value.dungeon.checkpoints.len()),
             ("startDetails", value.start_details.len()),
+            ("completion/details", value.completion.details.len()),
         ] {
             self.validate_adventure_list(package, subject, "adventures", &value.id, field, actual);
         }
@@ -1517,6 +1596,15 @@ impl DefinitionCollector {
                 detail,
             );
         }
+        for detail in &value.completion.details {
+            self.validate_text(
+                package,
+                subject,
+                "adventures/completion/details",
+                &value.id,
+                detail,
+            );
+        }
         for landmark in &value.dungeon.landmarks {
             for (field, text) in [
                 ("title", landmark.title.as_str()),
@@ -1527,6 +1615,45 @@ impl DefinitionCollector {
                     subject,
                     &format!("adventures/dungeon/landmarks/{field}"),
                     &landmark.id,
+                    text,
+                );
+            }
+        }
+        for door in &value.dungeon.doors {
+            for (field, text) in [("title", door.title.as_str()), ("text", door.text.as_str())] {
+                self.validate_text(
+                    package,
+                    subject,
+                    &format!("adventures/dungeon/doors/{field}"),
+                    &door.id,
+                    text,
+                );
+            }
+        }
+        for treasure in &value.dungeon.treasures {
+            for (field, text) in [
+                ("title", treasure.title.as_str()),
+                ("text", treasure.text.as_str()),
+            ] {
+                self.validate_text(
+                    package,
+                    subject,
+                    &format!("adventures/dungeon/treasures/{field}"),
+                    &treasure.id,
+                    text,
+                );
+            }
+        }
+        for checkpoint in &value.dungeon.checkpoints {
+            for (field, text) in [
+                ("title", checkpoint.title.as_str()),
+                ("text", checkpoint.text.as_str()),
+            ] {
+                self.validate_text(
+                    package,
+                    subject,
+                    &format!("adventures/dungeon/checkpoints/{field}"),
+                    &checkpoint.id,
                     text,
                 );
             }
@@ -1584,15 +1711,13 @@ impl DefinitionCollector {
                 .and_then(|row| row.as_bytes().get(usize::from(x)))
                 == Some(&b'.')
         };
-        if !is_floor(dungeon.start_x, dungeon.start_y)
-            || !is_floor(dungeon.checkpoint_x, dungeon.checkpoint_y)
-        {
+        if !is_floor(dungeon.start_x, dungeon.start_y) {
             self.push_diagnostic(
                 package,
                 Some(subject),
                 "D20_INVALID_DUNGEON_START",
                 format!("$/payload/adventures/{adventure}/dungeon/start"),
-                "dungeon start and checkpoint must be traversable cells".to_owned(),
+                "dungeon start must be a traversable cell".to_owned(),
             );
         }
 
@@ -1607,6 +1732,18 @@ impl DefinitionCollector {
                     .iter()
                     .map(|entry| ("landmark", entry.x, entry.y)),
             )
+            .chain(
+                dungeon
+                    .treasures
+                    .iter()
+                    .map(|entry| ("treasure", entry.x, entry.y)),
+            )
+            .chain(
+                dungeon
+                    .checkpoints
+                    .iter()
+                    .map(|entry| ("checkpoint", entry.x, entry.y)),
+            )
             .find(|(_, x, y)| !is_floor(*x, *y) || !placements.insert((*x, *y)));
         if let Some((kind, x, y)) = invalid_placement {
             self.push_diagnostic(
@@ -1618,27 +1755,111 @@ impl DefinitionCollector {
             );
         }
 
-        let mut reachable = BTreeSet::from([(dungeon.start_x, dungeon.start_y)]);
-        let mut queue = VecDeque::from([(dungeon.start_x, dungeon.start_y)]);
-        while let Some((x, y)) = queue.pop_front() {
-            for (next_x, next_y) in [
-                (x.wrapping_sub(1), y),
-                (x.saturating_add(1), y),
-                (x, y.wrapping_sub(1)),
-                (x, y.saturating_add(1)),
-            ] {
-                if is_floor(next_x, next_y) && reachable.insert((next_x, next_y)) {
-                    queue.push_back((next_x, next_y));
+        let invalid_door = dungeon.doors.iter().find(|door| {
+            let destination = dungeon_offset(door.x, door.y, door.facing);
+            !is_floor(door.x, door.y) || destination.is_none_or(|(x, y)| !is_floor(x, y))
+        });
+        if let Some(door) = invalid_door {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_INVALID_DUNGEON_DOOR",
+                format!("$/payload/adventures/{adventure}/dungeon/doors"),
+                format!(
+                    "door {} must connect two orthogonally adjacent traversable cells",
+                    door.id
+                ),
+            );
+        }
+        let distinct_edges = dungeon
+            .doors
+            .iter()
+            .filter_map(|door| {
+                dungeon_offset(door.x, door.y, door.facing).map(|destination| {
+                    let mut edge = [(door.x, door.y), destination];
+                    edge.sort();
+                    edge
+                })
+            })
+            .collect::<BTreeSet<_>>();
+        if distinct_edges.len() != dungeon.doors.len() {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_DUPLICATE_DUNGEON_DOOR",
+                format!("$/payload/adventures/{adventure}/dungeon/doors"),
+                "dungeon doors must own distinct traversable edges".to_owned(),
+            );
+        }
+
+        let mut opened_doors = BTreeSet::new();
+        let reachable = loop {
+            let mut reachable = BTreeSet::from([(dungeon.start_x, dungeon.start_y)]);
+            let mut queue = VecDeque::from([(dungeon.start_x, dungeon.start_y)]);
+            while let Some((x, y)) = queue.pop_front() {
+                for (next_x, next_y) in [
+                    (x.wrapping_sub(1), y),
+                    (x.saturating_add(1), y),
+                    (x, y.wrapping_sub(1)),
+                    (x, y.saturating_add(1)),
+                ] {
+                    let blocked_by_door = dungeon.doors.iter().any(|door| {
+                        let Some(destination) = dungeon_offset(door.x, door.y, door.facing) else {
+                            return false;
+                        };
+                        let connects = ((door.x, door.y) == (x, y)
+                            && destination == (next_x, next_y))
+                            || ((door.x, door.y) == (next_x, next_y) && destination == (x, y));
+                        connects && !opened_doors.contains(door.id.as_str())
+                    });
+                    if is_floor(next_x, next_y)
+                        && !blocked_by_door
+                        && reachable.insert((next_x, next_y))
+                    {
+                        queue.push_back((next_x, next_y));
+                    }
                 }
             }
-        }
-        if !reachable.contains(&(dungeon.checkpoint_x, dungeon.checkpoint_y))
+
+            let reachable_treasures = dungeon
+                .treasures
+                .iter()
+                .filter(|treasure| reachable.contains(&(treasure.x, treasure.y)))
+                .map(|treasure| treasure.id.as_str())
+                .collect::<BTreeSet<_>>();
+            let newly_opened = dungeon.doors.iter().any(|door| {
+                if opened_doors.contains(door.id.as_str()) {
+                    return false;
+                }
+                let Some(destination) = dungeon_offset(door.x, door.y, door.facing) else {
+                    return false;
+                };
+                let approachable =
+                    reachable.contains(&(door.x, door.y)) || reachable.contains(&destination);
+                let prerequisite_met = door
+                    .requires_treasure
+                    .as_ref()
+                    .is_none_or(|required| reachable_treasures.contains(required.as_str()));
+                approachable && prerequisite_met && opened_doors.insert(door.id.to_string())
+            });
+            if !newly_opened {
+                break reachable;
+            }
+        };
+        if dungeon
+            .encounters
+            .iter()
+            .any(|entry| !reachable.contains(&(entry.x, entry.y)))
             || dungeon
-                .encounters
+                .landmarks
                 .iter()
                 .any(|entry| !reachable.contains(&(entry.x, entry.y)))
             || dungeon
-                .landmarks
+                .treasures
+                .iter()
+                .any(|entry| !reachable.contains(&(entry.x, entry.y)))
+            || dungeon
+                .checkpoints
                 .iter()
                 .any(|entry| !reachable.contains(&(entry.x, entry.y)))
         {
@@ -1647,7 +1868,7 @@ impl DefinitionCollector {
                 Some(subject),
                 "D20_UNREACHABLE_DUNGEON_CONTENT",
                 format!("$/payload/adventures/{adventure}/dungeon"),
-                "checkpoint, encounters, and landmarks must be reachable from the dungeon start"
+                "encounters, landmarks, treasures, and checkpoints must be reachable through the authored door and treasure sequence"
                     .to_owned(),
             );
         }
@@ -2272,6 +2493,48 @@ impl DefinitionCollector {
                 "dungeon/landmarks",
                 &landmark_ids,
             );
+            let door_ids = definition
+                .dungeon
+                .doors
+                .iter()
+                .map(|door| door.id.clone())
+                .collect::<Vec<_>>();
+            self.validate_unique_ids(
+                &package,
+                &correlation,
+                "adventures",
+                &id,
+                "dungeon/doors",
+                &door_ids,
+            );
+            let treasure_ids = definition
+                .dungeon
+                .treasures
+                .iter()
+                .map(|treasure| treasure.id.clone())
+                .collect::<Vec<_>>();
+            self.validate_unique_ids(
+                &package,
+                &correlation,
+                "adventures",
+                &id,
+                "dungeon/treasures",
+                &treasure_ids,
+            );
+            let checkpoint_ids = definition
+                .dungeon
+                .checkpoints
+                .iter()
+                .map(|checkpoint| checkpoint.id.clone())
+                .collect::<Vec<_>>();
+            self.validate_unique_ids(
+                &package,
+                &correlation,
+                "adventures",
+                &id,
+                "dungeon/checkpoints",
+                &checkpoint_ids,
+            );
             if dungeon_encounters != definition.encounters {
                 self.push_for_identity(
                     &package,
@@ -2289,13 +2552,15 @@ impl DefinitionCollector {
                     .iter()
                     .any(|member| !definition.characters.contains(member))
                 || !definition.storage.contains(&definition.camp_storage)
+                || checkpoint_ids.is_empty()
+                || !checkpoint_ids.contains(&definition.dungeon.start_checkpoint)
             {
                 self.push_for_identity(
                     &package,
                     Some(&correlation),
                     "D20_INVALID_ADVENTURE_ROOTS",
                     format!("$/payload/adventures/{id}"),
-                    "adventure requires characters, encounters, a listed party, and listed camp storage"
+                    "adventure requires characters, encounters, a listed party, listed camp storage, and a valid start checkpoint"
                         .to_owned(),
                 );
             }
@@ -2374,6 +2639,52 @@ impl DefinitionCollector {
                             "item {item} owner {} is not included in the adventure",
                             item_definition.owner
                         ),
+                    );
+                }
+            }
+            for treasure in &definition.dungeon.treasures {
+                let Some((item, _)) = self.item_instances.get(&treasure.item) else {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_UNKNOWN_TREASURE_ITEM",
+                        format!("$/payload/adventures/{id}/dungeon/treasures"),
+                        format!(
+                            "treasure {} references unknown item {}",
+                            treasure.id, treasure.item
+                        ),
+                    );
+                    continue;
+                };
+                if !definition.items.contains(&treasure.item)
+                    || !definition.storage.contains(&item.owner)
+                    || item.owner == definition.camp_storage
+                    || item.equipped
+                {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_INVALID_TREASURE_ITEM",
+                        format!("$/payload/adventures/{id}/dungeon/treasures"),
+                        format!(
+                            "treasure {} item {} must be an unequipped adventure item owned by listed non-camp storage",
+                            treasure.id, treasure.item
+                        ),
+                    );
+                }
+            }
+            for door in &definition.dungeon.doors {
+                if door
+                    .requires_treasure
+                    .as_ref()
+                    .is_some_and(|required| !treasure_ids.contains(required))
+                {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_UNKNOWN_DOOR_TREASURE",
+                        format!("$/payload/adventures/{id}/dungeon/doors"),
+                        format!("door {} requires an unknown dungeon treasure", door.id),
                     );
                 }
             }
@@ -2926,6 +3237,14 @@ fn adventure_definition(value: AdventureCandidate) -> AdventureDefinition {
         start_source: value.start_source,
         start_text: value.start_text,
         start_details: value.start_details,
+        completion: AdventureCompletionDefinition {
+            source: value.completion.source,
+            victory_title: value.completion.victory_title,
+            victory_text: value.completion.victory_text,
+            defeat_title: value.completion.defeat_title,
+            defeat_text: value.completion.defeat_text,
+            details: value.completion.details,
+        },
     }
 }
 
@@ -2938,8 +3257,7 @@ fn dungeon_definition(value: DungeonCandidate) -> DungeonDefinition {
         rows: value.rows,
         start_x: value.start_x,
         start_y: value.start_y,
-        checkpoint_x: value.checkpoint_x,
-        checkpoint_y: value.checkpoint_y,
+        start_checkpoint: value.start_checkpoint,
         start_facing: match value.start_facing {
             DungeonFacingCandidate::North => DungeonFacingDefinition::North,
             DungeonFacingCandidate::East => DungeonFacingDefinition::East,
@@ -2959,6 +3277,47 @@ fn dungeon_definition(value: DungeonCandidate) -> DungeonDefinition {
             .landmarks
             .into_iter()
             .map(|entry| DungeonLandmarkDefinition {
+                id: entry.id,
+                x: entry.x,
+                y: entry.y,
+                title: entry.title,
+                text: entry.text,
+            })
+            .collect(),
+        doors: value
+            .doors
+            .into_iter()
+            .map(|entry| DungeonDoorDefinition {
+                id: entry.id,
+                x: entry.x,
+                y: entry.y,
+                facing: match entry.facing {
+                    DungeonFacingCandidate::North => DungeonFacingDefinition::North,
+                    DungeonFacingCandidate::East => DungeonFacingDefinition::East,
+                    DungeonFacingCandidate::South => DungeonFacingDefinition::South,
+                    DungeonFacingCandidate::West => DungeonFacingDefinition::West,
+                },
+                title: entry.title,
+                text: entry.text,
+                requires_treasure: entry.requires_treasure,
+            })
+            .collect(),
+        treasures: value
+            .treasures
+            .into_iter()
+            .map(|entry| DungeonTreasureDefinition {
+                id: entry.id,
+                x: entry.x,
+                y: entry.y,
+                item: entry.item,
+                title: entry.title,
+                text: entry.text,
+            })
+            .collect(),
+        checkpoints: value
+            .checkpoints
+            .into_iter()
+            .map(|entry| DungeonCheckpointDefinition {
                 id: entry.id,
                 x: entry.x,
                 y: entry.y,

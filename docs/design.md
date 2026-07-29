@@ -39,8 +39,9 @@ positions, and no ambient scheduler or registry. `GameRuntime` owns the
 downstream campaign and encounter lifecycle, optimistic product revision,
 opaque pending preview, bounded explanatory log, operation identities, and
 complete save wrapper. The durable campaign has explicit `camp`, `exploration`,
-`encounter`, and `outcome` phases, with an exact dungeon position and facing,
-discovered-cell and inspected-landmark sets, encounter turn owner, and typed
+`encounter`, `outcome`, and `adventure-complete` phases, with an exact dungeon
+position and facing, discovered-cell, inspected-landmark, opened-door,
+collected-treasure, and active-checkpoint facts, encounter turn owner, and typed
 terminal result. It is product state for this adventure, not a generic Engine
 campaign mechanism. Rusty D20 registers durable ability-score,
 action-resource, and scheduled-effect components beside Engine mechanics
@@ -54,15 +55,16 @@ is explicit Rusty D20 campaign policy, not a generic quest graph.
 
 The authored dungeon is a bounded, enclosed ASCII grid compiled by Rust.
 Semantic admission rejects malformed or excessive topology, blocked or
-overlapping placements, invalid starts/checkpoints, unreachable content,
-duplicate landmark or trigger identities, and an encounter placement sequence
-that disagrees with the adventure. Rust alone resolves turns, steps,
-collisions, landmarks, discoveries, checkpoint recovery, and the encounter
-trigger at the reached cell. The browser receives a bounded three-depth
-first-person wall projection, movement availability, the current landmark, and
-visited cells; it does not receive the complete wall grid or trigger
-coordinates. Compass and minimap are presentation over this projection, not a
-second navigation authority. Completed encounter identities consume their
+overlapping placements, invalid starts/checkpoints/door edges, unreachable
+content or circular treasure-door prerequisites, duplicate event identities,
+and an encounter placement sequence that disagrees with the adventure. Rust
+alone resolves turns, steps, collisions, landmarks, treasure transfer, door
+opening, discoveries, safe checkpoint return, and the encounter trigger at the
+reached cell. The browser receives a bounded three-depth first-person wall
+projection, movement availability, the current inspectable event, the door
+directly ahead, and visited cells; it does not receive the complete wall grid
+or trigger coordinates. Compass and minimap are presentation over this
+projection, not a second navigation authority. Completed encounter identities consume their
 authored trigger cells, so later traversal can cross them while the next
 unconsumed trigger still follows ordered admission. The fixed three-depth view
 emits neutral all-wall records after the first opaque front wall; the strict
@@ -145,10 +147,11 @@ ember/Nerve rule
 packages, the multi-file Warden's Gate and Ember's Wake adventures, and a
 non-selectable content-only catalog probe. `catalog.json` embeds canonical
 package bytes; Rust selects only the exact dependency closure that owns the
-requested adventure. Every adventure authors a bounded dungeon, start and
-checkpoint, ordered encounter triggers, and optional landmarks beside its
-existing cast and encounters. These packages are build-time inputs, not UI or
-runtime dependencies. See
+requested adventure. Every adventure authors a bounded dungeon, start
+checkpoint, ordered encounter triggers, landmarks, doors, treasures,
+safe-return checkpoints, and terminal copy beside its existing cast and
+encounters. These packages are build-time inputs, not UI or runtime
+dependencies. See
 [rules authoring](rules-authoring.md).
 
 ## Transport and protocol
@@ -185,20 +188,22 @@ graph in `boundaries.json`; production code cannot import testing fixtures.
 seed/roll position, caller-owned turn, and canonical entity snapshot. Session
 save schema 4 includes the catalog-v2 inventory/equipment state together with
 the registered party roster, encounter participation facts, and per-character
-activation budgets and canonical tactical positions. Product save schema 9
+activation budgets and canonical tactical positions. Product save schema 10
 wraps it with the authored adventure identity, exact composition fingerprint,
-phase, dungeon
-position/facing/discovery/inspection state, active and resolved encounter
+phase, dungeon position/facing/discovery/inspection state, opened doors,
+collected treasures, active checkpoint, active and resolved encounter
 identities, ordered completed-encounter history, encounter turn owner, terminal
-outcome, product revision, next operation/log identities, and the bounded
-explanatory log.
+adventure result, product revision, next operation/log identities, and the
+bounded explanatory log.
 
-Product schemas 1 through 8 and session schemas before 4 are rejected rather
+Product schemas 1 through 9 and session schemas before 4 are rejected rather
 than migrated. Unknown schemas, partial loadouts, missing or extra registered
 party/participation/budget facts, unknown budget identities, above-initial
-budgets, and inconsistent phase/turn/outcome pairs also reject rather than
-defaulting or discarding state. New saves never infer a missing adventure,
-composition, roster, or action economy.
+budgets, inconsistent phase/turn/outcome pairs, unreachable discoveries,
+unknown event IDs, unmet door prerequisites, and treasure ownership that
+contradicts the collected-event set also reject rather than defaulting or
+discarding state. New saves never infer a missing adventure, composition,
+roster, action economy, or exploration event.
 Opaque previews are intentionally not durable, so save rejects before file
 mutation while an action is pending; the user must resolve it first. This
 includes a pending action whose reaction has already committed resource and
@@ -211,8 +216,8 @@ roster, cross-checks encounter phase and outcome against the vitality of that
 encounter's party and opposition participants, and separately requires at
 least one living whole-party member in camp or exploration. It reacquires
 non-durable component revisions and continues the exact camp, exploration,
-encounter, or outcome phase, exact dungeon progress, turn owner, loadout, and
-deterministic rolls without replay.
+encounter, outcome, or terminal adventure phase, exact dungeon progress, turn
+owner, loadout, and deterministic rolls without replay.
 
 File layout and storage policy remain host-owned. The browser observes the
 configured save identity but never chooses an arbitrary path. Reset validates

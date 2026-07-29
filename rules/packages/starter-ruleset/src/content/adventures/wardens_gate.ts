@@ -78,17 +78,86 @@ export const wardensGateModule = defineD20Module(
         },
       }),
       encounter(64, {
+        id: 'seal-guard',
+        title: 'The Seal Guard',
+        summary:
+          'Break the line sentry and field adept holding the inner descent.',
+        roster: [
+          { character: 'mara-venn', faction: 'party' },
+          { character: 'ilyra-fen', faction: 'party' },
+          { character: 'corin-ash', faction: 'party' },
+          { character: 'veyra-quill', faction: 'party' },
+          { character: 'gate-sentry', faction: 'opposition' },
+          { character: 'seal-adept', faction: 'opposition' },
+        ],
+        board: {
+          width: 11,
+          height: 7,
+          rows: [
+            '###########',
+            '#.........#',
+            '#..#...#..#',
+            '#.........#',
+            '#....#....#',
+            '#.........#',
+            '###########',
+          ],
+          placements: [
+            { character: 'mara-venn', x: 1, y: 3 },
+            { character: 'ilyra-fen', x: 2, y: 1 },
+            { character: 'corin-ash', x: 2, y: 5 },
+            { character: 'veyra-quill', x: 3, y: 3 },
+            { character: 'gate-sentry', x: 8, y: 3 },
+            { character: 'seal-adept', x: 9, y: 1 },
+          ],
+        },
+        availableFromCamp: true,
+        introductionSource: 'Encounter',
+        introductionText:
+          'The inner line closes behind the sigil gate as the Seal Guard advances.',
+        introductionDetails: [
+          'Line Sentry and Field Adept roles adapt the reviewed Crosswind Outpost opposition shape.',
+          'The party enters with its exact vitality, resources, effects, and claimed sigil treasure.',
+        ],
+        victory: {
+          title: 'The Seal Guard broken',
+          summary:
+            'The inner descent is open and the final redoubt lies ahead.',
+          logSource: 'Victory',
+          logText: 'The sentry line breaks beneath the opened Warden seal.',
+          logDetails: [
+            'No encounter reward substitutes for the separately collected dungeon treasure.',
+          ],
+          rewardItem: null,
+          rewardLabel: null,
+          recoveryVitality: null,
+        },
+        defeat: {
+          title: 'The company withdrew from the Seal Guard',
+          summary:
+            'The encounter is consumed and bounded recovery returns the party to its active checkpoint.',
+          logSource: 'Defeat',
+          logText: 'The company falls back through the sigil gate.',
+          logDetails: [
+            'No reward was granted and the opened door, treasure, discoveries, and checkpoint remain durable.',
+          ],
+          rewardItem: null,
+          rewardLabel: null,
+          recoveryVitality: 12,
+        },
+      }),
+      encounter(128, {
         id: 'wardens-reckoning',
         title: "The Warden's Reckoning",
         summary:
-          'Face the reawakened sentinel after its gate armor has become part of the camp loadout.',
+          'Face the restored sentinel and seal adept in the final redoubt.',
         roster: [
           { character: 'mara-venn', faction: 'party' },
           { character: 'ilyra-fen', faction: 'party' },
           { character: 'corin-ash', faction: 'party' },
           { character: 'veyra-quill', faction: 'party' },
           { character: 'iron-warden', faction: 'opposition' },
-          { character: 'gate-skirmisher', faction: 'opposition' },
+          { character: 'seal-adept', faction: 'opposition' },
         ],
         board: {
           width: 12,
@@ -109,15 +178,16 @@ export const wardensGateModule = defineD20Module(
             { character: 'corin-ash', x: 2, y: 5 },
             { character: 'veyra-quill', x: 2, y: 6 },
             { character: 'iron-warden', x: 8, y: 5 },
-            { character: 'gate-skirmisher', x: 10, y: 2 },
+            { character: 'seal-adept', x: 10, y: 2 },
           ],
         },
         availableFromCamp: true,
         introductionSource: 'Encounter',
-        introductionText: 'The Iron Warden rises for a final reckoning.',
+        introductionText:
+          'The Iron Warden and Seal Adept rise together for the final reckoning.',
         introductionDetails: [
           'Rust restores the returning opponent through the bounded vitality track service.',
-          'Prior resources, effects, loadout, and the first reward remain authoritative.',
+          'Prior resources, effects, loadout, door, treasure, and checkpoint facts remain authoritative.',
         ],
         victory: {
           title: "The Warden's Reckoning ended",
@@ -164,9 +234,11 @@ export const wardensGateModule = defineD20Module(
           'veyra-quill',
           'iron-warden',
           'gate-skirmisher',
+          'gate-sentry',
+          'seal-adept',
         ],
         campStorage: 'camp-stash',
-        storage: ['camp-stash'],
+        storage: ['camp-stash', 'gate-cache'],
         items: [
           'warden-chain',
           'mara-chain',
@@ -188,8 +260,15 @@ export const wardensGateModule = defineD20Module(
           'skirmisher-chain',
           'skirmisher-blade',
           'skirmisher-bow',
+          'sentry-chain',
+          'sentry-blade',
+          'sentry-bow',
+          'adept-chain',
+          'adept-blade',
+          'adept-bow',
+          'gate-sigil-buckler',
         ],
-        encounters: ['iron-warden', 'wardens-reckoning'],
+        encounters: ['iron-warden', 'seal-guard', 'wardens-reckoning'],
         dungeon: {
           title: "Warden's Gate Pass",
           wallStyle: 'mountain-fortress',
@@ -206,11 +285,11 @@ export const wardensGateModule = defineD20Module(
           ],
           startX: 1,
           startY: 1,
-          checkpointX: 1,
-          checkpointY: 1,
+          startCheckpoint: 'gate-camp',
           startFacing: 'east',
           encounters: [
             { encounter: 'iron-warden', x: 9, y: 1 },
+            { encounter: 'seal-guard', x: 9, y: 5 },
             { encounter: 'wardens-reckoning', x: 1, y: 5 },
           ],
           landmarks: [
@@ -229,14 +308,63 @@ export const wardensGateModule = defineD20Module(
               text: 'A split iron seal marks the sentinel’s final redoubt.',
             },
           ],
+          doors: [
+            {
+              id: 'inner-sigil-gate',
+              x: 9,
+              y: 4,
+              facing: 'south',
+              title: 'The inner sigil gate',
+              text: 'The recovered sigil turns and the iron leaves grind open.',
+              requiresTreasure: 'sigil-cache',
+            },
+          ],
+          treasures: [
+            {
+              id: 'sigil-cache',
+              x: 9,
+              y: 2,
+              item: 'gate-sigil-buckler',
+              title: 'The Warden sigil cache',
+              text: 'A marked buckler and its gate sigil wait beneath a loose stone.',
+            },
+          ],
+          checkpoints: [
+            {
+              id: 'gate-camp',
+              x: 1,
+              y: 1,
+              title: 'Pass camp',
+              text: 'The company can return safely to its supply camp.',
+            },
+            {
+              id: 'warden-refuge',
+              x: 9,
+              y: 3,
+              title: 'Warden refuge',
+              text: 'A sheltered alcove offers a safe route back to camp.',
+            },
+          ],
         },
         startSource: 'Adventure',
         startText: "Mara Venn prepares at the Warden's Gate camp.",
         startDetails: [
           'Ruleweaver foundation + Steel Guard authored packages compiled by Rust.',
           'The Ward Anchor, Pathfinder, Signal Guide, and Field Shaper each own canonical equipment and resources.',
-          'Two Warden opponents and four party members form one bounded authoritative initiative lifecycle.',
+          'Four Ruleweaver-derived opposition roles and four party members form three bounded authoritative encounters.',
         ],
+        completion: {
+          source: "Warden's Gate",
+          victoryTitle: 'The mountain pass is secure',
+          victoryText:
+            'Mara’s company opens the pass and carries the Warden sigil into daylight.',
+          defeatTitle: 'The expedition ends at the redoubt',
+          defeatText:
+            'The company survives, but the final redoubt remains beyond its strength.',
+          details: [
+            'All three encounter outcomes, the opened sigil gate, claimed treasure, active checkpoint, discoveries, and remaining party state are sealed into the terminal save.',
+          ],
+        },
       }),
     ],
   }),

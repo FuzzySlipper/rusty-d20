@@ -41,27 +41,27 @@ package fingerprint; changing content or source provenance does.
 Define one source module and give each definition its authored line:
 
 ```ts
-import { defineD20Module } from '@rusty-d20/rules-authoring';
+import { defineD20Module } from "@rusty-d20/rules-authoring";
 
 export const example = defineD20Module(
-  { id: 'example-content', path: 'rules/content/example.ts' },
+  { id: "example-content", path: "rules/content/example.ts" },
   ({ action }) => ({
     actions: [
       action(7, {
-        id: 'example-strike',
-        tags: ['attack', 'melee'],
-        activationCosts: [{ budget: 'standard-action', amount: 1 }],
+        id: "example-strike",
+        tags: ["attack", "melee"],
+        activationCosts: [{ budget: "standard-action", amount: 1 }],
         target: {
-          kind: 'participant',
-          team: 'hostile',
+          kind: "participant",
+          team: "hostile",
           maximumTargets: 1,
-          lineOfEffect: 'required',
+          lineOfEffect: "required",
         },
         attack: {
-          kind: 'fixed',
-          ability: 'might',
-          defense: 'armor',
-          damage: { kind: 'impact', dice: 1, sides: 6, bonus: 0 },
+          kind: "fixed",
+          ability: "might",
+          defense: "armor",
+          damage: { kind: "impact", dice: 1, sides: 6, bonus: 0 },
           range: 1,
         },
         effect: null,
@@ -82,16 +82,16 @@ only its implement:
 
 ```ts
 action(20, {
-  id: 'training-strike',
-  tags: ['attack', 'melee', 'weapon'],
-  activationCosts: [{ budget: 'standard-action', amount: 1 }],
+  id: "training-strike",
+  tags: ["attack", "melee", "weapon"],
+  activationCosts: [{ budget: "standard-action", amount: 1 }],
   target: {
-    kind: 'participant',
-    team: 'hostile',
+    kind: "participant",
+    team: "hostile",
     maximumTargets: 1,
-    lineOfEffect: 'required',
+    lineOfEffect: "required",
   },
-  attack: { kind: 'implement', implement: 'training-blade' },
+  attack: { kind: "implement", implement: "training-blade" },
   effect: null,
 });
 ```
@@ -137,23 +137,26 @@ edits to `game.rs`, `session.rs`, the semantic compiler, or Rusty Engine. New
 semantic behavior still belongs in the Rust candidate and compiler.
 
 The encounter identities in an adventure are an authored ordered sequence.
-Warden's Gate demonstrates two entries and a repeated opponent without adding
+Warden's Gate demonstrates three entries and a repeated opponent without adding
 runtime TypeScript: Rust admits only the next incomplete encounter, persists
 the completed prefix, restores bounded returning vitality, and preserves prior
-resources, effects, loadout, and reward state.
+resources, effects, loadout, treasure, and reward state.
 
 Every adventure also authors one bounded dungeon:
 
 - an enclosed `#`/`.` row grid with exact width and height;
-- traversable start and defeat checkpoint cells plus initial facing;
+- a traversable start checkpoint, safe-return checkpoints, and initial facing;
 - exactly one reachable placement for every encounter, in authored order; and
-- optional reachable, non-overlapping landmarks with bounded text.
+- reachable, non-overlapping landmarks and treasures with bounded text;
+- valid door edges with optional treasure prerequisites; and
+- authored terminal victory/defeat presentation.
 
 These are candidate facts, not executable TypeScript navigation. Rust rejects
-malformed, oversized, blocked, overlapping, unreachable, duplicated, or
-sequence-inconsistent dungeon content during semantic admission. At runtime,
-the same compiled definition owns collision, discovery, interaction, and
-encounter activation.
+malformed, oversized, blocked, overlapping, unreachable, duplicated,
+circular-prerequisite, or sequence-inconsistent dungeon content during
+semantic admission. At runtime, the same compiled definition owns collision,
+discovery, treasure transfer, door interaction, checkpoint return, terminal
+copy, and encounter activation.
 
 The focused gate checks generated-contract freshness, package isolation,
 deterministic goldens, TypeScript tests, strict Rust canonical decode, package

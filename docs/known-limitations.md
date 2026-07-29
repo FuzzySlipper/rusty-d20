@@ -3,11 +3,12 @@
 The interactive product now proves a small Gold Box-style game loop with two
 selectable authored paths: camp, Rust-owned first-person grid exploration,
 hidden encounter triggers, the existing modal combat screen, outcomes, and
-complete saves. Warden's Gate has two ordered encounters and Ember's Wake has
-one. This is the exploration foundation for the planned Ruleweaver game, not
-yet that complete game.
+complete saves. Warden's Gate is the first complete bounded Ruleweaver-derived
+adventure with three ordered encounters, treasure, a locked door, a durable
+checkpoint, and a terminal ending; Ember's Wake has one encounter.
 
-- The live slice has an authored four-person Warden company, two opponents,
+- The live slice has an authored four-person Warden company and four
+  Ruleweaver/Asha-derived opposition roles,
   canonical initiative and activation budgets, and a bounded overhead tactical
   board. Warden's Gate uses
   Steel Guard armor, canonical Training Blade/Field Bow implements, Guard
@@ -17,20 +18,22 @@ yet that complete game.
   scheduled effects, explicit player/opposition turns, deterministic opponent
   policy, Engine-routed combat movement, range and line of effect, conditions,
   forced movement, terminal outcomes, bounded defeat recovery, ordered
-  campaign completion, and exactly-once rewards. It does not yet define
+  terminal adventure completion, and exactly-once rewards. It does not yet define
   spellcasting, advancement, branching/repeatable campaign graphs, generated
   rewards, or broader Ruleweaver content.
 - Each path has one bounded floor with step-forward/backward and turn-left/right
-  movement, collision, one or two hidden triggers, one landmark, a three-depth
-  corridor projection, compass, and discovered-cell map. There are no doors,
-  keys, stairs, multiple floors, traps, roaming encounters, lighting,
-  navigation audio, or exploration-time party selection yet.
+  movement, collision, hidden triggers, landmarks, a three-depth corridor
+  projection, compass, and discovered-cell map. Warden's Gate adds one claimed
+  treasure, one treasure-gated door, and a safe-return checkpoint. There are no
+  stairs, multiple floors, traps, roaming encounters, lighting, navigation
+  audio, or exploration-time party selection yet.
 - The selected Ruleweaver foundation is translated: six attributes, four
   defenses, Standard/Bonus/Reaction/Movement budget definitions, shaped
   actions, Held/Unsettled condition clauses, and explicit armor/implement
   binding. This remains deliberately bounded. There is no bulk-imported class,
-  talent, power, monster, item, scenario, or D&D 4e catalog. The first broader
-  bounded Ruleweaver adventure remains owned by the following milestones.
+  talent, power, monster, item, scenario, or D&D 4e catalog. Warden's Gate
+  adapts only the bounded Crosswind role shape and independently authored
+  values/content described in source provenance.
 - Selection admits only the chosen exact package closure. Warden's Gate does
   not silently load Ember rules, Ember's Wake does not silently load Steel
   rules, and the non-selectable catalog probe never appears as a product path.
@@ -40,10 +43,11 @@ yet that complete game.
 - The host uses one explicit local save path, defaulting to
   `target/rusty-d20/save.json`. There is no save-slot UI, cloud/storage policy,
   authentication, TLS, multi-user coordination, or general migration between
-  Engine or ruleset revisions. Product schemas 1 through 8 and session schemas
-  before 4 are rejected; this is not a general migration framework. Schema 9
+  Engine or ruleset revisions. Product schemas 1 through 9 and session schemas
+  before 4 are rejected; this is not a general migration framework. Schema 10
   binds saves to the exact authored adventure package composition, dungeon
-  progress, tactical positions, and completed encounter prefix. The host can
+  events/progress, tactical positions, completed encounter prefix, and terminal
+  ending. The host can
   discard one malformed or obsolete save through a guarded visible reset, but
   it cannot repair arbitrary content.
 - Opaque action previews are process-local and intentionally not saved. Save is
@@ -52,12 +56,12 @@ yet that complete game.
   operation/log identities, and bounded receipt explanations persist.
 - The default camp inventory/equipment path proves four carried items
   (two armor pieces and two implements), one stash spare, one opponent reward,
-  capacity rejection, equipment attribution/binding, and persistence. It does
-  not yet define consumables, shops, loot generation, item comparison,
-  crafting, or a substantial authored item catalog.
+  one dungeon treasure, capacity rejection, equipment attribution/binding, and
+  persistence. It does not yet define consumables, shops, loot generation,
+  item comparison, crafting, or a substantial authored item catalog.
 - The retained compass and minimap are now real product-neutral consumers of
   Rust-projected facing and discovered cells. The complete dungeon topology and
   hidden trigger coordinates never enter browser state.
 
-The first broader bounded Ruleweaver adventure remains a downstream milestone
-rather than being implied complete by this tactical slice.
+Later work expands this complete bounded adventure rather than treating it as a
+sprawling Ruleweaver campaign.

@@ -156,7 +156,7 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
     }
   });
 
-  test("victory reward and the next authored encounter survive complete campaign reopen", async ({
+  test("treasure, checkpoint, door, three encounters, and terminal ending survive complete campaign reopen", async ({
     page,
     request,
   }, testInfo) => {
@@ -216,6 +216,65 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
           .getByRole("heading", { name: "Warden's Gate Pass" })
           .first(),
       ).toBeVisible();
+      await claimSigilTreasure(page);
+      await expect(page.getByLabel("Dungeon treasure")).toContainText(
+        "Already claimed",
+      );
+      await stepForward(page, 1);
+      await expect(page.getByLabel("Dungeon checkpoint")).toContainText(
+        "Warden refuge",
+      );
+      await testInfo.attach("warden-refuge-checkpoint.png", {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: "image/png",
+      });
+      await page.getByRole("button", { name: "Return safely to camp" }).click();
+      await expect(
+        page.getByRole("heading", { name: "The Warden's Gate Camp" }),
+      ).toBeVisible();
+      await expect(page.getByLabel("Camp stash")).toContainText(
+        "Gate sigil buckler",
+      );
+      await page.getByRole("button", { name: "Enter the dungeon" }).click();
+      await stepForward(page, 1);
+      await expect(page.getByLabel("Dungeon door")).toContainText(
+        "The inner sigil gate",
+      );
+      await page.getByRole("button", { name: "Open door" }).click();
+      await expect(page.getByLabel("Dungeon door")).toContainText(
+        "Opened passage",
+      );
+      await testInfo.attach("warden-sigil-door-open.png", {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: "image/png",
+      });
+      await stepForward(page, 1);
+      await expect(page.getByLabel("Encounter identity")).toBeVisible();
+      expect(
+        (await sessionSnapshot(request, host.baseUrl)).campaign
+          .activeEncounterId,
+      ).toBe("seal-guard");
+      await playToOutcome(
+        page,
+        request,
+        host.baseUrl,
+        "Precise Shot",
+        "Gate Sentry",
+        false,
+        true,
+      );
+      const sealOutcome = await sessionSnapshot(request, host.baseUrl);
+      expect(sealOutcome.campaign.completedEncounters).toHaveLength(2);
+      if (sealOutcome.campaign.latestOutcome?.kind === "victory") {
+        await page.getByRole("button", { name: "Continue adventure" }).click();
+      } else {
+        await page
+          .getByRole("button", { name: "Return to The Warden's Gate Camp" })
+          .click();
+        await page.getByRole("button", { name: "Enter the dungeon" }).click();
+        await page.getByRole("button", { name: "Right ↷" }).click();
+        await stepForward(page, 2);
+      }
       await enterWardenReckoning(page);
       await expect(page.getByLabel("Latest outcome explanation")).toContainText(
         "bounded vitality track service",
@@ -248,27 +307,35 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
       await page
         .getByRole("button", { name: "Return to The Warden's Gate Camp" })
         .click();
-      await expect(page.getByLabel("Completed encounters")).toContainText(
-        "The Warden's Reckoning",
+      await expect(page.getByLabel("Adventure complete: defeat")).toContainText(
+        "The expedition ends at the redoubt",
       );
-      await expect(page.getByRole("button", { name: /^Enter / })).toHaveCount(
-        0,
+      await expect(page.getByLabel("Final encounter record")).toContainText(
+        "The Warden's Reckoning · defeat",
       );
+      await testInfo.attach("warden-adventure-complete.png", {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: "image/png",
+      });
       await page.getByRole("button", { name: "Save", exact: true }).click();
 
       await host.restart();
       const reopened = await sessionSnapshot(request, host.baseUrl);
-      expect(reopened.campaign.phase).toBe("camp");
+      expect(reopened.campaign.phase).toBe("adventure-complete");
       expect(reopened.campaign.completedEncounters).toEqual([
         expect.objectContaining({
           encounterId: "iron-warden",
           outcome: "victory",
         }),
         expect.objectContaining({
+          encounterId: "seal-guard",
+        }),
+        expect.objectContaining({
           encounterId: "wardens-reckoning",
           outcome: "defeat",
         }),
       ]);
+      expect(reopened.campaign.completion?.kind).toBe("defeat");
       expect(
         reopened.campaign.party.every(
           (member) => member.character.healthCurrent === 12,
@@ -384,14 +451,14 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
         expect.objectContaining({ x: 9, y: 1 }),
       );
 
-      await enterWardenReckoning(page);
+      await enterSealGuard(page);
       await expect(page.getByLabel("Encounter identity")).toBeVisible();
       await expect(
         page.getByRole("button", { name: "Precise Shot" }),
       ).toBeVisible();
       const continued = await sessionSnapshot(request, host.baseUrl);
       expect(continued.campaign.phase).toBe("encounter");
-      expect(continued.campaign.activeEncounterId).toBe("wardens-reckoning");
+      expect(continued.campaign.activeEncounterId).toBe("seal-guard");
     } finally {
       await host.stop();
     }
@@ -497,14 +564,16 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
       await page.getByRole("button", { name: "Continue Adventure" }).click();
       await expect(page.getByLabel("Encounter victory")).toBeVisible();
       await page.getByRole("button", { name: "Continue adventure" }).click();
-      await expect(page.getByLabel("Camp stash")).toContainText(
-        "Ash Seer's mindward charm",
-      );
+      await expect(
+        page.getByLabel("Adventure complete: victory"),
+      ).toContainText("Ember's Wake complete");
       await page.getByRole("button", { name: "Save", exact: true }).click();
 
       await host.restart();
       const reopened = await sessionSnapshot(request, host.baseUrl);
       expect(reopened.campaign.id).toBe("embers-wake");
+      expect(reopened.campaign.phase).toBe("adventure-complete");
+      expect(reopened.campaign.completion?.kind).toBe("victory");
       expect(reopened.rulesetFingerprint).toBe(emberFingerprint);
       expect(
         reopened.campaign.party[0].loadout.stashItems.filter(
@@ -675,9 +744,20 @@ async function enterWardenEncounter(page: Page): Promise<void> {
 
 async function enterWardenReckoning(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Right ↷" }).click();
-  await stepForward(page, 4);
-  await page.getByRole("button", { name: "Right ↷" }).click();
   await stepForward(page, 8);
+}
+
+async function claimSigilTreasure(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Right ↷" }).click();
+  await stepForward(page, 1);
+  await page.getByRole("button", { name: "Claim treasure" }).click();
+}
+
+async function enterSealGuard(page: Page): Promise<void> {
+  await claimSigilTreasure(page);
+  await stepForward(page, 2);
+  await page.getByRole("button", { name: "Open door" }).click();
+  await stepForward(page, 1);
 }
 
 async function enterAshSeerEncounter(page: Page): Promise<void> {
@@ -699,7 +779,12 @@ interface SessionSnapshot {
   campaign: {
     id: string;
     title: string;
-    phase: "camp" | "exploration" | "encounter" | "outcome";
+    phase:
+      | "camp"
+      | "exploration"
+      | "encounter"
+      | "outcome"
+      | "adventure-complete";
     activeEncounterId: string | null;
     party: [SessionPartyMember, ...SessionPartyMember[]];
     latestOutcome: {
@@ -710,6 +795,10 @@ interface SessionSnapshot {
       encounterId: string;
       outcome: "victory" | "defeat";
     }>;
+    completion: {
+      kind: "victory" | "defeat";
+      title: string;
+    } | null;
   };
   exploration: { x: number; y: number } | null;
   encounter: {

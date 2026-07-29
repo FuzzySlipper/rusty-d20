@@ -32,6 +32,9 @@ impl GameRuntime {
                 facing: dungeon.start_facing,
                 discovered: BTreeSet::from([position]),
                 inspected_landmarks: BTreeSet::new(),
+                checkpoint_id: dungeon.start_checkpoint.to_string(),
+                opened_doors: BTreeSet::new(),
+                collected_treasures: BTreeSet::new(),
             }
         });
         state.discovered.insert(state.position);
@@ -94,10 +97,10 @@ impl GameRuntime {
                     state.facing,
                     request.command == ExplorationCommandKindDto::StepForward,
                 )
-                .filter(|position| dungeon.is_floor(position.x, position.y))
+                .filter(|position| can_traverse(&dungeon, state, state.position, *position))
                 .ok_or_else(|| {
                     GameRuntimeError::InvalidCommand(
-                        "solid dungeon stone blocks that step".to_owned(),
+                        "solid dungeon stone or a closed door blocks that step".to_owned(),
                     )
                 })?;
                 state.position = destination;
@@ -115,35 +118,145 @@ impl GameRuntime {
                 }
             }
             ExplorationCommandKindDto::Interact => {
-                let position = self.exploration()?.position;
-                let landmark = dungeon
-                    .landmarks
-                    .iter()
-                    .find(|landmark| landmark.x == position.x && landmark.y == position.y)
-                    .ok_or_else(|| {
-                        GameRuntimeError::InvalidCommand(
-                            "there is nothing to inspect at this location".to_owned(),
-                        )
-                    })?
-                    .clone();
-                self.exploration_mut()?
-                    .inspected_landmarks
-                    .insert(landmark.id.to_string());
-                self.push_log(
-                    GameLogKindDto::System,
-                    &landmark.title,
-                    &landmark.text,
-                    vec![format!(
-                        "Inspected at dungeon cell ({}, {}).",
-                        landmark.x, landmark.y
-                    )],
-                )?;
+                self.interact_with_dungeon(&dungeon)?;
             }
         }
 
         self.bump_revision()?;
         self.saved_revision = None;
         self.snapshot()
+    }
+
+    fn interact_with_dungeon(
+        &mut self,
+        dungeon: &crate::DungeonDefinition,
+    ) -> Result<(), GameRuntimeError> {
+        let state = self.exploration()?.clone();
+        if let Some(door) = door_ahead(dungeon, state.position, state.facing)
+            .filter(|door| !state.opened_doors.contains(door.id.as_str()))
+            .cloned()
+        {
+            if door
+                .requires_treasure
+                .as_ref()
+                .is_some_and(|required| !state.collected_treasures.contains(required.as_str()))
+            {
+                return Err(GameRuntimeError::InvalidCommand(
+                    "the authored door remains locked until its dungeon treasure is claimed"
+                        .to_owned(),
+                ));
+            }
+            self.exploration_mut()?
+                .opened_doors
+                .insert(door.id.to_string());
+            self.push_log(
+                GameLogKindDto::System,
+                &door.title,
+                &door.text,
+                vec![format!(
+                    "Door {} opened permanently from dungeon cell ({}, {}).",
+                    door.id, door.x, door.y
+                )],
+            )?;
+            return Ok(());
+        }
+
+        if let Some(treasure) = dungeon
+            .treasures
+            .iter()
+            .find(|treasure| treasure.x == state.position.x && treasure.y == state.position.y)
+            .cloned()
+        {
+            if state.collected_treasures.contains(treasure.id.as_str()) {
+                return Err(GameRuntimeError::InvalidCommand(
+                    "that dungeon treasure was already collected".to_owned(),
+                ));
+            }
+            let adventure = self.adventure()?.clone();
+            let item = self
+                .rules
+                .item_instance(&treasure.item)
+                .expect("compiled treasure item exists")
+                .clone();
+            let from = owner_entity(&self.rules, &adventure, &item.owner)?;
+            let to = storage_entity(&self.rules, &adventure, &adventure.camp_storage)?;
+            let serial = self.next_operation;
+            self.session_mut()?.transfer_item(
+                EntityId::new(item.entity_id),
+                from,
+                to,
+                operation(&format!("dungeon-treasure-{serial}"))?,
+            )?;
+            self.next_operation = self
+                .next_operation
+                .checked_add(1)
+                .ok_or(GameRuntimeError::CounterOverflow)?;
+            self.exploration_mut()?
+                .collected_treasures
+                .insert(treasure.id.to_string());
+            self.push_log(
+                GameLogKindDto::System,
+                &treasure.title,
+                &treasure.text,
+                vec![format!(
+                    "{} moved into canonical camp storage and cannot be collected again.",
+                    item.name
+                )],
+            )?;
+            return Ok(());
+        }
+
+        if let Some(checkpoint) = dungeon
+            .checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.x == state.position.x && checkpoint.y == state.position.y)
+            .cloned()
+        {
+            let campaign = self.campaign_mut()?;
+            let exploration = campaign.exploration.as_mut().ok_or_else(|| {
+                GameRuntimeError::InvalidState(
+                    "campaign is missing its exploration state".to_owned(),
+                )
+            })?;
+            exploration.checkpoint_id = checkpoint.id.to_string();
+            campaign.phase = CampaignPhase::Camp;
+            campaign.active_encounter_id = None;
+            campaign.current_actor_id = None;
+            self.push_log(
+                GameLogKindDto::System,
+                &checkpoint.title,
+                &checkpoint.text,
+                vec![
+                    "The party returned safely to camp.".to_owned(),
+                    "A later defeat returns the expedition to this durable checkpoint.".to_owned(),
+                ],
+            )?;
+            return Ok(());
+        }
+
+        let landmark = dungeon
+            .landmarks
+            .iter()
+            .find(|landmark| landmark.x == state.position.x && landmark.y == state.position.y)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidCommand(
+                    "there is nothing to inspect or use at this location".to_owned(),
+                )
+            })?
+            .clone();
+        self.exploration_mut()?
+            .inspected_landmarks
+            .insert(landmark.id.to_string());
+        self.push_log(
+            GameLogKindDto::System,
+            &landmark.title,
+            &landmark.text,
+            vec![format!(
+                "Inspected at dungeon cell ({}, {}).",
+                landmark.x, landmark.y
+            )],
+        )?;
+        Ok(())
     }
 
     pub(super) fn project_exploration(
@@ -156,7 +269,7 @@ impl GameRuntime {
                 "exploration position is not traversable".to_owned(),
             ));
         }
-        let view = project_view(dungeon, state.position, state.facing);
+        let view = project_view(dungeon, state);
         let backward = offset(state.position, state.facing, false);
         let forward = offset(state.position, state.facing, true);
         let landmark = dungeon
@@ -169,6 +282,39 @@ impl GameRuntime {
                 text: landmark.text.clone(),
                 inspected: state.inspected_landmarks.contains(landmark.id.as_str()),
             });
+        let door_ahead = door_ahead(dungeon, state.position, state.facing).map(|door| {
+            let opened = state.opened_doors.contains(door.id.as_str());
+            ExplorationDoorDto {
+                id: door.id.to_string(),
+                title: door.title.clone(),
+                text: door.text.clone(),
+                opened,
+                locked: !opened
+                    && door.requires_treasure.as_ref().is_some_and(|required| {
+                        !state.collected_treasures.contains(required.as_str())
+                    }),
+            }
+        });
+        let treasure = dungeon
+            .treasures
+            .iter()
+            .find(|treasure| treasure.x == state.position.x && treasure.y == state.position.y)
+            .map(|treasure| ExplorationTreasureDto {
+                id: treasure.id.to_string(),
+                title: treasure.title.clone(),
+                text: treasure.text.clone(),
+                collected: state.collected_treasures.contains(treasure.id.as_str()),
+            });
+        let checkpoint = dungeon
+            .checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.x == state.position.x && checkpoint.y == state.position.y)
+            .map(|checkpoint| ExplorationCheckpointDto {
+                id: checkpoint.id.to_string(),
+                title: checkpoint.title.clone(),
+                text: checkpoint.text.clone(),
+                active: state.checkpoint_id == checkpoint.id.as_str(),
+            });
         Ok(ExplorationDto {
             dungeon_title: dungeon.title.clone(),
             wall_style: dungeon.wall_style.to_string(),
@@ -178,9 +324,9 @@ impl GameRuntime {
             y: state.position.y,
             facing: facing_dto(state.facing),
             can_step_forward: forward
-                .is_some_and(|position| dungeon.is_floor(position.x, position.y)),
+                .is_some_and(|position| can_traverse(dungeon, state, state.position, position)),
             can_step_backward: backward
-                .is_some_and(|position| dungeon.is_floor(position.x, position.y)),
+                .is_some_and(|position| can_traverse(dungeon, state, state.position, position)),
             view,
             discovered_cells: state
                 .discovered
@@ -191,6 +337,9 @@ impl GameRuntime {
                 })
                 .collect(),
             landmark,
+            door_ahead,
+            treasure,
+            checkpoint,
         })
     }
 
@@ -219,11 +368,14 @@ impl GameRuntime {
     fn ensure_exploration_phase(&self) -> Result<(), GameRuntimeError> {
         match self.campaign.as_ref().map(|campaign| campaign.phase) {
             Some(CampaignPhase::Exploration) => Ok(()),
-            Some(CampaignPhase::Camp | CampaignPhase::Encounter | CampaignPhase::Outcome) => {
-                Err(GameRuntimeError::WrongPhase(
-                    "this command is only available while exploring".to_owned(),
-                ))
-            }
+            Some(
+                CampaignPhase::Camp
+                | CampaignPhase::Encounter
+                | CampaignPhase::Outcome
+                | CampaignPhase::AdventureComplete,
+            ) => Err(GameRuntimeError::WrongPhase(
+                "this command is only available while exploring".to_owned(),
+            )),
             None => Err(GameRuntimeError::NoEncounter),
         }
     }
@@ -231,8 +383,7 @@ impl GameRuntime {
 
 fn project_view(
     dungeon: &crate::DungeonDefinition,
-    position: DungeonPosition,
-    facing: DungeonFacingDefinition,
+    state: &ExplorationState,
 ) -> Vec<ExplorationDepthDto> {
     let mut occluded = false;
     (0..VIEW_DEPTH)
@@ -245,19 +396,71 @@ fn project_view(
                     right_blocked: true,
                 };
             }
-            let center = offset_by(position, facing, i32::from(depth));
-            let (left, right) = side_positions(center, facing);
-            let front = offset_by(center, facing, 1);
+            let center = offset_by(state.position, state.facing, i32::from(depth));
+            let (left, right) = side_positions(center, state.facing);
+            let front = offset_by(center, state.facing, 1);
             let projected = ExplorationDepthDto {
                 depth,
-                front_blocked: !is_floor(dungeon, front),
-                left_blocked: !is_floor(dungeon, left),
-                right_blocked: !is_floor(dungeon, right),
+                front_blocked: !can_traverse(dungeon, state, center, front),
+                left_blocked: !can_traverse(dungeon, state, center, left),
+                right_blocked: !can_traverse(dungeon, state, center, right),
             };
             occluded = projected.front_blocked;
             projected
         })
         .collect()
+}
+
+fn can_traverse(
+    dungeon: &crate::DungeonDefinition,
+    state: &ExplorationState,
+    from: DungeonPosition,
+    to: DungeonPosition,
+) -> bool {
+    dungeon.is_floor(from.x, from.y)
+        && dungeon.is_floor(to.x, to.y)
+        && dungeon
+            .doors
+            .iter()
+            .find(|door| door_connects(door, from, to))
+            .is_none_or(|door| state.opened_doors.contains(door.id.as_str()))
+}
+
+fn door_ahead(
+    dungeon: &crate::DungeonDefinition,
+    position: DungeonPosition,
+    facing: DungeonFacingDefinition,
+) -> Option<&crate::DungeonDoorDefinition> {
+    let destination = offset(position, facing, true)?;
+    dungeon
+        .doors
+        .iter()
+        .find(|door| door_connects(door, position, destination))
+}
+
+fn door_connects(
+    door: &crate::DungeonDoorDefinition,
+    left: DungeonPosition,
+    right: DungeonPosition,
+) -> bool {
+    let origin = DungeonPosition {
+        x: door.x,
+        y: door.y,
+    };
+    door_destination(door).is_some_and(|destination| {
+        (origin == left && destination == right) || (origin == right && destination == left)
+    })
+}
+
+fn door_destination(door: &crate::DungeonDoorDefinition) -> Option<DungeonPosition> {
+    offset(
+        DungeonPosition {
+            x: door.x,
+            y: door.y,
+        },
+        door.facing,
+        true,
+    )
 }
 
 fn turn(facing: DungeonFacingDefinition, clockwise: bool) -> DungeonFacingDefinition {
@@ -316,10 +519,6 @@ fn side_positions(
     )
 }
 
-fn is_floor(dungeon: &crate::DungeonDefinition, position: DungeonPosition) -> bool {
-    dungeon.is_floor(position.x, position.y)
-}
-
 fn facing_dto(facing: DungeonFacingDefinition) -> ExplorationFacingDto {
     match facing {
         DungeonFacingDefinition::North => ExplorationFacingDto::North,
@@ -343,11 +542,19 @@ mod tests {
             rows: rows.iter().map(|row| (*row).to_owned()).collect(),
             start_x: 1,
             start_y: 2,
-            checkpoint_x: 1,
-            checkpoint_y: 2,
+            start_checkpoint: D20Id::parse("probe-camp").unwrap(),
             start_facing: DungeonFacingDefinition::East,
             encounters: Vec::new(),
             landmarks: Vec::new(),
+            doors: Vec::new(),
+            treasures: Vec::new(),
+            checkpoints: vec![crate::DungeonCheckpointDefinition {
+                id: D20Id::parse("probe-camp").unwrap(),
+                x: 1,
+                y: 2,
+                title: "Probe camp".to_owned(),
+                text: "Return safely.".to_owned(),
+            }],
         }
     }
 
@@ -356,14 +563,18 @@ mod tests {
         let open_hidden_space = dungeon(&["#######", "#.....#", "#.#...#", "#.....#", "#######"]);
         let blocked_hidden_space =
             dungeon(&["#######", "#.###.#", "#.##..#", "#.#...#", "#######"]);
-        let position = DungeonPosition { x: 1, y: 2 };
+        let state = ExplorationState {
+            position: DungeonPosition { x: 1, y: 2 },
+            facing: DungeonFacingDefinition::East,
+            discovered: BTreeSet::from([DungeonPosition { x: 1, y: 2 }]),
+            inspected_landmarks: BTreeSet::new(),
+            checkpoint_id: "probe-camp".to_owned(),
+            opened_doors: BTreeSet::new(),
+            collected_treasures: BTreeSet::new(),
+        };
 
-        let open = project_view(&open_hidden_space, position, DungeonFacingDefinition::East);
-        let blocked = project_view(
-            &blocked_hidden_space,
-            position,
-            DungeonFacingDefinition::East,
-        );
+        let open = project_view(&open_hidden_space, &state);
+        let blocked = project_view(&blocked_hidden_space, &state);
 
         assert_eq!(open, blocked);
         assert_eq!(

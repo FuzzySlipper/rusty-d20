@@ -91,9 +91,13 @@ reopens the exactly-once reward. Those
 terminal scenarios are part of `verify:browser`, not a non-idempotent
 requirement on an arbitrary already-running live save.
 The Warden scenario enters through the pass grid, continues from its
-exactly-once first reward at the exact trigger cell, traverses to the next
-authored encounter, records the ordered completion history, applies its
-terminal recovery, returns to camp with no third encounter, and reopens again.
+exactly-once first reward at the exact trigger cell, claims the sigil-buckler
+treasure, activates the Warden refuge checkpoint, returns safely to camp,
+reopens the treasure-gated door, completes the Seal Guard and final redoubt,
+renders the authored terminal ending, and reopens the exact three-entry
+completion history. The focused Rust save regressions also reject forged event
+IDs, unmet door prerequisites, contradictory treasure ownership, and premature
+terminal state.
 A separate real-host scenario displays the exact save identity, proves reset
 cancel/confirm behavior, reopens a replacement Ember campaign, then starts from
 a deliberately malformed save and recovers through the typed discard path

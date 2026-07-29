@@ -54,6 +54,7 @@ impl GameRuntime {
                 CampaignPhase::Exploration => CampaignPhaseDto::Exploration,
                 CampaignPhase::Encounter => CampaignPhaseDto::Encounter,
                 CampaignPhase::Outcome => CampaignPhaseDto::Outcome,
+                CampaignPhase::AdventureComplete => CampaignPhaseDto::AdventureComplete,
             },
             party: adventure
                 .party
@@ -96,6 +97,26 @@ impl GameRuntime {
                 },
             }),
             completed_encounters,
+            completion: if campaign.phase == CampaignPhase::AdventureComplete {
+                campaign.outcome.map(|outcome| AdventureCompletionDto {
+                    kind: match outcome {
+                        EncounterOutcome::Victory => EncounterOutcomeKindDto::Victory,
+                        EncounterOutcome::Defeat => EncounterOutcomeKindDto::Defeat,
+                    },
+                    source: adventure.completion.source.clone(),
+                    title: match outcome {
+                        EncounterOutcome::Victory => adventure.completion.victory_title.clone(),
+                        EncounterOutcome::Defeat => adventure.completion.defeat_title.clone(),
+                    },
+                    text: match outcome {
+                        EncounterOutcome::Victory => adventure.completion.victory_text.clone(),
+                        EncounterOutcome::Defeat => adventure.completion.defeat_text.clone(),
+                    },
+                    details: adventure.completion.details.clone(),
+                })
+            } else {
+                None
+            },
         })
     }
 

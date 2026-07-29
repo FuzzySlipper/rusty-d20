@@ -194,6 +194,7 @@ describe("decodeGameSnapshot", () => {
       activeEncounterId: null,
       latestOutcome: null,
       completedEncounters: [],
+      completion: null,
       availableEncounters: [
         {
           id: "iron-warden",
@@ -264,6 +265,14 @@ describe("decodeGameSnapshot", () => {
       ],
       discoveredCells: [{ x: 1, y: 1 }],
       landmark: null,
+      doorAhead: null,
+      treasure: null,
+      checkpoint: {
+        id: "gate-camp",
+        title: "Pass camp",
+        text: "The company can return safely to camp.",
+        active: true,
+      },
     };
     expect(
       decodeGameSnapshot({
@@ -272,6 +281,22 @@ describe("decodeGameSnapshot", () => {
         exploration: occludedExploration,
       }),
     ).toMatchObject({ ok: true });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: { ...campaign, phase: "exploration" },
+        exploration: {
+          ...occludedExploration,
+          doorAhead: {
+            id: "inner-sigil-gate",
+            title: "Inner sigil gate",
+            text: "The iron leaves bar the descent.",
+            opened: true,
+            locked: true,
+          },
+        },
+      }),
+    ).toMatchObject({ ok: false });
     for (const hiddenTopology of [
       [
         occludedExploration.view[0],
@@ -533,6 +558,43 @@ describe("decodeGameSnapshot", () => {
         encounter: outcomeEncounter,
       }),
     ).toMatchObject({ ok: true });
+    const terminalCampaign = {
+      ...outcomeCampaign,
+      phase: "adventure-complete",
+      activeEncounterId: null,
+      availableEncounters: [],
+      completion: {
+        kind: "victory",
+        source: "Warden's Gate",
+        title: "The mountain pass is secure",
+        text: "The company carries the Warden sigil into daylight.",
+        details: ["The terminal expedition state is durable."],
+      },
+    };
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: terminalCampaign,
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...terminalCampaign,
+          completion: { ...terminalCampaign.completion, hidden: "leak" },
+        },
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...terminalCampaign,
+          completion: { ...terminalCampaign.completion, kind: "defeat" },
+        },
+      }),
+    ).toMatchObject({ ok: false });
     expect(
       decodeGameSnapshot({
         ...empty,

@@ -431,6 +431,7 @@ import {
       }
 
       .action-workbench,
+      .adventure-complete,
       .outcome,
       .outcome-banner {
         align-content: start;
@@ -444,6 +445,14 @@ import {
 
       .outcome-banner {
         border-color: var(--rusty-engine-accent);
+      }
+
+      .adventure-complete {
+        align-self: center;
+        border-color: var(--rusty-engine-accent);
+        justify-self: center;
+        max-width: 760px;
+        padding: clamp(24px, 6vw, 56px);
       }
 
       .actions__header {
@@ -830,7 +839,9 @@ import {
                     ? "camp"
                     : game()?.campaign?.phase === "exploration"
                       ? "the dungeon"
-                      : "the active encounter"
+                      : game()?.campaign?.phase === "adventure-complete"
+                        ? "the completed expedition"
+                        : "the active encounter"
                 }}
                 at state revision {{ game()?.revision }}.
               </p>
@@ -1128,6 +1139,87 @@ import {
                       </button>
                     </section>
                   }
+                  @if (exploration.treasure; as treasure) {
+                    <section
+                      class="rusty-engine-panel landmark"
+                      aria-label="Dungeon treasure"
+                    >
+                      <p class="meta-label">
+                        {{
+                          treasure.collected ? "Claimed treasure" : "Treasure"
+                        }}
+                      </p>
+                      <h3>{{ treasure.title }}</h3>
+                      <p>{{ treasure.text }}</p>
+                      <button
+                        class="primary"
+                        type="button"
+                        [disabled]="store.busy() || treasure.collected"
+                        (click)="explorationCommand('interact')"
+                      >
+                        {{
+                          treasure.collected
+                            ? "Already claimed"
+                            : "Claim treasure"
+                        }}
+                      </button>
+                    </section>
+                  }
+                  @if (exploration.doorAhead; as door) {
+                    <section
+                      class="rusty-engine-panel landmark"
+                      aria-label="Dungeon door"
+                    >
+                      <p class="meta-label">
+                        {{
+                          door.opened
+                            ? "Opened passage"
+                            : door.locked
+                              ? "Locked passage"
+                              : "Door"
+                        }}
+                      </p>
+                      <h3>{{ door.title }}</h3>
+                      <p>{{ door.text }}</p>
+                      <button
+                        class="primary"
+                        type="button"
+                        [disabled]="store.busy() || door.opened || door.locked"
+                        (click)="explorationCommand('interact')"
+                      >
+                        {{
+                          door.opened
+                            ? "Door opened"
+                            : door.locked
+                              ? "Requires its authored treasure"
+                              : "Open door"
+                        }}
+                      </button>
+                    </section>
+                  }
+                  @if (exploration.checkpoint; as checkpoint) {
+                    <section
+                      class="rusty-engine-panel landmark"
+                      aria-label="Dungeon checkpoint"
+                    >
+                      <p class="meta-label">
+                        {{
+                          checkpoint.active
+                            ? "Active checkpoint"
+                            : "Safe return"
+                        }}
+                      </p>
+                      <h3>{{ checkpoint.title }}</h3>
+                      <p>{{ checkpoint.text }}</p>
+                      <button
+                        type="button"
+                        [disabled]="store.busy()"
+                        (click)="explorationCommand('interact')"
+                      >
+                        Return safely to camp
+                      </button>
+                    </section>
+                  }
                   <nav
                     class="rusty-engine-panel movement-pad"
                     aria-label="Dungeon movement"
@@ -1199,6 +1291,49 @@ import {
                     </span>
                   </section>
                 </aside>
+              </section>
+            }
+          } @else if (game()?.campaign?.phase === "adventure-complete") {
+            @if (game()?.campaign?.completion; as completion) {
+              <section
+                class="rusty-engine-panel adventure-complete"
+                [attr.aria-label]="'Adventure complete: ' + completion.kind"
+              >
+                <p class="eyebrow">
+                  Adventure complete · {{ completion.kind }}
+                </p>
+                <h2>{{ completion.title }}</h2>
+                <p class="lede">{{ completion.text }}</p>
+                <ul class="detail-list">
+                  @for (detail of completion.details; track detail) {
+                    <li>{{ detail }}</li>
+                  }
+                </ul>
+                <section
+                  class="identity-readout"
+                  aria-label="Final encounter record"
+                >
+                  <strong>{{ game()?.campaign?.title }}</strong>
+                  @for (
+                    completed of game()?.campaign?.completedEncounters ?? [];
+                    track completed.encounterId
+                  ) {
+                    <span>{{ completed.title }} · {{ completed.outcome }}</span>
+                  }
+                </section>
+                <p class="muted">
+                  Save preserves the terminal ending, party state, treasure,
+                  opened door, checkpoint, discoveries, and every encounter
+                  outcome.
+                </p>
+                <button
+                  class="danger"
+                  type="button"
+                  [disabled]="store.busy() || saveStatus() === null"
+                  (click)="openResetDialog($event)"
+                >
+                  Reset / New Adventure
+                </button>
               </section>
             }
           } @else {

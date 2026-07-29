@@ -4,6 +4,7 @@ import { D20_PROTOCOL_LIMITS } from "./generated/api-types";
 import type {
   ActionDto,
   ActionTargetsDto,
+  AdventureCompletionDto,
   AdventureChoiceDto,
   ApiErrorDto,
   ApiErrorKindDto,
@@ -19,8 +20,11 @@ import type {
   EncounterParticipantDto,
   EquipmentSlotDto,
   ExplorationDepthDto,
+  ExplorationDoorDto,
+  ExplorationCheckpointDto,
   ExplorationDto,
   ExplorationLandmarkDto,
+  ExplorationTreasureDto,
   GameLogEntryDto,
   GameLogKindDto,
   GameSnapshotDto,
@@ -251,6 +255,8 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
       (exploration === null || encounter !== null)) ||
     ((campaign?.phase === "encounter" || campaign?.phase === "outcome") &&
       encounter === null) ||
+    (campaign?.phase === "adventure-complete" &&
+      (exploration !== null || encounter !== null)) ||
     (campaign?.phase === "encounter" &&
       (encounter?.currentActorId === null ||
         campaign.latestOutcome !== null)) ||
@@ -282,7 +288,10 @@ function decodeExploration(value: unknown): ExplorationDto | undefined {
       "dungeonTitle",
       "facing",
       "height",
+      "checkpoint",
+      "doorAhead",
       "landmark",
+      "treasure",
       "view",
       "wallStyle",
       "width",
@@ -305,6 +314,17 @@ function decodeExploration(value: unknown): ExplorationDto | undefined {
   const landmarkValue = value["landmark"];
   const landmark =
     landmarkValue === null ? null : decodeExplorationLandmark(landmarkValue);
+  const doorValue = value["doorAhead"];
+  const doorAhead =
+    doorValue === null ? null : decodeExplorationDoor(doorValue);
+  const treasureValue = value["treasure"];
+  const treasure =
+    treasureValue === null ? null : decodeExplorationTreasure(treasureValue);
+  const checkpointValue = value["checkpoint"];
+  const checkpoint =
+    checkpointValue === null
+      ? null
+      : decodeExplorationCheckpoint(checkpointValue);
   const width = value["width"];
   const height = value["height"];
   const x = value["x"];
@@ -345,7 +365,10 @@ function decodeExploration(value: unknown): ExplorationDto | undefined {
     new Set(discoveredCells.map((cell) => `${cell.x}:${cell.y}`)).size !==
       discoveredCells.length ||
     !discoveredCells.some((cell) => cell.x === x && cell.y === y) ||
-    landmark === undefined
+    landmark === undefined ||
+    doorAhead === undefined ||
+    treasure === undefined ||
+    checkpoint === undefined
   ) {
     return undefined;
   }
@@ -362,6 +385,9 @@ function decodeExploration(value: unknown): ExplorationDto | undefined {
     view,
     discoveredCells,
     landmark,
+    doorAhead,
+    treasure,
+    checkpoint,
   };
 }
 
@@ -425,11 +451,72 @@ function decodeExplorationLandmark(
     : undefined;
 }
 
+function decodeExplorationDoor(value: unknown): ExplorationDoorDto | undefined {
+  if (!hasExactKeys(value, ["id", "locked", "opened", "text", "title"])) {
+    return undefined;
+  }
+  const authored = decodeAuthoredIdentityAndText(value);
+  return authored !== undefined &&
+    typeof value["opened"] === "boolean" &&
+    typeof value["locked"] === "boolean" &&
+    !(value["opened"] && value["locked"])
+    ? {
+        ...authored,
+        opened: value["opened"],
+        locked: value["locked"],
+      }
+    : undefined;
+}
+
+function decodeExplorationTreasure(
+  value: unknown,
+): ExplorationTreasureDto | undefined {
+  if (!hasExactKeys(value, ["collected", "id", "text", "title"])) {
+    return undefined;
+  }
+  const authored = decodeAuthoredIdentityAndText(value);
+  return authored !== undefined && typeof value["collected"] === "boolean"
+    ? {
+        ...authored,
+        collected: value["collected"],
+      }
+    : undefined;
+}
+
+function decodeExplorationCheckpoint(
+  value: unknown,
+): ExplorationCheckpointDto | undefined {
+  if (!hasExactKeys(value, ["active", "id", "text", "title"])) {
+    return undefined;
+  }
+  const authored = decodeAuthoredIdentityAndText(value);
+  return authored !== undefined && typeof value["active"] === "boolean"
+    ? {
+        ...authored,
+        active: value["active"],
+      }
+    : undefined;
+}
+
+function decodeAuthoredIdentityAndText(
+  value: Record<string, unknown>,
+): { id: string; title: string; text: string } | undefined {
+  return typeof value["id"] === "string" &&
+    value["id"].length > 0 &&
+    typeof value["title"] === "string" &&
+    value["title"].length > 0 &&
+    typeof value["text"] === "string" &&
+    value["text"].length > 0
+    ? { id: value["id"], title: value["title"], text: value["text"] }
+    : undefined;
+}
+
 function decodeCampaign(value: unknown): CampaignDto | undefined {
   if (
     !hasExactKeys(value, [
       "activeEncounterId",
       "availableEncounters",
+      "completion",
       "completedEncounters",
       "id",
       "latestOutcome",
@@ -462,13 +549,19 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
     latestOutcomeValue === null
       ? null
       : decodeCampaignOutcome(latestOutcomeValue);
+  const completionValue = value["completion"];
+  const completion =
+    completionValue === null
+      ? null
+      : decodeAdventureCompletion(completionValue);
   if (
     typeof value["id"] !== "string" ||
     typeof value["title"] !== "string" ||
     (phase !== "camp" &&
       phase !== "exploration" &&
       phase !== "encounter" &&
-      phase !== "outcome") ||
+      phase !== "outcome" &&
+      phase !== "adventure-complete") ||
     (activeEncounterId !== null && typeof activeEncounterId !== "string") ||
     party === undefined ||
     party.length === 0 ||
@@ -478,13 +571,23 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
     new Set(completedEncounters.map((entry) => entry.encounterId)).size !==
       completedEncounters.length ||
     latestOutcome === undefined ||
-    ((phase === "camp" || phase === "exploration") &&
+    completion === undefined ||
+    ((phase === "camp" ||
+      phase === "exploration" ||
+      phase === "adventure-complete") &&
       activeEncounterId !== null) ||
     ((phase === "camp" || phase === "exploration") &&
       latestOutcome === null &&
       completedEncounters.length !== 0) ||
     ((phase === "encounter" || phase === "outcome") &&
       activeEncounterId === null) ||
+    (phase !== "adventure-complete" && completion !== null) ||
+    (phase === "adventure-complete" &&
+      (completion === null ||
+        latestOutcome === null ||
+        completedEncounters.length === 0 ||
+        encounters.length !== 0 ||
+        completion.kind !== latestOutcome.kind)) ||
     (phase === "encounter" &&
       completedEncounters.some(
         (completed) => completed.encounterId === activeEncounterId,
@@ -507,7 +610,36 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
     availableEncounters: encounters,
     latestOutcome,
     completedEncounters,
+    completion,
   };
+}
+
+function decodeAdventureCompletion(
+  value: unknown,
+): AdventureCompletionDto | undefined {
+  if (!hasExactKeys(value, ["details", "kind", "source", "text", "title"])) {
+    return undefined;
+  }
+  const details = decodeStrings(
+    value["details"],
+    D20_PROTOCOL_LIMITS.maxAdventureDetails,
+  );
+  return isEncounterOutcomeKind(value["kind"]) &&
+    typeof value["source"] === "string" &&
+    value["source"].length > 0 &&
+    typeof value["title"] === "string" &&
+    value["title"].length > 0 &&
+    typeof value["text"] === "string" &&
+    value["text"].length > 0 &&
+    details !== undefined
+    ? {
+        kind: value["kind"],
+        source: value["source"],
+        title: value["title"],
+        text: value["text"],
+        details,
+      }
+    : undefined;
 }
 
 function decodePartyMember(value: unknown): PartyMemberDto | undefined {

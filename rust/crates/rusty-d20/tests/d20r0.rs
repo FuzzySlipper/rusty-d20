@@ -12,17 +12,18 @@ use rusty_d20::{
     ability_modifier, admit_d20_candidate, AbilityCandidate, AbilityScore, ActionAttackCandidate,
     ActionCandidate, ActionLineOfEffectCandidate, ActionResource, ActionTargetCandidate,
     ActionTargetKindCandidate, ActionTargetTeamCandidate, ActivationBudgetCandidate,
-    ActivationCostCandidate, ActivationTimingCandidate, AdventureCandidate, AffinitySeed,
-    ApplyActionRequest, ArmorCandidate, ArmorItemSeed, CharacterAbilityCandidate,
-    CharacterResourceCandidate, CharacterSeed, CharacterTemplateCandidate,
-    ConditionClauseCandidate, D20CompileError, D20Id, D20PackageEnvelope, D20RulesCandidate,
-    D20Ruleset, D20Session, D20SessionError, DamageAffinity, DamageCandidate, DamageTypeCandidate,
-    DefenseCandidate, DungeonCandidate, DungeonEncounterCandidate, DungeonFacingCandidate,
-    EffectCandidate, EncounterCandidate, EncounterFactionCandidate, EncounterOutcomeCandidate,
-    EncounterParticipantCandidate, EquipmentItemSeed, EquipmentReferenceCandidate,
-    ImplementCandidate, ItemInstanceCandidate, ItemRarityCandidate, ReactionCandidate,
-    ResourceCandidate, SessionSaveError, StorageCandidate, TacticalBoardCandidate,
-    TacticalPlacementCandidate, D20_CANDIDATE_SCHEMA_VERSION,
+    ActivationCostCandidate, ActivationTimingCandidate, AdventureCandidate,
+    AdventureCompletionCandidate, AffinitySeed, ApplyActionRequest, ArmorCandidate, ArmorItemSeed,
+    CharacterAbilityCandidate, CharacterResourceCandidate, CharacterSeed,
+    CharacterTemplateCandidate, ConditionClauseCandidate, D20CompileError, D20Id,
+    D20PackageEnvelope, D20RulesCandidate, D20Ruleset, D20Session, D20SessionError, DamageAffinity,
+    DamageCandidate, DamageTypeCandidate, DefenseCandidate, DungeonCandidate,
+    DungeonCheckpointCandidate, DungeonDoorCandidate, DungeonEncounterCandidate,
+    DungeonFacingCandidate, DungeonTreasureCandidate, EffectCandidate, EncounterCandidate,
+    EncounterFactionCandidate, EncounterOutcomeCandidate, EncounterParticipantCandidate,
+    EquipmentItemSeed, EquipmentReferenceCandidate, ImplementCandidate, ItemInstanceCandidate,
+    ItemRarityCandidate, ReactionCandidate, ResourceCandidate, SessionSaveError, StorageCandidate,
+    TacticalBoardCandidate, TacticalPlacementCandidate, D20_CANDIDATE_SCHEMA_VERSION,
 };
 use serde_json::json;
 use svc_rng::RngSeed;
@@ -54,8 +55,7 @@ fn dungeon(encounter: &str) -> DungeonCandidate {
         ],
         start_x: 1,
         start_y: 1,
-        checkpoint_x: 1,
-        checkpoint_y: 1,
+        start_checkpoint: id("camp-checkpoint"),
         start_facing: DungeonFacingCandidate::East,
         encounters: vec![DungeonEncounterCandidate {
             encounter: id(encounter),
@@ -63,6 +63,26 @@ fn dungeon(encounter: &str) -> DungeonCandidate {
             y: 3,
         }],
         landmarks: Vec::new(),
+        doors: Vec::new(),
+        treasures: Vec::new(),
+        checkpoints: vec![DungeonCheckpointCandidate {
+            id: id("camp-checkpoint"),
+            x: 1,
+            y: 1,
+            title: "Camp checkpoint".to_owned(),
+            text: "The route back to camp is secure.".to_owned(),
+        }],
+    }
+}
+
+fn adventure_completion() -> AdventureCompletionCandidate {
+    AdventureCompletionCandidate {
+        source: "Adventure".to_owned(),
+        victory_title: "Adventure won".to_owned(),
+        victory_text: "The party prevailed.".to_owned(),
+        defeat_title: "Adventure lost".to_owned(),
+        defeat_text: "The party withdrew.".to_owned(),
+        details: vec![],
     }
 }
 
@@ -819,6 +839,7 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
             start_source: "Adventure".to_owned(),
             start_text: "The broken adventure starts.".to_owned(),
             start_details: vec![],
+            completion: adventure_completion(),
         }],
         ..D20RulesCandidate::default()
     };
@@ -953,6 +974,7 @@ fn otherwise_valid_adventure_candidate(
             start_source: "Adventure".to_owned(),
             start_text: "The adventure starts.".to_owned(),
             start_details: vec![],
+            completion: adventure_completion(),
         }],
         ..D20RulesCandidate::default()
     }
@@ -1009,6 +1031,31 @@ fn authored_dungeons_reject_malformed_blocked_and_unreachable_content() {
         "#...#".to_owned(),
         "#####".to_owned(),
     ];
+    let mut circular_door = valid();
+    circular_door.adventures[0].dungeon.rows = vec![
+        "#####".to_owned(),
+        "#...#".to_owned(),
+        "###.#".to_owned(),
+        "#...#".to_owned(),
+        "#####".to_owned(),
+    ];
+    circular_door.adventures[0].dungeon.doors = vec![DungeonDoorCandidate {
+        id: id("sealed-door"),
+        x: 3,
+        y: 1,
+        facing: DungeonFacingCandidate::South,
+        title: "Sealed door".to_owned(),
+        text: "The key is beyond this door.".to_owned(),
+        requires_treasure: Some(id("key-cache")),
+    }];
+    circular_door.adventures[0].dungeon.treasures = vec![DungeonTreasureCandidate {
+        id: id("key-cache"),
+        x: 3,
+        y: 2,
+        item: id("missing-key-item"),
+        title: "Key cache".to_owned(),
+        text: "The key cache lies behind its own sealed door.".to_owned(),
+    }];
     let mut excessive = valid();
     excessive.adventures[0].dungeon.width = 25;
 
@@ -1031,6 +1078,11 @@ fn authored_dungeons_reject_malformed_blocked_and_unreachable_content() {
         (
             "unreachable-dungeon",
             unreachable,
+            "D20_UNREACHABLE_DUNGEON_CONTENT",
+        ),
+        (
+            "circular-door-sequence",
+            circular_door,
             "D20_UNREACHABLE_DUNGEON_CONTENT",
         ),
         (

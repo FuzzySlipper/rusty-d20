@@ -325,15 +325,31 @@ mod tests {
                     ],
                     start_x: 1,
                     start_y: 1,
-                    checkpoint_x: 1,
-                    checkpoint_y: 1,
+                    start_checkpoint: D20Id::parse("catalog-camp").unwrap(),
                     start_facing: DungeonFacingCandidate::East,
                     encounters: Vec::<DungeonEncounterCandidate>::new(),
                     landmarks: Vec::new(),
+                    doors: Vec::new(),
+                    treasures: Vec::new(),
+                    checkpoints: vec![crate::DungeonCheckpointCandidate {
+                        id: D20Id::parse("catalog-camp").unwrap(),
+                        x: 1,
+                        y: 1,
+                        title: "Catalog camp".to_owned(),
+                        text: "Return safely.".to_owned(),
+                    }],
                 },
                 start_source: "Catalog".to_owned(),
                 start_text: "Choose a path.".to_owned(),
                 start_details: vec!["Detail".to_owned(); details],
+                completion: crate::AdventureCompletionCandidate {
+                    source: "Catalog".to_owned(),
+                    victory_title: "Complete".to_owned(),
+                    victory_text: "The catalog adventure is complete.".to_owned(),
+                    defeat_title: "Ended".to_owned(),
+                    defeat_text: "The catalog adventure ended.".to_owned(),
+                    details: Vec::new(),
+                },
             })
             .collect()
     }

@@ -1,3 +1,5 @@
+use std::collections::{BTreeSet, VecDeque};
+
 use super::*;
 
 impl GameRuntime {
@@ -218,11 +220,9 @@ fn validate_campaign_save(
                 && save.current_actor_id.is_none()
                 && match (save.outcome, save.resolved_encounter_id.as_deref()) {
                     (None, None) => save.completed_encounters.is_empty(),
-                    (Some(EncounterOutcome::Victory), Some(resolved)) => latest_completed
-                        .is_some_and(|completed| {
-                            completed.encounter_id == resolved
-                                && completed.outcome == EncounterOutcome::Victory
-                        }),
+                    (Some(outcome), Some(resolved)) => latest_completed.is_some_and(|completed| {
+                        completed.encounter_id == resolved && completed.outcome == outcome
+                    }),
                     _ => false,
                 }
         }
@@ -256,6 +256,18 @@ fn validate_campaign_save(
                     })
                 })
         }
+        CampaignPhase::AdventureComplete => {
+            save.active_encounter_id.is_none()
+                && save.current_actor_id.is_none()
+                && save.completed_encounters.len() == adventure.encounters.len()
+                && save.outcome.is_some_and(|outcome| {
+                    latest_completed.is_some_and(|completed| {
+                        save.resolved_encounter_id.as_deref()
+                            == Some(completed.encounter_id.as_str())
+                            && completed.outcome == outcome
+                    })
+                })
+        }
     };
     if !valid_phase {
         return Err(GameRuntimeError::InvalidSave(
@@ -278,26 +290,142 @@ fn validate_exploration_state(
     exploration: &ExplorationState,
 ) -> Result<(), GameRuntimeError> {
     let dungeon = &adventure.dungeon;
+    let checkpoint = dungeon.checkpoint(&exploration.checkpoint_id);
+    let reachable = reachable_exploration_cells(dungeon, &exploration.opened_doors);
     if !dungeon.is_floor(exploration.position.x, exploration.position.y)
         || !exploration.discovered.contains(&exploration.position)
         || exploration.discovered.is_empty()
         || exploration.discovered.len() > usize::from(dungeon.width) * usize::from(dungeon.height)
-        || exploration
-            .discovered
-            .iter()
-            .any(|position| !dungeon.is_floor(position.x, position.y))
+        || exploration.discovered.iter().any(|position| {
+            !dungeon.is_floor(position.x, position.y) || !reachable.contains(position)
+        })
+        || checkpoint.is_none_or(|checkpoint| {
+            !exploration.discovered.contains(&DungeonPosition {
+                x: checkpoint.x,
+                y: checkpoint.y,
+            })
+        })
         || exploration.inspected_landmarks.iter().any(|id| {
-            !dungeon
+            dungeon
                 .landmarks
                 .iter()
-                .any(|landmark| landmark.id.as_str() == id)
+                .find(|landmark| landmark.id.as_str() == id)
+                .is_none_or(|landmark| {
+                    !exploration.discovered.contains(&DungeonPosition {
+                        x: landmark.x,
+                        y: landmark.y,
+                    })
+                })
+        })
+        || exploration.opened_doors.iter().any(|id| {
+            dungeon
+                .doors
+                .iter()
+                .find(|door| door.id.as_str() == id)
+                .is_none_or(|door| {
+                    door.requires_treasure.as_ref().is_some_and(|required| {
+                        !exploration.collected_treasures.contains(required.as_str())
+                    })
+                })
+        })
+        || exploration.collected_treasures.iter().any(|id| {
+            dungeon
+                .treasures
+                .iter()
+                .find(|treasure| treasure.id.as_str() == id)
+                .is_none_or(|treasure| {
+                    !exploration.discovered.contains(&DungeonPosition {
+                        x: treasure.x,
+                        y: treasure.y,
+                    })
+                })
         })
     {
         return Err(GameRuntimeError::InvalidSave(
-            "exploration position, discoveries, or inspected landmarks are invalid".to_owned(),
+            "exploration position, discoveries, events, or checkpoint are invalid".to_owned(),
         ));
     }
     Ok(())
+}
+
+fn reachable_exploration_cells(
+    dungeon: &crate::DungeonDefinition,
+    opened_doors: &BTreeSet<String>,
+) -> BTreeSet<DungeonPosition> {
+    let start = DungeonPosition {
+        x: dungeon.start_x,
+        y: dungeon.start_y,
+    };
+    let mut reachable = BTreeSet::from([start]);
+    let mut queue = VecDeque::from([start]);
+    while let Some(position) = queue.pop_front() {
+        for neighbor in [
+            position
+                .x
+                .checked_sub(1)
+                .map(|x| DungeonPosition { x, y: position.y }),
+            position
+                .x
+                .checked_add(1)
+                .map(|x| DungeonPosition { x, y: position.y }),
+            position
+                .y
+                .checked_sub(1)
+                .map(|y| DungeonPosition { x: position.x, y }),
+            position
+                .y
+                .checked_add(1)
+                .map(|y| DungeonPosition { x: position.x, y }),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if !dungeon.is_floor(neighbor.x, neighbor.y)
+                || dungeon
+                    .doors
+                    .iter()
+                    .find(|door| door_connects_positions(door, position, neighbor))
+                    .is_some_and(|door| !opened_doors.contains(door.id.as_str()))
+                || !reachable.insert(neighbor)
+            {
+                continue;
+            }
+            queue.push_back(neighbor);
+        }
+    }
+    reachable
+}
+
+fn door_connects_positions(
+    door: &crate::DungeonDoorDefinition,
+    left: DungeonPosition,
+    right: DungeonPosition,
+) -> bool {
+    let origin = DungeonPosition {
+        x: door.x,
+        y: door.y,
+    };
+    let destination = match door.facing {
+        DungeonFacingDefinition::North => door
+            .y
+            .checked_sub(1)
+            .map(|y| DungeonPosition { x: door.x, y }),
+        DungeonFacingDefinition::East => door
+            .x
+            .checked_add(1)
+            .map(|x| DungeonPosition { x, y: door.y }),
+        DungeonFacingDefinition::South => door
+            .y
+            .checked_add(1)
+            .map(|y| DungeonPosition { x: door.x, y }),
+        DungeonFacingDefinition::West => door
+            .x
+            .checked_sub(1)
+            .map(|x| DungeonPosition { x, y: door.y }),
+    };
+    destination.is_some_and(|destination| {
+        (origin == left && destination == right) || (origin == right && destination == left)
+    })
 }
 
 fn validate_log_state(data: &RestoreData) -> Result<(), GameRuntimeError> {

@@ -47,7 +47,7 @@ export type TacticalBoardDto = { width: number, height: number, rows: Array<stri
 
 export type EncounterDto = { round: number, nextRoll: number, currentActorId: number | null, board: TacticalBoardDto, participants: Array<EncounterParticipantDto>, actions: Array<ActionDto>, legalTargets: Array<ActionTargetsDto>, pendingAction: PendingActionDto | null, log: Array<GameLogEntryDto>, };
 
-export type CampaignPhaseDto = "camp" | "exploration" | "encounter" | "outcome";
+export type CampaignPhaseDto = "camp" | "exploration" | "encounter" | "outcome" | "adventure-complete";
 
 export type ExplorationFacingDto = "north" | "east" | "south" | "west";
 
@@ -59,11 +59,19 @@ export type DiscoveredCellDto = { x: number, y: number, };
 
 export type ExplorationLandmarkDto = { id: string, title: string, text: string, inspected: boolean, };
 
-export type ExplorationDto = { dungeonTitle: string, wallStyle: string, width: number, height: number, x: number, y: number, facing: ExplorationFacingDto, canStepForward: boolean, canStepBackward: boolean, view: Array<ExplorationDepthDto>, discoveredCells: Array<DiscoveredCellDto>, landmark: ExplorationLandmarkDto | null, };
+export type ExplorationDoorDto = { id: string, title: string, text: string, opened: boolean, locked: boolean, };
+
+export type ExplorationTreasureDto = { id: string, title: string, text: string, collected: boolean, };
+
+export type ExplorationCheckpointDto = { id: string, title: string, text: string, active: boolean, };
+
+export type ExplorationDto = { dungeonTitle: string, wallStyle: string, width: number, height: number, x: number, y: number, facing: ExplorationFacingDto, canStepForward: boolean, canStepBackward: boolean, view: Array<ExplorationDepthDto>, discoveredCells: Array<DiscoveredCellDto>, landmark: ExplorationLandmarkDto | null, doorAhead: ExplorationDoorDto | null, treasure: ExplorationTreasureDto | null, checkpoint: ExplorationCheckpointDto | null, };
 
 export type EncounterOutcomeKindDto = "victory" | "defeat";
 
 export type CampaignOutcomeDto = { kind: EncounterOutcomeKindDto, encounterId: string, title: string, summary: string, rewardItemId: number | null, reward: string | null, };
+
+export type AdventureCompletionDto = { kind: EncounterOutcomeKindDto, source: string, title: string, text: string, details: Array<string>, };
 
 export type CompletedEncounterDto = { encounterId: string, title: string, outcome: EncounterOutcomeKindDto, };
 
@@ -85,7 +93,7 @@ export type LoadoutDto = { ownerId: number, stashOwnerId: number, inventorySlots
 
 export type PartyMemberDto = { character: CharacterDto, loadout: LoadoutDto, };
 
-export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, party: Array<PartyMemberDto>, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, latestOutcome: CampaignOutcomeDto | null, completedEncounters: Array<CompletedEncounterDto>, };
+export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, party: Array<PartyMemberDto>, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, latestOutcome: CampaignOutcomeDto | null, completedEncounters: Array<CompletedEncounterDto>, completion: AdventureCompletionDto | null, };
 
 export type GameSnapshotDto = { product: string, version: string, engineRevision: string, rulesetFingerprint: string, revision: number, saved: boolean, availableAdventures: Array<AdventureChoiceDto>, campaign: CampaignDto | null, exploration: ExplorationDto | null, encounter: EncounterDto | null, };
 

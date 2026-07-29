@@ -502,7 +502,7 @@ fn encounter_projection_rejects_a_current_actor_without_canonical_participation(
 }
 
 #[test]
-fn schema_nine_fresh_save_round_trips_and_old_product_or_session_schemas_reject() {
+fn schema_ten_fresh_save_round_trips_and_old_product_or_session_schemas_reject() {
     let mut runtime = GameRuntime::empty().unwrap();
     start_test_encounter(&mut runtime);
     let encoded = runtime.encode_save().unwrap();
@@ -515,10 +515,10 @@ fn schema_nine_fresh_save_round_trips_and_old_product_or_session_schemas_reject(
     );
 
     let mut old_product: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    old_product["schemaVersion"] = json!(8);
+    old_product["schemaVersion"] = json!(9);
     assert!(matches!(
         GameRuntime::decode_save(&serde_json::to_string(&old_product).unwrap()),
-        Err(GameRuntimeError::UnsupportedSaveSchema { actual: 8 })
+        Err(GameRuntimeError::UnsupportedSaveSchema { actual: 9 })
     ));
 
     let mut old_session: serde_json::Value = serde_json::from_str(&encoded).unwrap();
@@ -528,6 +528,62 @@ fn schema_nine_fresh_save_round_trips_and_old_product_or_session_schemas_reject(
         Err(GameRuntimeError::Save(
             SessionSaveError::UnsupportedSchema { actual: 3 }
         ))
+    ));
+}
+
+#[test]
+fn exploration_event_and_terminal_save_forgery_is_rejected() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    let camp = runtime.new_adventure(0).unwrap();
+    runtime.begin_exploration(camp.revision).unwrap();
+    let encoded = runtime.encode_save().unwrap();
+
+    for (field, forged) in [
+        ("openedDoors", json!(["zz-forged-door"])),
+        ("collectedTreasures", json!(["zz-forged-treasure"])),
+        ("checkpointId", json!("zz-forged-checkpoint")),
+    ] {
+        let mut value: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+        value["campaign"]["exploration"][field] = forged;
+        assert!(matches!(
+            GameRuntime::decode_save(&serde_json::to_string(&value).unwrap()),
+            Err(GameRuntimeError::InvalidSave(_))
+        ));
+    }
+
+    let mut missing_prerequisite: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    missing_prerequisite["campaign"]["exploration"]["openedDoors"] = json!(["inner-sigil-gate"]);
+    assert!(matches!(
+        GameRuntime::decode_save(&serde_json::to_string(&missing_prerequisite).unwrap()),
+        Err(GameRuntimeError::InvalidSave(_))
+    ));
+
+    let mut forged_collection: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    forged_collection["campaign"]["exploration"]["position"] = json!({"x": 9, "y": 2});
+    forged_collection["campaign"]["exploration"]["discovered"] = json!([
+        {"x": 1, "y": 1},
+        {"x": 2, "y": 1},
+        {"x": 3, "y": 1},
+        {"x": 4, "y": 1},
+        {"x": 5, "y": 1},
+        {"x": 6, "y": 1},
+        {"x": 7, "y": 1},
+        {"x": 8, "y": 1},
+        {"x": 9, "y": 1},
+        {"x": 9, "y": 2}
+    ]);
+    forged_collection["campaign"]["exploration"]["collectedTreasures"] = json!(["sigil-cache"]);
+    assert!(matches!(
+        GameRuntime::decode_save(&serde_json::to_string(&forged_collection).unwrap()),
+        Err(GameRuntimeError::InvalidSave(message))
+            if message == "dungeon treasure ownership contradicts the authoritative event state"
+    ));
+
+    let mut forged_terminal: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    forged_terminal["campaign"]["phase"] = json!("adventure-complete");
+    assert!(matches!(
+        GameRuntime::decode_save(&serde_json::to_string(&forged_terminal).unwrap()),
+        Err(GameRuntimeError::InvalidSave(_))
     ));
 }
 
@@ -1651,7 +1707,7 @@ fn complete_encounter_victory_grants_reward_once_and_reopens_exactly() {
             .iter()
             .map(|encounter| encounter.id.as_str())
             .collect::<Vec<_>>(),
-        vec!["wardens-reckoning"]
+        vec!["seal-guard"]
     );
     assert_eq!(campaign.completed_encounters.len(), 1);
     assert_eq!(
@@ -1680,7 +1736,7 @@ fn complete_encounter_victory_grants_reward_once_and_reopens_exactly() {
 }
 
 #[test]
-fn ordered_campaign_advances_through_two_encounters_without_duplicate_reward() {
+fn ordered_campaign_advances_through_three_encounters_to_authored_terminal_completion() {
     let mut runtime = GameRuntime::empty().unwrap();
     start_test_encounter(&mut runtime);
     let first = play_to_outcome(&mut runtime, "precise-shot", false, true);
@@ -1696,32 +1752,12 @@ fn ordered_campaign_advances_through_two_encounters_without_duplicate_reward() {
         EncounterOutcomeKindDto::Victory
     );
     let camp = runtime.return_to_camp(first.revision).unwrap();
-    let entered = runtime
+    runtime
         .enter_encounter(EnterEncounterRequestDto {
             expected_revision: camp.revision,
-            encounter_id: "wardens-reckoning".to_owned(),
+            encounter_id: "seal-guard".to_owned(),
         })
         .unwrap();
-    let opponent = &entered
-        .encounter
-        .as_ref()
-        .unwrap()
-        .participants
-        .iter()
-        .find(|participant| participant.character.id == OPPONENT.raw())
-        .unwrap()
-        .character;
-    assert_eq!(opponent.health_current, opponent.health_maximum);
-    assert!(entered
-        .encounter
-        .as_ref()
-        .unwrap()
-        .log
-        .iter()
-        .any(|entry| entry
-            .details
-            .iter()
-            .any(|detail| detail.contains("prior resources, effects, and loadout"))));
     let entered_save = runtime.encode_save().unwrap();
     let mut reopened = GameRuntime::decode_save(&entered_save).unwrap();
     assert_eq!(reopened.encode_save().unwrap(), entered_save);
@@ -1735,7 +1771,7 @@ fn ordered_campaign_advances_through_two_encounters_without_duplicate_reward() {
             .iter()
             .map(|entry| entry.encounter_id.as_str())
             .collect::<Vec<_>>(),
-        vec!["iron-warden", "wardens-reckoning"]
+        vec!["iron-warden", "seal-guard"]
     );
     assert_eq!(
         second_campaign.party[0]
@@ -1754,10 +1790,43 @@ fn ordered_campaign_advances_through_two_encounters_without_duplicate_reward() {
             .reward_item_id,
         None
     );
-    let complete = reopened.return_to_camp(second.revision).unwrap();
+    let camp = reopened.return_to_camp(second.revision).unwrap();
+    let final_encounter = reopened
+        .enter_encounter(EnterEncounterRequestDto {
+            expected_revision: camp.revision,
+            encounter_id: "wardens-reckoning".to_owned(),
+        })
+        .unwrap();
+    for restored in [OPPONENT.raw(), 110] {
+        let opponent = &final_encounter
+            .encounter
+            .as_ref()
+            .unwrap()
+            .participants
+            .iter()
+            .find(|participant| participant.character.id == restored)
+            .unwrap()
+            .character;
+        assert_eq!(opponent.health_current, opponent.health_maximum);
+    }
+    let final_outcome = play_to_outcome(&mut reopened, "precise-shot", false, true);
+    let final_kind = final_outcome
+        .campaign
+        .as_ref()
+        .unwrap()
+        .latest_outcome
+        .as_ref()
+        .unwrap()
+        .kind;
+    let complete = reopened.return_to_camp(final_outcome.revision).unwrap();
     let complete_campaign = complete.campaign.as_ref().unwrap();
+    assert_eq!(complete_campaign.phase, CampaignPhaseDto::AdventureComplete);
     assert!(complete_campaign.available_encounters.is_empty());
-    assert_eq!(complete_campaign.completed_encounters.len(), 2);
+    assert_eq!(complete_campaign.completed_encounters.len(), 3);
+    assert_eq!(
+        complete_campaign.completion.as_ref().unwrap().kind,
+        final_kind
+    );
     let complete_save = reopened.encode_save().unwrap();
     assert_eq!(
         GameRuntime::decode_save(&complete_save)
@@ -1874,40 +1943,73 @@ fn complete_encounter_defeat_has_no_reward_and_applies_bounded_recovery() {
             command: ExplorationCommandKindDto::TurnRight,
         })
         .unwrap();
-    for expected_y in 2..=5 {
-        exploring = reopened
-            .exploration_command(ExplorationCommandRequestDto {
-                expected_revision: exploring.revision,
-                command: ExplorationCommandKindDto::StepForward,
-            })
-            .unwrap();
-        assert_eq!(
-            exploring.exploration.as_ref().map(|state| state.y),
-            Some(expected_y)
-        );
-    }
+    exploring = reopened
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::StepForward,
+        })
+        .unwrap();
+    assert_eq!(exploring.exploration.as_ref().map(|state| state.y), Some(2));
+    exploring = reopened
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::Interact,
+        })
+        .unwrap();
+    assert!(exploring.campaign.as_ref().unwrap().party[0]
+        .loadout
+        .stash_items
+        .iter()
+        .any(|item| item.entity_id == 227));
+    exploring = reopened
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::StepForward,
+        })
+        .unwrap();
+    exploring = reopened
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::TurnLeft,
+        })
+        .unwrap();
+    let safe_camp = reopened
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::Interact,
+        })
+        .unwrap();
+    assert_eq!(
+        safe_camp.campaign.as_ref().unwrap().phase,
+        CampaignPhaseDto::Camp
+    );
+    exploring = reopened.begin_exploration(safe_camp.revision).unwrap();
     exploring = reopened
         .exploration_command(ExplorationCommandRequestDto {
             expected_revision: exploring.revision,
             command: ExplorationCommandKindDto::TurnRight,
         })
         .unwrap();
-    for expected_x in (2..=8).rev() {
-        exploring = reopened
-            .exploration_command(ExplorationCommandRequestDto {
-                expected_revision: exploring.revision,
-                command: ExplorationCommandKindDto::StepForward,
-            })
-            .unwrap();
-        assert_eq!(
-            exploring.exploration.as_ref().map(|state| state.x),
-            Some(expected_x)
-        );
-        assert_eq!(
-            exploring.campaign.as_ref().unwrap().phase,
-            CampaignPhaseDto::Exploration
-        );
-    }
+    exploring = reopened
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::StepForward,
+        })
+        .unwrap();
+    assert_eq!(exploring.exploration.as_ref().map(|state| state.y), Some(4));
+    exploring = reopened
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::Interact,
+        })
+        .unwrap();
+    assert!(exploring
+        .exploration
+        .as_ref()
+        .unwrap()
+        .door_ahead
+        .as_ref()
+        .is_some_and(|door| door.opened));
     let second = reopened
         .exploration_command(ExplorationCommandRequestDto {
             expected_revision: exploring.revision,
@@ -1925,7 +2027,15 @@ fn complete_encounter_defeat_has_no_reward_and_applies_bounded_recovery() {
             .unwrap()
             .active_encounter_id
             .as_deref(),
-        Some("wardens-reckoning")
+        Some("seal-guard")
+    );
+    let save = reopened.encode_save().unwrap();
+    assert_eq!(
+        GameRuntime::decode_save(&save)
+            .unwrap()
+            .encode_save()
+            .unwrap(),
+        save
     );
 }
 

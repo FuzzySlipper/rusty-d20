@@ -94,8 +94,7 @@ export const embersWakeModule = defineD20Module(
           ],
           startX: 1,
           startY: 1,
-          checkpointX: 1,
-          checkpointY: 1,
+          startCheckpoint: 'ember-camp',
           startFacing: 'east',
           encounters: [{ encounter: 'ash-seer', x: 7, y: 5 }],
           landmarks: [
@@ -107,6 +106,17 @@ export const embersWakeModule = defineD20Module(
               text: 'Warm script coils across the stone: only a focused mind may pass.',
             },
           ],
+          doors: [],
+          treasures: [],
+          checkpoints: [
+            {
+              id: 'ember-camp',
+              x: 1,
+              y: 1,
+              title: 'Reliquary threshold',
+              text: 'Sera can leave the reliquary safely from this threshold.',
+            },
+          ],
         },
         startSource: 'Adventure',
         startText: 'Sera Vale prepares beside the ember reliquary.',
@@ -114,6 +124,18 @@ export const embersWakeModule = defineD20Module(
           'Ruleweaver foundation + Ember Ward authored packages compiled by Rust.',
           'The Ash Seer encounter uses focus, Wits, Nerve, energy, and resolve mechanics.',
         ],
+        completion: {
+          source: 'Ember Reliquary',
+          victoryTitle: "Ember's Wake complete",
+          victoryText:
+            'Sera carries the recovered charm beyond the cooling reliquary.',
+          defeatTitle: "Ember's Wake ended",
+          defeatText:
+            'Sera survives the reliquary, but its ward remains unbroken.',
+          details: [
+            'The terminal outcome and every remaining resource are part of the complete Rust save.',
+          ],
+        },
       }),
     ],
   }),

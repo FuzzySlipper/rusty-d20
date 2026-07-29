@@ -186,6 +186,7 @@ pub enum CampaignPhaseDto {
     Exploration,
     Encounter,
     Outcome,
+    AdventureComplete,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -240,6 +241,37 @@ pub struct ExplorationLandmarkDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
+pub struct ExplorationDoorDto {
+    pub id: String,
+    pub title: String,
+    pub text: String,
+    pub opened: bool,
+    pub locked: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ExplorationTreasureDto {
+    pub id: String,
+    pub title: String,
+    pub text: String,
+    pub collected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ExplorationCheckpointDto {
+    pub id: String,
+    pub title: String,
+    pub text: String,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct ExplorationDto {
     pub dungeon_title: String,
     pub wall_style: String,
@@ -253,6 +285,9 @@ pub struct ExplorationDto {
     pub view: Vec<ExplorationDepthDto>,
     pub discovered_cells: Vec<DiscoveredCellDto>,
     pub landmark: Option<ExplorationLandmarkDto>,
+    pub door_ahead: Option<ExplorationDoorDto>,
+    pub treasure: Option<ExplorationTreasureDto>,
+    pub checkpoint: Option<ExplorationCheckpointDto>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -274,6 +309,17 @@ pub struct CampaignOutcomeDto {
     #[ts(type = "number | null")]
     pub reward_item_id: Option<u64>,
     pub reward: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct AdventureCompletionDto {
+    pub kind: EncounterOutcomeKindDto,
+    pub source: String,
+    pub title: String,
+    pub text: String,
+    pub details: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -388,6 +434,7 @@ pub struct CampaignDto {
     pub available_encounters: Vec<EncounterChoiceDto>,
     pub latest_outcome: Option<CampaignOutcomeDto>,
     pub completed_encounters: Vec<CompletedEncounterDto>,
+    pub completion: Option<AdventureCompletionDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
