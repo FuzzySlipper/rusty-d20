@@ -87,6 +87,47 @@ fn subset_party_catalog() -> AuthoredAdventureCatalog {
     AuthoredAdventureCatalog::decode(&serde_json::to_string(&artifact).unwrap()).unwrap()
 }
 
+fn disconnected_floor_catalog() -> AuthoredAdventureCatalog {
+    let mut artifact: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../rules/artifacts/starter/catalog.json"
+    ))
+    .unwrap();
+    let packages = artifact["packages"].as_array_mut().unwrap();
+    let mut replaced = false;
+    for canonical in packages {
+        let package =
+            decode_canonical_rule_package(canonical.as_str().unwrap().as_bytes()).unwrap();
+        if package.identity().package().as_str() != "wardens-gate" {
+            continue;
+        }
+        let mut candidate: crate::D20RulesCandidate =
+            serde_json::from_value(package.payload().clone()).unwrap();
+        let encounter = candidate
+            .encounters
+            .iter_mut()
+            .find(|encounter| encounter.id.as_str() == ENCOUNTER_ID)
+            .unwrap();
+        encounter.board.rows[5] = "#........###".to_owned();
+        encounter.board.rows[6] = "#.......##.#".to_owned();
+        let admitted = crate::admit_d20_candidate(
+            crate::D20PackageEnvelope {
+                domain: package.identity().domain().clone(),
+                package: package.identity().package().clone(),
+                version: package.identity().version(),
+                dependencies: package.dependencies().to_vec(),
+                sources: package.sources().to_vec(),
+                provenance: package.provenance().to_vec(),
+            },
+            candidate,
+        )
+        .unwrap();
+        *canonical = json!(String::from_utf8(admitted.canonical_bytes().to_vec()).unwrap());
+        replaced = true;
+    }
+    assert!(replaced, "the built-in Warden package must be rewritten");
+    AuthoredAdventureCatalog::decode(&serde_json::to_string(&artifact).unwrap()).unwrap()
+}
+
 fn subset_party_runtime() -> GameRuntime {
     let catalog = subset_party_catalog();
     let adventure = id("wardens-gate").unwrap();
@@ -311,6 +352,50 @@ fn tactical_movement_is_engine_routed_atomic_stale_safe_and_persistent() {
         (reopened_position.x, reopened_position.y),
         (route.x, route.y)
     );
+}
+
+#[test]
+fn restore_rejects_a_forged_position_outside_the_authored_component() {
+    let catalog = disconnected_floor_catalog();
+    let adventure = id("wardens-gate").unwrap();
+    let rules = catalog.rules_for(&adventure).unwrap();
+    let mut runtime = GameRuntime::empty_with_rules(catalog.clone(), rules, adventure).unwrap();
+    let camp = runtime.new_adventure(0).unwrap();
+    runtime
+        .enter_encounter(EnterEncounterRequestDto {
+            expected_revision: camp.revision,
+            encounter_id: ENCOUNTER_ID.to_owned(),
+        })
+        .unwrap();
+    let encoded = runtime.encode_save().unwrap();
+    assert!(
+        GameRuntime::decode_save_with_catalog(&encoded, catalog.clone()).is_ok(),
+        "an unchanged admitted encounter must reopen"
+    );
+
+    let mut forged: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    let participation = forged["session"]["entityState"]["registeredComponents"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|component| component["typeId"] == "rusty-d20.encounter-participation")
+        .unwrap();
+    let player = participation["values"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|value| value["entity"] == PLAYER.raw())
+        .unwrap();
+    player["value"]["position"] = json!({ "x": 10, "y": 6 });
+
+    assert!(matches!(
+        GameRuntime::decode_save_with_catalog(
+            &serde_json::to_string(&forged).unwrap(),
+            catalog
+        ),
+        Err(GameRuntimeError::InvalidSave(message))
+            if message.contains("outside the authored placement component")
+    ));
 }
 
 #[test]

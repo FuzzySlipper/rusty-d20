@@ -339,6 +339,15 @@ pub(super) fn validate_campaign_vitality(
             "encounter positions overlap or contradict the authored tactical board".to_owned(),
         ));
     }
+    for (_, component) in &participation {
+        if !position_is_in_authored_component(&encounter.board, component.position())
+            .map_err(GameRuntimeError::InvalidSave)?
+        {
+            return Err(GameRuntimeError::InvalidSave(
+                "encounter position is outside the authored placement component".to_owned(),
+            ));
+        }
+    }
     let party_alive = actual
         .iter()
         .filter(|(_, (faction, _))| *faction == EncounterFaction::Party)

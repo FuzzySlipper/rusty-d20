@@ -110,6 +110,47 @@ pub(super) fn legal_routes(
     Ok(routes)
 }
 
+pub(super) fn position_is_in_authored_component(
+    board: &TacticalBoardDefinition,
+    position: TacticalPosition,
+) -> Result<bool, String> {
+    let Some(start) = board
+        .placements
+        .first()
+        .map(|placement| tactical_position(placement.position))
+    else {
+        return Ok(false);
+    };
+    if position == start {
+        return Ok(true);
+    }
+    if !board.is_floor(TacticalPositionDefinition {
+        x: position.x(),
+        y: position.y(),
+    }) {
+        return Ok(false);
+    }
+    let world = board_world(board, &BTreeSet::new())?;
+    let projection = build_nav_projection(
+        &world,
+        NavProjectionConfig {
+            agent_height_voxels: 2,
+            require_solid_floor: true,
+        },
+    )
+    .map_err(|error| format!("Engine navigation projection rejected the board: {error:?}"))?;
+    let readout = find_path(
+        &projection,
+        NavPathQuery {
+            start: board_voxel(start),
+            goal: board_voxel(position),
+            max_visited: usize::from(board.width) * usize::from(board.height),
+        },
+    )
+    .map_err(|error| format!("Engine pathfinding rejected the position: {error:?}"))?;
+    Ok(readout.outcome == NavPathOutcome::Reached)
+}
+
 pub(super) fn forced_destination(
     board: &TacticalBoardDefinition,
     occupied: &BTreeSet<TacticalPosition>,
@@ -289,5 +330,28 @@ mod tests {
         assert!(!routes
             .iter()
             .any(|route| route.destination.x() > 3 && route.destination.y() < 3));
+    }
+
+    #[test]
+    fn engine_pathfinding_rejects_an_isolated_durable_position() {
+        let board = TacticalBoardDefinition {
+            width: 7,
+            height: 7,
+            rows: vec![
+                "#######".to_owned(),
+                "#....##".to_owned(),
+                "#....##".to_owned(),
+                "#....##".to_owned(),
+                "#....##".to_owned(),
+                "#####.#".to_owned(),
+                "#######".to_owned(),
+            ],
+            placements: vec![crate::TacticalPlacementDefinition {
+                character: crate::D20Id::parse("actor").unwrap(),
+                position: TacticalPositionDefinition { x: 1, y: 1 },
+            }],
+        };
+        assert!(position_is_in_authored_component(&board, TacticalPosition::new(4, 4)).unwrap());
+        assert!(!position_is_in_authored_component(&board, TacticalPosition::new(5, 5)).unwrap());
     }
 }
