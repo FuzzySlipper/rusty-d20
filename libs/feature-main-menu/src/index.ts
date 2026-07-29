@@ -1628,10 +1628,11 @@ export class MainMenuScreenComponent implements OnInit {
       const dialog = this.resetDialog().nativeElement;
       if (!dialog.open) {
         dialog.showModal();
+        this.resetCancelButton().nativeElement.focus();
       }
       this.animationFrame.request(() => {
         this.animationFrame.request(() => {
-          if (dialog.open) {
+          if (dialog.open && !dialog.matches(':focus-within')) {
             this.resetCancelButton().nativeElement.focus();
           }
         });

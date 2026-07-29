@@ -9,6 +9,8 @@ const OPPONENT_ARMOR: EntityId = EntityId::new(201);
 const PLAYER_CHAIN_ARMOR: EntityId = EntityId::new(202);
 const PLAYER_BUCKLER: EntityId = EntityId::new(203);
 const STASH_BUCKLER: EntityId = EntityId::new(204);
+const OPPONENT_BLADE: EntityId = EntityId::new(205);
+const OPPONENT_BOW: EntityId = EntityId::new(207);
 const ENCOUNTER_ID: &str = "iron-warden";
 const DEFEAT_RECOVERY_VITALITY: u32 = 12;
 
@@ -526,6 +528,169 @@ fn translated_action_rejections_keep_public_invalid_and_stale_identities() {
     .api_error();
     assert_eq!(stale.kind, ApiErrorKindDto::Stale);
     assert!(stale.retryable);
+}
+
+#[test]
+fn opposition_filters_condition_forbidden_actions_without_retry_deadlock() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    let mut current = start_test_encounter(&mut runtime);
+
+    for _ in 0..8 {
+        let previewed = runtime
+            .preview_action(PreviewActionRequestDto {
+                expected_revision: current.revision,
+                actor_id: PLAYER.raw(),
+                target_id: OPPONENT.raw(),
+                action_id: "disrupt".to_owned(),
+            })
+            .unwrap();
+        let token = previewed
+            .encounter
+            .as_ref()
+            .unwrap()
+            .pending_action
+            .as_ref()
+            .unwrap()
+            .token
+            .clone();
+        let applied = runtime
+            .apply_action(ApplyActionRequestDto {
+                expected_revision: previewed.revision,
+                preview_token: token,
+            })
+            .unwrap();
+        let unsettled = applied
+            .encounter
+            .as_ref()
+            .unwrap()
+            .characters
+            .iter()
+            .find(|character| character.id == OPPONENT.raw())
+            .unwrap()
+            .effects
+            .iter()
+            .any(|effect| effect.starts_with("Unsettled"));
+
+        let opposition = runtime
+            .begin_opposition_turn(applied.revision)
+            .expect("a forbidden deterministic choice must not deadlock opposition");
+        let pending = opposition
+            .encounter
+            .as_ref()
+            .unwrap()
+            .pending_action
+            .as_ref()
+            .unwrap();
+        if unsettled {
+            assert!(
+                matches!(
+                    pending.action_id.as_str(),
+                    "longsword-strike" | "precise-shot"
+                ),
+                "Unsettled forbids the opponent's control-tagged Pin In Place and Disrupt actions"
+            );
+            return;
+        }
+        current = runtime
+            .apply_action(ApplyActionRequestDto {
+                expected_revision: opposition.revision,
+                preview_token: pending.token.clone(),
+            })
+            .unwrap();
+    }
+
+    panic!("the deterministic Disrupt sequence never applied Unsettled");
+}
+
+#[test]
+fn opposition_with_no_legal_action_explicitly_advances_the_round() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    let mut current = start_test_encounter(&mut runtime);
+
+    for _ in 0..8 {
+        let previewed = runtime
+            .preview_action(PreviewActionRequestDto {
+                expected_revision: current.revision,
+                actor_id: PLAYER.raw(),
+                target_id: OPPONENT.raw(),
+                action_id: "disrupt".to_owned(),
+            })
+            .unwrap();
+        let token = previewed
+            .encounter
+            .as_ref()
+            .unwrap()
+            .pending_action
+            .as_ref()
+            .unwrap()
+            .token
+            .clone();
+        let applied = runtime
+            .apply_action(ApplyActionRequestDto {
+                expected_revision: previewed.revision,
+                preview_token: token,
+            })
+            .unwrap();
+        let unsettled = applied
+            .encounter
+            .as_ref()
+            .unwrap()
+            .characters
+            .iter()
+            .find(|character| character.id == OPPONENT.raw())
+            .unwrap()
+            .effects
+            .iter()
+            .any(|effect| effect.starts_with("Unsettled"));
+        if unsettled {
+            runtime
+                .session_mut()
+                .unwrap()
+                .unequip_item(
+                    OPPONENT,
+                    OPPONENT_BLADE,
+                    operation("test-unequip-opponent-blade").unwrap(),
+                )
+                .unwrap();
+            runtime
+                .session_mut()
+                .unwrap()
+                .unequip_item(
+                    OPPONENT,
+                    OPPONENT_BOW,
+                    operation("test-unequip-opponent-bow").unwrap(),
+                )
+                .unwrap();
+
+            let progressed = runtime.begin_opposition_turn(applied.revision).unwrap();
+            let encounter = progressed.encounter.as_ref().unwrap();
+            assert_eq!(encounter.turn, 1);
+            assert_eq!(encounter.turn_owner, Some(EncounterTurnOwnerDto::Player));
+            assert!(encounter.pending_action.is_none());
+            assert!(encounter.log.last().unwrap().details.iter().any(|detail| {
+                detail.contains("no legal authored action")
+                    && detail.contains("4 unavailable choice(s)")
+            }));
+            return;
+        }
+
+        let opposition = runtime.begin_opposition_turn(applied.revision).unwrap();
+        let pending = opposition
+            .encounter
+            .as_ref()
+            .unwrap()
+            .pending_action
+            .as_ref()
+            .unwrap();
+        current = runtime
+            .apply_action(ApplyActionRequestDto {
+                expected_revision: opposition.revision,
+                preview_token: pending.token.clone(),
+            })
+            .unwrap();
+    }
+
+    panic!("the deterministic Disrupt sequence never exercised no-legal-action progression");
 }
 
 #[test]

@@ -877,36 +877,7 @@ impl GameRuntime {
                     self.campaign_mut()?.turn_owner = Some(EncounterTurnOwner::Opposition);
                 }
                 EncounterTurnOwner::Opposition => {
-                    let serial = self.next_operation;
-                    let next_turn = self
-                        .session()?
-                        .current_turn()
-                        .checked_add(1)
-                        .ok_or(GameRuntimeError::CounterOverflow)?;
-                    let turn_receipt = self
-                        .session_mut()?
-                        .advance_turn(next_turn, operation(&format!("advance-round-{serial}"))?)?;
-                    self.next_operation = self
-                        .next_operation
-                        .checked_add(1)
-                        .ok_or(GameRuntimeError::CounterOverflow)?;
-                    self.campaign_mut()?.turn_owner = Some(EncounterTurnOwner::Player);
-                    self.push_log(
-                        GameLogKindDto::Turn,
-                        "Round",
-                        &format!(
-                            "The encounter advanced from round {} to {}.",
-                            turn_receipt.before, turn_receipt.after
-                        ),
-                        vec![format!(
-                            "{} scheduled effect(s) expired before {}'s next turn.",
-                            turn_receipt.expired.len(),
-                            self.rules
-                                .character_template(&adventure.hero)
-                                .expect("compiled hero exists")
-                                .name
-                        )],
-                    )?;
+                    self.advance_after_opposition(&adventure, Vec::new())?;
                 }
             }
         }
@@ -952,8 +923,46 @@ impl GameRuntime {
             .character_template(&encounter.opponent)
             .expect("compiled opponent exists")
             .clone();
-        let actions = opponent.actions.clone();
-        let upper = u32::try_from(actions.len()).map_err(|_| {
+        let serial = self.next_operation;
+        let operation = operation(&format!("opposition-action-{serial}"))?;
+        let actor = EntityId::new(opponent.entity_id);
+        let target = character_entity(&self.rules, &adventure, &adventure.hero)?;
+        let mut unavailable = Vec::new();
+        let legal_actions = opponent
+            .actions
+            .iter()
+            .filter_map(|action| {
+                match self.session().and_then(|session| {
+                    session
+                        .preview_action(actor, target, action, operation.clone())
+                        .map_err(GameRuntimeError::Session)
+                }) {
+                    Ok(preview) => Some(Ok((action.clone(), preview))),
+                    Err(GameRuntimeError::Session(
+                        D20SessionError::ActionForbidden { .. }
+                        | D20SessionError::RequiredImplementNotEquipped { .. },
+                    )) => {
+                        unavailable.push(action.clone());
+                        None
+                    }
+                    Err(error) => Some(Err(error)),
+                }
+            })
+            .collect::<Result<Vec<_>, GameRuntimeError>>()?;
+        if legal_actions.is_empty() {
+            self.advance_after_opposition(
+                &adventure,
+                vec![format!(
+                    "{} had no legal authored action; {} unavailable choice(s) were skipped without mutation.",
+                    opponent.name,
+                    unavailable.len()
+                )],
+            )?;
+            self.bump_revision()?;
+            self.saved_revision = None;
+            return self.snapshot();
+        }
+        let upper = u32::try_from(legal_actions.len()).map_err(|_| {
             GameRuntimeError::InvalidState(
                 "the opposition action catalog does not fit deterministic choice".to_owned(),
             )
@@ -967,15 +976,7 @@ impl GameRuntime {
                 )
             })?;
         let index = usize::try_from(index).expect("u32 choice index fits usize");
-        let action = actions[index].clone();
-        let serial = self.next_operation;
-        let operation = operation(&format!("opposition-action-{serial}"))?;
-        let preview = self.session()?.preview_action(
-            EntityId::new(opponent.entity_id),
-            character_entity(&self.rules, &adventure, &adventure.hero)?,
-            &action,
-            operation,
-        )?;
+        let (action, preview) = legal_actions[index].clone();
         self.next_operation = self
             .next_operation
             .checked_add(1)
@@ -992,12 +993,51 @@ impl GameRuntime {
             "Opposition",
             &format!("{} prepares {}.", opponent.name, humanize(action.as_str())),
             vec![format!(
-                "Deterministic enemy policy selected catalog choice {} of {} from Rust-owned session state.",
+                "Deterministic enemy policy selected legal choice {} of {}; {} unavailable authored choice(s) were excluded.",
                 index + 1,
-                actions.len()
+                legal_actions.len(),
+                unavailable.len()
             )],
         )?;
         self.snapshot()
+    }
+
+    fn advance_after_opposition(
+        &mut self,
+        adventure: &AdventureDefinition,
+        mut details: Vec<String>,
+    ) -> Result<(), GameRuntimeError> {
+        let serial = self.next_operation;
+        let next_turn = self
+            .session()?
+            .current_turn()
+            .checked_add(1)
+            .ok_or(GameRuntimeError::CounterOverflow)?;
+        let turn_receipt = self
+            .session_mut()?
+            .advance_turn(next_turn, operation(&format!("advance-round-{serial}"))?)?;
+        self.next_operation = self
+            .next_operation
+            .checked_add(1)
+            .ok_or(GameRuntimeError::CounterOverflow)?;
+        self.campaign_mut()?.turn_owner = Some(EncounterTurnOwner::Player);
+        details.push(format!(
+            "{} scheduled effect(s) expired before {}'s next turn.",
+            turn_receipt.expired.len(),
+            self.rules
+                .character_template(&adventure.hero)
+                .expect("compiled hero exists")
+                .name
+        ));
+        self.push_log(
+            GameLogKindDto::Turn,
+            "Round",
+            &format!(
+                "The encounter advanced from round {} to {}.",
+                turn_receipt.before, turn_receipt.after
+            ),
+            details,
+        )
     }
 
     pub fn return_to_camp(

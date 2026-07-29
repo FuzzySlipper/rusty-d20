@@ -126,13 +126,38 @@ pub struct ImplementCandidate {
     pub range: u16,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 #[ts(tag = "kind", rename_all = "kebab-case")]
 pub enum ConditionClauseCandidate {
     ForbidMovement,
     ForbidActionTag { tag: D20Id },
     AttackPenalty { amount: i16 },
+}
+
+impl<'de> Deserialize<'de> for ConditionClauseCandidate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct NoConditionFields {}
+
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", rename_all = "kebab-case")]
+        enum StrictConditionClause {
+            ForbidMovement(NoConditionFields),
+            ForbidActionTag { tag: D20Id },
+            AttackPenalty { amount: i16 },
+        }
+
+        Ok(match StrictConditionClause::deserialize(deserializer)? {
+            StrictConditionClause::ForbidMovement(_) => Self::ForbidMovement,
+            StrictConditionClause::ForbidActionTag { tag } => Self::ForbidActionTag { tag },
+            StrictConditionClause::AttackPenalty { amount } => Self::AttackPenalty { amount },
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -214,7 +239,7 @@ pub struct ActionTargetCandidate {
     pub line_of_effect: ActionLineOfEffectCandidate,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 #[ts(tag = "kind", rename_all = "kebab-case")]
 pub enum ActionAttackCandidate {
@@ -227,6 +252,42 @@ pub enum ActionAttackCandidate {
     Implement {
         implement: D20Id,
     },
+}
+
+impl<'de> Deserialize<'de> for ActionAttackCandidate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+        enum StrictActionAttack {
+            Fixed {
+                ability: D20Id,
+                defense: D20Id,
+                damage: DamageCandidate,
+                range: u16,
+            },
+            Implement {
+                implement: D20Id,
+            },
+        }
+
+        Ok(match StrictActionAttack::deserialize(deserializer)? {
+            StrictActionAttack::Fixed {
+                ability,
+                defense,
+                damage,
+                range,
+            } => Self::Fixed {
+                ability,
+                defense,
+                damage,
+                range,
+            },
+            StrictActionAttack::Implement { implement } => Self::Implement { implement },
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -328,12 +389,31 @@ pub struct ItemInstanceCandidate {
     pub equipped: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 #[ts(tag = "kind", rename_all = "kebab-case")]
 pub enum EquipmentReferenceCandidate {
     Armor { armor: D20Id },
     Implement { implement: D20Id },
+}
+
+impl<'de> Deserialize<'de> for EquipmentReferenceCandidate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+        enum StrictEquipmentReference {
+            Armor { armor: D20Id },
+            Implement { implement: D20Id },
+        }
+
+        Ok(match StrictEquipmentReference::deserialize(deserializer)? {
+            StrictEquipmentReference::Armor { armor } => Self::Armor { armor },
+            StrictEquipmentReference::Implement { implement } => Self::Implement { implement },
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

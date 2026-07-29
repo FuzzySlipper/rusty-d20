@@ -7,6 +7,63 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { workspaceRoot } from '@nx/devkit';
 
 test.describe.serial('complete deterministic encounter outcomes', () => {
+  test('condition-forbidden opposition actions are filtered without a browser deadlock', async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    const host = await startIsolatedHost('legal-opposition');
+    const browserErrors: string[] = [];
+    page.on('pageerror', (error) => browserErrors.push(error.message));
+    page.on('console', (message) => {
+      if (message.type() === 'error') {
+        browserErrors.push(message.text());
+      }
+    });
+    try {
+      await page.goto(host.baseUrl);
+      await startAdventure(page, "The Warden's Gate");
+      await enterWardenEncounter(page);
+
+      for (let round = 0; round < 8; round += 1) {
+        await page.getByRole('button', { name: 'Disrupt', exact: true }).click();
+        await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
+        await expect(
+          page.getByRole('button', { name: 'Begin Iron Warden turn', exact: true }).first(),
+        ).toBeVisible();
+
+        const warden = page.locator('aui-character-status').nth(1);
+        const unsettled = warden.getByLabel('Active buffs').getByText(/^Unsettled/);
+        const isUnsettled = (await unsettled.count()) > 0 && (await unsettled.isVisible());
+
+        await page
+          .getByRole('button', { name: 'Begin Iron Warden turn', exact: true })
+          .first()
+          .click();
+        const preview = page.getByLabel('Authoritative action preview');
+        await expect(preview).toContainText('Iron Warden');
+        if (isUnsettled) {
+          await expect(preview).toContainText(/Longsword Strike|Precise Shot/);
+          await expect(preview).not.toContainText(/Pin In Place|Disrupt/);
+          await testInfo.attach('legal-opposition-after-unsettled.png', {
+            body: await page.screenshot({ fullPage: true }),
+            contentType: 'image/png',
+          });
+          await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
+          await expect(page.getByLabel('Encounter identity')).toContainText('Mara Venn acting');
+          expect(browserErrors).toEqual([]);
+          return;
+        }
+
+        await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
+        await expect(page.getByRole('button', { name: 'Disrupt', exact: true })).toBeVisible();
+      }
+
+      throw new Error('The deterministic browser sequence never applied Unsettled.');
+    } finally {
+      await host.stop();
+    }
+  });
+
   test('victory reward and the next authored encounter survive complete campaign reopen', async ({
     page,
     request,

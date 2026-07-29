@@ -587,6 +587,54 @@ fn compiler_rejects_strict_shape_duplicates_and_d20_quotas() {
 }
 
 #[test]
+fn tagged_candidate_variants_reject_unknown_fields_before_semantic_admission() {
+    assert!(serde_json::from_value::<ActionAttackCandidate>(json!({
+        "kind": "implement",
+        "implement": "training-blade",
+        "range": 8
+    }))
+    .is_err());
+    assert!(serde_json::from_value::<ConditionClauseCandidate>(json!({
+        "kind": "forbid-movement",
+        "tag": "control"
+    }))
+    .is_err());
+    assert!(
+        serde_json::from_value::<EquipmentReferenceCandidate>(json!({
+            "kind": "armor",
+            "armor": "chain",
+            "implement": "training-blade"
+        }))
+        .is_err()
+    );
+
+    let mut payload = serde_json::to_value(base_candidate()).unwrap();
+    payload["actions"][0]["attack"] = json!({
+        "kind": "implement",
+        "implement": "training-blade",
+        "range": 8
+    });
+    let malformed = admit_rule_package(RulePackageCandidate::new(
+        RuleDomainId::parse("rusty-d20").unwrap(),
+        RulePackageId::parse("unknown-variant-field").unwrap(),
+        RuleVersion::new(1).unwrap(),
+        vec![],
+        vec![],
+        vec![],
+        payload,
+    ))
+    .unwrap();
+    let D20CompileError::Diagnostics(report) = D20Ruleset::compile(vec![malformed]).unwrap_err()
+    else {
+        panic!("unknown tagged-variant fields must fail candidate admission");
+    };
+    assert!(report
+        .diagnostics()
+        .iter()
+        .any(|diagnostic| diagnostic.code() == "D20_INVALID_PAYLOAD"));
+}
+
+#[test]
 fn authored_adventure_failures_are_bounded_and_source_correlated() {
     let base = admitted_base();
     let dependency = RulePackageDependency::new(
