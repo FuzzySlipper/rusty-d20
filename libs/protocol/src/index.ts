@@ -1,5 +1,6 @@
 export * from './generated/api-types';
 
+import { D20_PROTOCOL_LIMITS } from './generated/api-types';
 import type {
   ActionDto,
   AdventureChoiceDto,
@@ -124,7 +125,11 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
   }
   const campaignValue = value['campaign'];
   const campaign = campaignValue === null ? null : decodeCampaign(campaignValue);
-  const availableAdventures = decodeArray(value['availableAdventures'], 16, decodeAdventureChoice);
+  const availableAdventures = decodeArray(
+    value['availableAdventures'],
+    D20_PROTOCOL_LIMITS.maxAvailableAdventures,
+    decodeAdventureChoice,
+  );
   const encounterValue = value['encounter'];
   const encounter = encounterValue === null ? null : decodeEncounter(encounterValue);
   if (
@@ -417,7 +422,7 @@ function decodeAdventureChoice(value: unknown): AdventureChoiceDto | undefined {
   if (!hasExactKeys(value, ['details', 'id', 'summary', 'title'])) {
     return undefined;
   }
-  const details = decodeStrings(value['details'], 32);
+  const details = decodeStrings(value['details'], D20_PROTOCOL_LIMITS.maxAdventureDetails);
   return typeof value['id'] === 'string' &&
     value['id'].length > 0 &&
     typeof value['title'] === 'string' &&

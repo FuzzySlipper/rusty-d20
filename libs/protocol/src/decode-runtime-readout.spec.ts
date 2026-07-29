@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeGameSnapshot, decodeRuntimeReadout } from './index';
+import { D20_PROTOCOL_LIMITS, decodeGameSnapshot, decodeRuntimeReadout } from './index';
 
 const validReadout = {
   engineRevision: 'fb608e323a8b44a55195f5720101224ff37fd5db',
@@ -70,6 +70,45 @@ describe('decodeGameSnapshot', () => {
     expect(decodeGameSnapshot({ ...empty, availableAdventures: [] })).toMatchObject({
       ok: false,
     });
+  });
+
+  it('uses Rust-owned exact adventure projection limits', () => {
+    const choice = empty.availableAdventures[0];
+    const exactDetails = {
+      ...choice,
+      details: Array.from(
+        { length: D20_PROTOCOL_LIMITS.maxAdventureDetails },
+        (_, index) => `Detail ${index}`,
+      ),
+    };
+    const exactChoices = Array.from(
+      { length: D20_PROTOCOL_LIMITS.maxAvailableAdventures },
+      (_, index) => ({
+        ...exactDetails,
+        id: `adventure-${index}`,
+      }),
+    );
+
+    expect(
+      decodeGameSnapshot({ ...empty, availableAdventures: exactChoices }),
+    ).toMatchObject({ ok: true });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        availableAdventures: [...exactChoices, { ...exactDetails, id: 'one-over' }],
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        availableAdventures: [
+          {
+            ...exactDetails,
+            details: [...exactDetails.details, 'One over'],
+          },
+        ],
+      }),
+    ).toMatchObject({ ok: false });
   });
 
   it('strictly validates campaign phase ownership', () => {

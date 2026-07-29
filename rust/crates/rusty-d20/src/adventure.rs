@@ -3,11 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use gameplay_rules::{decode_canonical_rule_package, AdmittedRulePackage, RulePackageIdentity};
 use serde::Deserialize;
 
-use crate::{D20Id, D20RulesCandidate, D20Ruleset};
+use crate::{D20Id, D20RulesCandidate, D20Ruleset, MAX_D20_ADVENTURE_ENTRIES};
 
 const AUTHORED_CATALOG_SCHEMA_VERSION: u32 = 1;
 const MAX_AUTHORED_CATALOG_BYTES: usize = 2_000_000;
 const MAX_AUTHORED_CATALOG_PACKAGES: usize = 64;
+pub const MAX_D20_SELECTABLE_ADVENTURES: usize = 16;
 const BUILTIN_AUTHORED_CATALOG: &str =
     include_str!("../../../../rules/artifacts/starter/catalog.json");
 
@@ -63,6 +64,7 @@ impl AuthoredAdventureCatalog {
         let mut packages = BTreeMap::new();
         let mut adventures = BTreeMap::new();
         let mut default_adventure = None;
+        let mut selectable_adventures = 0_usize;
         for canonical in artifact.packages {
             let package = decode_canonical_rule_package(canonical.as_bytes())
                 .map_err(|error| error.to_string())?;
@@ -81,6 +83,24 @@ impl AuthoredAdventureCatalog {
             }
             for adventure in candidate.adventures {
                 let id = adventure.id.clone();
+                if adventure.start_details.len() > MAX_D20_ADVENTURE_ENTRIES {
+                    return Err(format!(
+                        "authored adventure {id} startDetails contains {} entries; maximum is \
+                         {MAX_D20_ADVENTURE_ENTRIES}",
+                        adventure.start_details.len()
+                    ));
+                }
+                if adventure.selectable {
+                    selectable_adventures = selectable_adventures
+                        .checked_add(1)
+                        .expect("catalog package and definition quotas fit usize");
+                    if selectable_adventures > MAX_D20_SELECTABLE_ADVENTURES {
+                        return Err(format!(
+                            "authored catalog contains {selectable_adventures} selectable \
+                             adventures; maximum is {MAX_D20_SELECTABLE_ADVENTURES}"
+                        ));
+                    }
+                }
                 if adventures
                     .insert(
                         id.clone(),
@@ -103,6 +123,9 @@ impl AuthoredAdventureCatalog {
         }
         let default_adventure = default_adventure
             .ok_or_else(|| "authored catalog has no default adventure".to_owned())?;
+        if selectable_adventures == 0 {
+            return Err("authored catalog has no selectable adventures".to_owned());
+        }
         Ok(Self {
             packages,
             adventures,
@@ -189,7 +212,12 @@ impl AuthoredAdventureCatalog {
 
 #[cfg(test)]
 mod tests {
+    use gameplay_rules::{encode_rule_package, RuleDomainId, RulePackageId, RuleVersion};
+
     use super::*;
+    use crate::{
+        admit_d20_candidate, AdventureCandidate, D20PackageEnvelope, D20_CANDIDATE_SCHEMA_VERSION,
+    };
 
     #[test]
     fn builtin_catalog_compiles_selectable_paths_and_content_only_probe() {
@@ -219,5 +247,110 @@ mod tests {
         assert!(ember
             .adventure(&D20Id::parse("embers-wake").unwrap())
             .is_some());
+    }
+
+    #[test]
+    fn catalog_projection_quotas_accept_exact_limits_and_reject_one_over() {
+        let exact = catalog_json(vec![package(
+            "exact",
+            adventures(
+                0,
+                MAX_D20_SELECTABLE_ADVENTURES,
+                true,
+                MAX_D20_ADVENTURE_ENTRIES,
+            ),
+        )]);
+        let catalog = AuthoredAdventureCatalog::decode(&exact).unwrap();
+        assert_eq!(
+            catalog
+                .adventures()
+                .filter(|(_, entry)| entry.selectable)
+                .count(),
+            MAX_D20_SELECTABLE_ADVENTURES
+        );
+        assert!(catalog
+            .adventures()
+            .all(|(_, entry)| entry.details.len() == MAX_D20_ADVENTURE_ENTRIES));
+
+        let too_many_choices = catalog_json(vec![
+            package(
+                "choices-a",
+                adventures(0, MAX_D20_SELECTABLE_ADVENTURES, true, 1),
+            ),
+            package(
+                "choices-b",
+                adventures(MAX_D20_SELECTABLE_ADVENTURES, 1, false, 1),
+            ),
+        ]);
+        assert!(AuthoredAdventureCatalog::decode(&too_many_choices)
+            .unwrap_err()
+            .contains(&format!(
+                "{} selectable adventures; maximum is {MAX_D20_SELECTABLE_ADVENTURES}",
+                MAX_D20_SELECTABLE_ADVENTURES + 1
+            )));
+
+        let too_many_details = catalog_json(vec![package(
+            "details",
+            adventures(0, 1, true, MAX_D20_ADVENTURE_ENTRIES + 1),
+        )]);
+        assert!(AuthoredAdventureCatalog::decode(&too_many_details)
+            .unwrap_err()
+            .contains(&format!(
+                "startDetails contains {} entries; maximum is {MAX_D20_ADVENTURE_ENTRIES}",
+                MAX_D20_ADVENTURE_ENTRIES + 1
+            )));
+    }
+
+    fn adventures(
+        start: usize,
+        count: usize,
+        first_is_default: bool,
+        details: usize,
+    ) -> Vec<AdventureCandidate> {
+        (start..start + count)
+            .map(|index| AdventureCandidate {
+                id: D20Id::parse(format!("adventure-{index}")).unwrap(),
+                title: format!("Adventure {index}"),
+                default: first_is_default && index == start,
+                selectable: true,
+                hero: D20Id::parse("hero").unwrap(),
+                characters: Vec::new(),
+                camp_storage: D20Id::parse("camp").unwrap(),
+                storage: Vec::new(),
+                items: Vec::new(),
+                encounters: Vec::new(),
+                start_source: "Catalog".to_owned(),
+                start_text: "Choose a path.".to_owned(),
+                start_details: vec!["Detail".to_owned(); details],
+            })
+            .collect()
+    }
+
+    fn package(name: &str, adventures: Vec<AdventureCandidate>) -> String {
+        let admitted = admit_d20_candidate(
+            D20PackageEnvelope {
+                domain: RuleDomainId::parse("rusty-d20").unwrap(),
+                package: RulePackageId::parse(name).unwrap(),
+                version: RuleVersion::new(1).unwrap(),
+                dependencies: Vec::new(),
+                sources: Vec::new(),
+                provenance: Vec::new(),
+            },
+            D20RulesCandidate {
+                schema_version: D20_CANDIDATE_SCHEMA_VERSION,
+                adventures,
+                ..D20RulesCandidate::default()
+            },
+        )
+        .unwrap();
+        String::from_utf8(encode_rule_package(&admitted)).unwrap()
+    }
+
+    fn catalog_json(packages: Vec<String>) -> String {
+        serde_json::json!({
+            "schemaVersion": AUTHORED_CATALOG_SCHEMA_VERSION,
+            "packages": packages,
+        })
+        .to_string()
     }
 }
