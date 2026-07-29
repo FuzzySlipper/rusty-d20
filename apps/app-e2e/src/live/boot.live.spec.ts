@@ -4,7 +4,7 @@ liveScenario(
   'Rust-owned authored encounter live evidence @live',
   async ({ page, collector, liveBaseUrl }) => {
     collector.addNonClaim(
-      'This live scenario certifies the Warden path landing, Engine-backed camp loadout, and one complete player/opposition round. The aggregate real-host browser gate separately proves Warden victory/defeat and the full selectable Ember path through fresh-process persistence; broader navigation remains later work.',
+      'This live scenario certifies the Warden path landing, Engine-backed camp loadout, Rust-owned first-person grid traversal, an authored landmark, encounter activation at its dungeon trigger, and one complete player/opposition round. Tactical overhead combat remains a later milestone.',
     );
 
     await page.goto(liveBaseUrl);
@@ -33,8 +33,32 @@ liveScenario(
     } else if (await page.getByRole('button', { name: 'Continue Adventure' }).isVisible()) {
       await page.getByRole('button', { name: 'Continue Adventure' }).click();
     }
-    if (await page.getByRole('button', { name: 'Enter The Iron Warden' }).isVisible()) {
-      await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
+    if (await page.getByRole('button', { name: 'Enter the dungeon' }).isVisible()) {
+      await page.getByRole('button', { name: 'Enter the dungeon' }).click();
+      await expect(
+        page
+          .getByRole('region', { name: 'Dungeon exploration' })
+          .getByRole('heading', { name: "Warden's Gate Pass" })
+          .first(),
+      ).toBeVisible();
+      await collector.milestone('first-person dungeon entry', {
+        screenshot: true,
+        layerSnapshot: {
+          viewport: await page.getByRole('img').getAttribute('aria-label'),
+          status: await page.getByLabel('Party status').innerText(),
+        },
+      });
+      for (let step = 0; step < 4; step += 1) {
+        await page.getByRole('button', { name: '↑ Forward' }).click();
+      }
+      await expect(page.getByRole('heading', { name: 'Silent murder holes' })).toBeVisible();
+      await page.getByRole('button', { name: 'Inspect' }).click();
+      await collector.milestone('authored dungeon landmark inspected', {
+        screenshot: true,
+      });
+      for (let step = 0; step < 4; step += 1) {
+        await page.getByRole('button', { name: '↑ Forward' }).click();
+      }
     }
     await expect(page.locator('aui-character-status')).toHaveCount(2);
     await page.getByRole('button', { name: 'Longsword Strike' }).click();

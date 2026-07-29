@@ -4,6 +4,8 @@ export const D20_PROTOCOL_LIMITS = Object.freeze({
 maxAvailableAdventures: 16,
 maxAdventureDetails: 64,
 maxCampaignEncounters: 64,
+maxDungeonCells: 576,
+maxDungeonViewDepth: 3,
 } as const);
 
 export type RuntimeStatusDto = "ready";
@@ -30,7 +32,19 @@ export type EncounterTurnOwnerDto = "player" | "opposition";
 
 export type EncounterDto = { turn: number, nextRoll: number, playerId: number, turnOwner: EncounterTurnOwnerDto | null, characters: Array<CharacterDto>, actions: Array<ActionDto>, pendingAction: PendingActionDto | null, log: Array<GameLogEntryDto>, };
 
-export type CampaignPhaseDto = "camp" | "encounter" | "outcome";
+export type CampaignPhaseDto = "camp" | "exploration" | "encounter" | "outcome";
+
+export type ExplorationFacingDto = "north" | "east" | "south" | "west";
+
+export type ExplorationCommandKindDto = "turn-left" | "turn-right" | "step-forward" | "step-backward" | "interact";
+
+export type ExplorationDepthDto = { depth: number, frontBlocked: boolean, leftBlocked: boolean, rightBlocked: boolean, };
+
+export type DiscoveredCellDto = { x: number, y: number, };
+
+export type ExplorationLandmarkDto = { id: string, title: string, text: string, inspected: boolean, };
+
+export type ExplorationDto = { dungeonTitle: string, wallStyle: string, width: number, height: number, x: number, y: number, facing: ExplorationFacingDto, canStepForward: boolean, canStepBackward: boolean, view: Array<ExplorationDepthDto>, discoveredCells: Array<DiscoveredCellDto>, landmark: ExplorationLandmarkDto | null, };
 
 export type EncounterOutcomeKindDto = "victory" | "defeat";
 
@@ -56,7 +70,7 @@ export type LoadoutDto = { ownerId: number, stashOwnerId: number, inventorySlots
 
 export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, hero: CharacterDto, loadout: LoadoutDto, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, latestOutcome: CampaignOutcomeDto | null, completedEncounters: Array<CompletedEncounterDto>, };
 
-export type GameSnapshotDto = { product: string, version: string, engineRevision: string, rulesetFingerprint: string, revision: number, saved: boolean, availableAdventures: Array<AdventureChoiceDto>, campaign: CampaignDto | null, encounter: EncounterDto | null, };
+export type GameSnapshotDto = { product: string, version: string, engineRevision: string, rulesetFingerprint: string, revision: number, saved: boolean, availableAdventures: Array<AdventureChoiceDto>, campaign: CampaignDto | null, exploration: ExplorationDto | null, encounter: EncounterDto | null, };
 
 export type SaveStateDto = "empty" | "ready" | "recovery-required";
 
@@ -69,6 +83,8 @@ export type ExpectedRevisionDto = { expectedRevision: number, };
 export type NewAdventureRequestDto = { expectedRevision: number, adventureId: string, };
 
 export type EnterEncounterRequestDto = { expectedRevision: number, encounterId: string, };
+
+export type ExplorationCommandRequestDto = { expectedRevision: number, command: ExplorationCommandKindDto, };
 
 export type EquipItemRequestDto = { expectedRevision: number, itemId: number, slotId: string, };
 

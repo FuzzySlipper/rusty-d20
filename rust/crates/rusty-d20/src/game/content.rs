@@ -297,19 +297,23 @@ pub(super) fn validate_campaign_vitality(
     let player_vitality = saved_vitality(session, player)?;
     let opponent_vitality = saved_vitality(session, opponent)?;
     let valid = match (campaign.phase, campaign.outcome) {
-        (CampaignPhase::Encounter, None) | (CampaignPhase::Camp, None) => {
+        (CampaignPhase::Encounter, None)
+        | (CampaignPhase::Camp | CampaignPhase::Exploration, None) => {
             player_vitality > 0 && opponent_vitality > 0
         }
-        (CampaignPhase::Outcome | CampaignPhase::Camp, Some(EncounterOutcome::Victory)) => {
-            player_vitality > 0 && opponent_vitality == 0
-        }
+        (
+            CampaignPhase::Outcome | CampaignPhase::Camp | CampaignPhase::Exploration,
+            Some(EncounterOutcome::Victory),
+        ) => player_vitality > 0 && opponent_vitality == 0,
         (CampaignPhase::Outcome, Some(EncounterOutcome::Defeat)) => {
             player_vitality == 0 && opponent_vitality > 0
         }
         (CampaignPhase::Camp, Some(EncounterOutcome::Defeat)) => {
             player_vitality > 0 && opponent_vitality > 0
         }
-        (CampaignPhase::Encounter, Some(_)) | (CampaignPhase::Outcome, None) => false,
+        (CampaignPhase::Exploration, Some(EncounterOutcome::Defeat))
+        | (CampaignPhase::Encounter, Some(_))
+        | (CampaignPhase::Outcome, None) => false,
     };
     if !valid {
         return Err(GameRuntimeError::InvalidSave(format!(
@@ -376,8 +380,12 @@ pub(super) fn migrate_legacy_campaign(
                 outcome: EncounterOutcome::Defeat,
             });
         }
-        CampaignPhase::Camp if player_vitality > 0 && opponent_vitality > 0 => {}
-        CampaignPhase::Encounter | CampaignPhase::Camp | CampaignPhase::Outcome => {
+        CampaignPhase::Camp | CampaignPhase::Exploration
+            if player_vitality > 0 && opponent_vitality > 0 => {}
+        CampaignPhase::Encounter
+        | CampaignPhase::Camp
+        | CampaignPhase::Exploration
+        | CampaignPhase::Outcome => {
             return Err(GameRuntimeError::InvalidSave(format!(
                 "legacy campaign has an impossible phase/vitality combination: player={player_vitality}, opponent={opponent_vitality}"
             )));

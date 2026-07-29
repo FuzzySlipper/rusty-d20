@@ -30,6 +30,7 @@ export interface GameSnapshotView {
   readonly saved: boolean;
   readonly availableAdventures: GameSnapshotDto['availableAdventures'];
   readonly campaign: CampaignView | null;
+  readonly exploration: GameSnapshotDto['exploration'];
   readonly encounter: EncounterView | null;
 }
 
@@ -81,6 +82,7 @@ export function projectGameSnapshot(snapshot: GameSnapshotDto): GameSnapshotView
     saved: snapshot.saved,
     availableAdventures: snapshot.availableAdventures,
     campaign: snapshot.campaign === null ? null : projectCampaign(snapshot.campaign),
+    exploration: snapshot.exploration,
     encounter: snapshot.encounter === null ? null : projectEncounter(snapshot.encounter),
   };
 }

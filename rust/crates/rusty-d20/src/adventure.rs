@@ -216,7 +216,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        admit_d20_candidate, AdventureCandidate, D20PackageEnvelope, D20_CANDIDATE_SCHEMA_VERSION,
+        admit_d20_candidate, AdventureCandidate, D20PackageEnvelope, DungeonCandidate,
+        DungeonEncounterCandidate, DungeonFacingCandidate, D20_CANDIDATE_SCHEMA_VERSION,
     };
 
     #[test]
@@ -319,6 +320,26 @@ mod tests {
                 storage: Vec::new(),
                 items: Vec::new(),
                 encounters: Vec::new(),
+                dungeon: DungeonCandidate {
+                    title: "Catalog dungeon".to_owned(),
+                    wall_style: D20Id::parse("catalog").unwrap(),
+                    width: 5,
+                    height: 5,
+                    rows: vec![
+                        "#####".to_owned(),
+                        "#...#".to_owned(),
+                        "#.#.#".to_owned(),
+                        "#...#".to_owned(),
+                        "#####".to_owned(),
+                    ],
+                    start_x: 1,
+                    start_y: 1,
+                    checkpoint_x: 1,
+                    checkpoint_y: 1,
+                    start_facing: DungeonFacingCandidate::East,
+                    encounters: Vec::<DungeonEncounterCandidate>::new(),
+                    landmarks: Vec::new(),
+                },
                 start_source: "Catalog".to_owned(),
                 start_text: "Choose a path.".to_owned(),
                 start_details: vec!["Detail".to_owned(); details],

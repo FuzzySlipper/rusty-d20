@@ -9,6 +9,7 @@ import {
 import { browserHttp } from '@rusty-d20/platform';
 import type {
   ClassifiedError,
+  ExplorationCommandKindDto,
   GameSnapshotDto,
   Result,
   SaveStatusDto,
@@ -101,9 +102,13 @@ export class SessionStore {
     );
   }
 
-  async enterEncounter(encounterId: string): Promise<void> {
+  async beginExploration(): Promise<void> {
+    await this.mutate((expectedRevision) => this.transport.beginExploration(expectedRevision));
+  }
+
+  async explorationCommand(command: ExplorationCommandKindDto): Promise<void> {
     await this.mutate((expectedRevision) =>
-      this.transport.enterEncounter({ expectedRevision, encounterId }),
+      this.transport.explorationCommand({ expectedRevision, command }),
     );
   }
 

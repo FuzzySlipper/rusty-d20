@@ -71,6 +71,32 @@ These decisions are recorded in
 [ADR 0001](adr/0001-ui-donor-and-real-rust-shell.md) and
 `template-manifest.json`.
 
+## Ruleweaver game translation references
+
+The Gold Box expansion was planned against two local, separately owned
+repositories:
+
+- `FuzzySlipper/ruleweaver` at
+  `04ef26d0eef1ba478a2c39b78cca61fe82b15be5`
+  (`2026-05-19T04:04:51-07:00`). The bounded scenario candidates reviewed for
+  later translation are `content/scenarios/goblin-ambush.json` and
+  `content/scenarios/kobold-warren.json`; the larger class, action, equipment,
+  and creature catalogs remain source material, not automatic runtime input.
+- `FuzzySlipper/asha-d20-fantasy` at
+  `e2bcc32346e70555b59a10034d8621118d53a27c`
+  (`2026-07-26T11:25:50-07:00`). The useful prior translation surfaces are
+  `rulesets/ruleweaver-tactics`,
+  `content-packs/ruleweaver-foundation`, and
+  `play-bundles/ruleweaver-foundation.ts`.
+
+This exploration milestone copies no Ruleweaver or Asha content into canonical
+artifacts. It introduces original Warden's Gate and Ember's Wake dungeon grids
+to prove the owning Rust contract first. Later content milestones must select a
+bounded source set, record exact paths and any licensing disposition, translate
+meaning into Rusty D20's authoring contract, and regenerate canonical
+fingerprints. Neither local repository becomes a runtime dependency or a
+sibling path fallback.
+
 ## GM7 product compositions
 
 The interactive reference slice resolves its selected adventure from checked
@@ -125,5 +151,16 @@ exactly-once reward consequences. Save identity, malformed-save recovery, and
 guarded reset are host/product policy. No Engine mechanism, generic campaign
 graph, fixture-driven production path, or second presentation authority was
 added. Character status, hotbar, combat log, inventory, and equipment are real
-consumers; compass and minimap remain explicitly unconnected until navigation
-facts exist.
+consumers.
+
+## Gold Box exploration disposition
+
+The exploration foundation keeps the Engine and UI donor pins unchanged.
+Warden's Gate and Ember's Wake now include original bounded dungeon topology,
+encounter placements, and landmarks in their existing authored packages. Rust
+owns semantic admission, navigation state, collision, discovery, interaction,
+trigger activation, persistence, and projection. The retained compass and
+minimap are now connected only to those Rust-projected facts, while the new
+renderer corridor remains product-neutral presentation. No Engine mechanism,
+Ruleweaver bulk import, Asha runtime, fixture transport, browser rules
+evaluator, or direct browser encounter command was introduced.

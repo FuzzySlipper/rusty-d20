@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use core_ids::EntityId;
 use entity_state::ComponentAccessError;
@@ -16,12 +16,12 @@ use crate::{
     AbilityScore, ActionPreview, ActionResource, ActionResourcesComponent, AdventureDefinition,
     AffinitySeed, ApplyActionRequest, ArmorItemSeed, CharacterAffinityKindDefinition,
     CharacterSeed, CharacterTemplateDefinition, D20CompileError, D20Id, D20Ruleset, D20Session,
-    D20SessionError, DamageAffinity, EncounterDefinition, InventorySeed, ItemInstanceDefinition,
-    ItemRarityDefinition, ReactionReceipt, ScheduledEffectsComponent, SessionSaveError,
-    StorageSeed, ENGINE_REVISION,
+    D20SessionError, DamageAffinity, DungeonFacingDefinition, EncounterDefinition, InventorySeed,
+    ItemInstanceDefinition, ItemRarityDefinition, ReactionReceipt, ScheduledEffectsComponent,
+    SessionSaveError, StorageSeed, ENGINE_REVISION,
 };
 
-const GAME_SAVE_SCHEMA_VERSION: u32 = 6;
+const GAME_SAVE_SCHEMA_VERSION: u32 = 7;
 const MAX_LOG_ENTRIES: usize = 64;
 const MAX_LOG_DETAILS: usize = 32;
 const MAX_LOG_SOURCE_BYTES: usize = 128;
@@ -31,6 +31,7 @@ const MAX_GAME_SAVE_BYTES: usize = 1_000_000;
 
 mod content;
 mod dto;
+mod exploration;
 mod persistence;
 mod projection;
 
@@ -57,6 +58,7 @@ struct RestoreData {
 #[serde(rename_all = "kebab-case")]
 enum CampaignPhase {
     Camp,
+    Exploration,
     Encounter,
     Outcome,
 }
@@ -82,6 +84,22 @@ struct CompletedEncounter {
     outcome: EncounterOutcome,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct DungeonPosition {
+    x: u16,
+    y: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ExplorationState {
+    position: DungeonPosition,
+    facing: DungeonFacingDefinition,
+    discovered: BTreeSet<DungeonPosition>,
+    inspected_landmarks: BTreeSet<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CampaignState {
     phase: CampaignPhase,
@@ -90,6 +108,7 @@ struct CampaignState {
     turn_owner: Option<EncounterTurnOwner>,
     outcome: Option<EncounterOutcome>,
     completed_encounters: Vec<CompletedEncounter>,
+    exploration: Option<ExplorationState>,
 }
 
 #[derive(Debug, Clone)]
@@ -179,6 +198,21 @@ impl GameRuntime {
             }
             _ => None,
         };
+        let exploration = match (&self.campaign, session) {
+            (Some(campaign), Some(_))
+                if matches!(
+                    campaign.phase,
+                    CampaignPhase::Exploration | CampaignPhase::Encounter | CampaignPhase::Outcome
+                ) =>
+            {
+                campaign
+                    .exploration
+                    .as_ref()
+                    .map(|state| self.project_exploration(state))
+                    .transpose()?
+            }
+            _ => None,
+        };
         Ok(GameSnapshotDto {
             product: "Rusty D20".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -198,6 +232,7 @@ impl GameRuntime {
                 })
                 .collect(),
             campaign,
+            exploration,
             encounter,
         })
     }
@@ -311,6 +346,7 @@ impl GameRuntime {
             turn_owner: None,
             outcome: None,
             completed_encounters: Vec::new(),
+            exploration: None,
         });
         self.session = Some(session);
         self.pending = None;
@@ -357,20 +393,44 @@ impl GameRuntime {
             .encounter(&encounter_id)
             .expect("compiled adventure encounter exists")
             .clone();
-        if !encounter.available_from_camp {
+        let campaign = self
+            .campaign
+            .as_ref()
+            .ok_or(GameRuntimeError::NoEncounter)?;
+        if !matches!(
+            campaign.phase,
+            CampaignPhase::Camp | CampaignPhase::Exploration
+        ) {
+            return Err(GameRuntimeError::InvalidCommand(
+                "an encounter can only begin from camp or an authored dungeon trigger".to_owned(),
+            ));
+        }
+        if campaign.phase == CampaignPhase::Camp && !encounter.available_from_camp {
             return Err(GameRuntimeError::InvalidCommand(format!(
                 "encounter {} is not available from camp",
                 request.encounter_id
             )));
         }
-        let campaign = self
-            .campaign
-            .as_ref()
-            .ok_or(GameRuntimeError::NoEncounter)?;
-        if campaign.phase != CampaignPhase::Camp {
-            return Err(GameRuntimeError::InvalidCommand(
-                "an encounter can only be entered from camp".to_owned(),
-            ));
+        if campaign.phase == CampaignPhase::Exploration {
+            let position = campaign
+                .exploration
+                .as_ref()
+                .ok_or_else(|| {
+                    GameRuntimeError::InvalidState(
+                        "exploration phase is missing its position".to_owned(),
+                    )
+                })?
+                .position;
+            if !adventure.dungeon.encounters.iter().any(|trigger| {
+                trigger.encounter == encounter.id
+                    && trigger.x == position.x
+                    && trigger.y == position.y
+            }) {
+                return Err(GameRuntimeError::InvalidCommand(format!(
+                    "encounter {} is not triggered at the current dungeon cell",
+                    encounter.id
+                )));
+            }
         }
         let next = next_available_encounter_definition(&self.rules, &adventure, campaign)?
             .ok_or_else(|| {
@@ -1008,18 +1068,47 @@ impl GameRuntime {
                 details.push(format!("{reward} remains in canonical camp storage."));
             }
         }
+        let campaign = self
+            .campaign
+            .as_ref()
+            .ok_or(GameRuntimeError::NoEncounter)?;
+        let continue_exploring = outcome == EncounterOutcome::Victory
+            && campaign.exploration.is_some()
+            && next_available_encounter_definition(&self.rules, &adventure, campaign)?.is_some();
         {
             let campaign = self.campaign_mut()?;
-            campaign.phase = CampaignPhase::Camp;
+            campaign.phase = if continue_exploring {
+                CampaignPhase::Exploration
+            } else {
+                CampaignPhase::Camp
+            };
             campaign.active_encounter_id = None;
             campaign.turn_owner = None;
+            if !continue_exploring {
+                if let Some(exploration) = campaign.exploration.as_mut() {
+                    exploration.position = DungeonPosition {
+                        x: adventure.dungeon.checkpoint_x,
+                        y: adventure.dungeon.checkpoint_y,
+                    };
+                    exploration.facing = adventure.dungeon.start_facing;
+                    exploration.discovered.insert(exploration.position);
+                }
+            }
         }
         self.bump_revision()?;
         self.saved_revision = None;
         self.push_log(
             GameLogKindDto::System,
-            "Camp",
-            "The encounter consequence is now part of the durable camp state.",
+            if continue_exploring {
+                "Expedition"
+            } else {
+                "Camp"
+            },
+            if continue_exploring {
+                "The party returns to the exact dungeon location."
+            } else {
+                "The encounter consequence is now part of the durable camp state."
+            },
             details,
         )?;
         self.snapshot()
@@ -1216,7 +1305,7 @@ impl GameRuntime {
     fn ensure_encounter_phase(&self) -> Result<(), GameRuntimeError> {
         match self.campaign.as_ref().map(|campaign| campaign.phase) {
             Some(CampaignPhase::Encounter) => Ok(()),
-            Some(CampaignPhase::Camp | CampaignPhase::Outcome) => {
+            Some(CampaignPhase::Camp | CampaignPhase::Exploration | CampaignPhase::Outcome) => {
                 Err(GameRuntimeError::WrongPhase(
                     "this command is only available during an active encounter".to_owned(),
                 ))
@@ -1228,11 +1317,11 @@ impl GameRuntime {
     fn ensure_camp_phase(&self) -> Result<(), GameRuntimeError> {
         match self.campaign.as_ref().map(|campaign| campaign.phase) {
             Some(CampaignPhase::Camp) => Ok(()),
-            Some(CampaignPhase::Encounter | CampaignPhase::Outcome) => {
-                Err(GameRuntimeError::WrongPhase(
-                    "loadout changes are only available at camp".to_owned(),
-                ))
-            }
+            Some(
+                CampaignPhase::Exploration | CampaignPhase::Encounter | CampaignPhase::Outcome,
+            ) => Err(GameRuntimeError::WrongPhase(
+                "loadout changes are only available at camp".to_owned(),
+            )),
             None => Err(GameRuntimeError::NoEncounter),
         }
     }
@@ -1240,7 +1329,7 @@ impl GameRuntime {
     fn ensure_outcome_phase(&self) -> Result<(), GameRuntimeError> {
         match self.campaign.as_ref().map(|campaign| campaign.phase) {
             Some(CampaignPhase::Outcome) => Ok(()),
-            Some(CampaignPhase::Camp | CampaignPhase::Encounter) => {
+            Some(CampaignPhase::Camp | CampaignPhase::Exploration | CampaignPhase::Encounter) => {
                 Err(GameRuntimeError::WrongPhase(
                     "return to camp is only available after an encounter outcome".to_owned(),
                 ))

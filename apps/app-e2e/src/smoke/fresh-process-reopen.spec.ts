@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { workspaceRoot } from '@nx/devkit';
 
 test('pending saves reject atomically and completed state survives a fresh Rust host', async ({
@@ -57,7 +57,7 @@ test('pending saves reject atomically and completed state survives a fresh Rust 
     ).toBe(204);
     const baselineFile = await readFile(savePath);
 
-    await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
+    await enterWardenEncounter(page);
     await page.getByRole('button', { name: 'Precise Shot' }).click();
     await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
     await expect(page.getByText('Resolve the pending action before saving.')).toBeVisible();
@@ -77,7 +77,7 @@ test('pending saves reject atomically and completed state survives a fresh Rust 
     await expect(
       page.getByLabel('Equipment').getByRole('button', { name: 'Off Hand: Spare buckler' }),
     ).toBeVisible();
-    await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
+    await enterWardenEncounter(page);
     await expect(page.getByLabel('Encounter identity')).toContainText('Armor defense 16');
     await page.getByRole('button', { name: 'Longsword Strike' }).click();
     await page.getByRole('button', { name: /Parry · 1 Guard/ }).click();
@@ -105,7 +105,7 @@ test('pending saves reject atomically and completed state survives a fresh Rust 
     expect(await sessionSnapshot(request, baseUrl)).toEqual(baseline);
     await page.goto(baseUrl);
     await page.getByRole('button', { name: 'Continue Adventure' }).click();
-    await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
+    await enterWardenEncounter(page);
     await page.getByRole('button', { name: 'Precise Shot' }).click();
     await page.getByRole('button', { name: 'Resolve deterministic roll' }).click();
     await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -153,6 +153,14 @@ interface GameCharacter {
     maximum: number;
   }>;
   effects: string[];
+}
+
+async function enterWardenEncounter(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Enter the dungeon' }).click();
+  for (let step = 0; step < 8; step += 1) {
+    await page.getByRole('button', { name: '↑ Forward' }).click();
+  }
+  await expect(page.getByLabel('Encounter identity')).toContainText('Mara Venn acting');
 }
 
 interface GameSnapshot {

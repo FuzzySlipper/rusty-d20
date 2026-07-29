@@ -36,6 +36,135 @@ fn defense_value(loadout: &LoadoutDto, defense: &str) -> i64 {
 }
 
 #[test]
+fn dungeon_exploration_is_authoritative_atomic_persistent_and_triggers_encounters() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    let camp = runtime.new_adventure(0).unwrap();
+
+    let before_stale = runtime.snapshot().unwrap();
+    assert!(matches!(
+        runtime.begin_exploration(0),
+        Err(GameRuntimeError::StaleCommand(_))
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), before_stale);
+
+    let mut exploring = runtime.begin_exploration(camp.revision).unwrap();
+    assert_eq!(
+        exploring.campaign.as_ref().unwrap().phase,
+        CampaignPhaseDto::Exploration
+    );
+    let initial = exploring.exploration.as_ref().unwrap();
+    assert_eq!((initial.x, initial.y), (1, 1));
+    assert_eq!(initial.facing, ExplorationFacingDto::East);
+    assert_eq!(
+        initial
+            .discovered_cells
+            .iter()
+            .map(|cell| (cell.x, cell.y))
+            .collect::<Vec<_>>(),
+        vec![(1, 1)]
+    );
+
+    exploring = runtime
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::TurnLeft,
+        })
+        .unwrap();
+    assert_eq!(
+        exploring.exploration.as_ref().unwrap().facing,
+        ExplorationFacingDto::North
+    );
+    let before_wall = runtime.snapshot().unwrap();
+    assert!(matches!(
+        runtime.exploration_command(ExplorationCommandRequestDto {
+            expected_revision: before_wall.revision,
+            command: ExplorationCommandKindDto::StepForward,
+        }),
+        Err(GameRuntimeError::InvalidCommand(message))
+            if message.contains("solid dungeon stone")
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), before_wall);
+
+    exploring = runtime
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::TurnRight,
+        })
+        .unwrap();
+    for expected_x in 2..=5 {
+        exploring = runtime
+            .exploration_command(ExplorationCommandRequestDto {
+                expected_revision: exploring.revision,
+                command: ExplorationCommandKindDto::StepForward,
+            })
+            .unwrap();
+        assert_eq!(
+            exploring.exploration.as_ref().map(|state| state.x),
+            Some(expected_x)
+        );
+    }
+    assert_eq!(
+        exploring
+            .exploration
+            .as_ref()
+            .and_then(|state| state.landmark.as_ref())
+            .map(|landmark| landmark.id.as_str()),
+        Some("gate-murder-holes")
+    );
+    exploring = runtime
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::Interact,
+        })
+        .unwrap();
+    assert!(exploring
+        .exploration
+        .as_ref()
+        .and_then(|state| state.landmark.as_ref())
+        .is_some_and(|landmark| landmark.inspected));
+
+    let exploration_save = runtime.encode_save().unwrap();
+    let mut reopened = GameRuntime::decode_save(&exploration_save).unwrap();
+    assert_eq!(reopened.encode_save().unwrap(), exploration_save);
+    exploring = reopened.snapshot().unwrap();
+
+    for expected_x in 6..=8 {
+        exploring = reopened
+            .exploration_command(ExplorationCommandRequestDto {
+                expected_revision: exploring.revision,
+                command: ExplorationCommandKindDto::StepForward,
+            })
+            .unwrap();
+        assert_eq!(
+            exploring.exploration.as_ref().map(|state| state.x),
+            Some(expected_x)
+        );
+        assert!(exploring.encounter.is_none());
+    }
+    let encounter = reopened
+        .exploration_command(ExplorationCommandRequestDto {
+            expected_revision: exploring.revision,
+            command: ExplorationCommandKindDto::StepForward,
+        })
+        .unwrap();
+    assert_eq!(
+        encounter.campaign.as_ref().unwrap().phase,
+        CampaignPhaseDto::Encounter
+    );
+    assert_eq!(
+        encounter
+            .campaign
+            .as_ref()
+            .unwrap()
+            .active_encounter_id
+            .as_deref(),
+        Some(ENCOUNTER_ID)
+    );
+    assert!(encounter.exploration.is_some());
+    assert!(encounter.encounter.is_some());
+}
+
+#[test]
 fn alternate_ember_adventure_selection_is_atomic_distinct_and_persistent() {
     let mut runtime = GameRuntime::empty().unwrap();
     let empty = runtime.snapshot().unwrap();
@@ -827,6 +956,10 @@ fn schema_five_warden_save_migrates_fingerprint_and_completed_prefix() {
         .as_object_mut()
         .unwrap()
         .remove("completedEncounters");
+    legacy["campaign"]
+        .as_object_mut()
+        .unwrap()
+        .remove("exploration");
 
     let migrated = GameRuntime::decode_save(&serde_json::to_string(&legacy).unwrap()).unwrap();
     let snapshot = migrated.snapshot().unwrap();
@@ -860,6 +993,44 @@ fn schema_five_warden_save_migrates_fingerprint_and_completed_prefix() {
             .encode_save()
             .unwrap(),
         encoded
+    );
+}
+
+#[test]
+fn schema_six_active_encounter_migrates_to_its_authored_dungeon_trigger() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    let encounter = start_test_encounter(&mut runtime);
+    let mut legacy: serde_json::Value =
+        serde_json::from_str(&runtime.encode_save().unwrap()).unwrap();
+    legacy["schemaVersion"] = json!(6);
+    legacy["compositionFingerprint"] = json!(persistence::SCHEMA_SIX_WARDEN_FINGERPRINT);
+    legacy["session"]["rulesetFingerprint"] = json!(persistence::SCHEMA_SIX_WARDEN_FINGERPRINT);
+    legacy["campaign"]
+        .as_object_mut()
+        .unwrap()
+        .remove("exploration");
+
+    let migrated = GameRuntime::decode_save(&serde_json::to_string(&legacy).unwrap()).unwrap();
+    let snapshot = migrated.snapshot().unwrap();
+    assert_eq!(snapshot.revision, encounter.revision);
+    assert_eq!(
+        snapshot.campaign.as_ref().unwrap().phase,
+        CampaignPhaseDto::Encounter
+    );
+    let exploration = snapshot.exploration.as_ref().unwrap();
+    assert_eq!((exploration.x, exploration.y), (9, 1));
+    assert_eq!(exploration.facing, ExplorationFacingDto::East);
+    assert!(exploration
+        .discovered_cells
+        .iter()
+        .any(|cell| (cell.x, cell.y) == (9, 1)));
+
+    let current: serde_json::Value =
+        serde_json::from_str(&migrated.encode_save().unwrap()).unwrap();
+    assert_eq!(current["schemaVersion"], json!(GAME_SAVE_SCHEMA_VERSION));
+    assert_eq!(
+        current["campaign"]["exploration"]["position"],
+        json!({ "x": 9, "y": 1 })
     );
 }
 
@@ -1138,6 +1309,10 @@ fn legacy_product_save(input: &str, schema: u32) -> serde_json::Value {
         .as_object_mut()
         .unwrap()
         .remove("completedEncounters");
+    save["campaign"]
+        .as_object_mut()
+        .unwrap()
+        .remove("exploration");
     save["session"]["rulesetFingerprint"] = json!(legacy_rules_fingerprint());
     if schema == 1 {
         save.as_object_mut().unwrap().remove("campaign");
@@ -1169,6 +1344,10 @@ fn schema_four_save(input: &str) -> serde_json::Value {
         .as_object_mut()
         .unwrap()
         .remove("completedEncounters");
+    save["campaign"]
+        .as_object_mut()
+        .unwrap()
+        .remove("exploration");
     save["session"]["rulesetFingerprint"] = json!(legacy_rules_fingerprint());
     save
 }
@@ -1334,6 +1513,10 @@ fn downgrade_to_pre_loadout_v2(input: &str) -> String {
         .as_object_mut()
         .unwrap()
         .remove("completedEncounters");
+    save["campaign"]
+        .as_object_mut()
+        .unwrap()
+        .remove("exploration");
     save["session"]["rulesetFingerprint"] = json!(legacy_rules_fingerprint());
     save["session"]["schemaVersion"] = json!(1);
     let state = save["session"]["entityState"].as_object_mut().unwrap();

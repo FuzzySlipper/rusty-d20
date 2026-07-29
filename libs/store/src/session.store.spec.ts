@@ -38,6 +38,7 @@ const snapshot: GameSnapshotDto = {
     },
   ],
   campaign: null,
+  exploration: null,
   encounter: null,
 };
 
@@ -58,7 +59,8 @@ function transport(overrides: Partial<RustyD20Transport> = {}): RustyD20Transpor
     loadSaveStatus: async () => ({ ok: true, value: saveStatus }),
     resetSession: async () => sessionResult,
     newAdventure: async () => sessionResult,
-    enterEncounter: async () => sessionResult,
+    beginExploration: async () => sessionResult,
+    explorationCommand: async () => sessionResult,
     equipItem: async () => sessionResult,
     unequipItem: async () => sessionResult,
     transferItem: async () => sessionResult,
@@ -143,7 +145,7 @@ describe('SessionStore', () => {
           selectedAdventure = request.adventureId;
           return { ok: true, value: camp };
         },
-        enterEncounter: async () => ({ ok: true, value: encounter }),
+        beginExploration: async () => ({ ok: true, value: encounter }),
       }),
     );
 
@@ -154,7 +156,7 @@ describe('SessionStore', () => {
       kind: 'data',
       value: { revision: 2, campaign: { phase: 'camp' }, encounter: null },
     });
-    await store.enterEncounter('iron-warden');
+    await store.beginExploration();
     expect(store.session()).toMatchObject({
       kind: 'data',
       value: {

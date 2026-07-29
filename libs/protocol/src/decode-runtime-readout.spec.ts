@@ -58,6 +58,7 @@ describe('decodeGameSnapshot', () => {
       },
     ],
     campaign: null,
+    exploration: null,
     encounter: null,
   };
 

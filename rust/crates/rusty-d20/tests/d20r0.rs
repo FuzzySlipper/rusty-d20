@@ -14,9 +14,10 @@ use rusty_d20::{
     ArmorItemSeed, CharacterAbilityCandidate, CharacterResourceCandidate, CharacterSeed,
     CharacterTemplateCandidate, D20CompileError, D20Id, D20PackageEnvelope, D20RulesCandidate,
     D20Ruleset, D20Session, D20SessionError, DamageAffinity, DamageCandidate, DamageTypeCandidate,
-    DefenseCandidate, EffectCandidate, EncounterCandidate, EncounterOutcomeCandidate,
-    ItemInstanceCandidate, ItemRarityCandidate, ReactionCandidate, ResourceCandidate,
-    SessionSaveError, StorageCandidate, D20_CANDIDATE_SCHEMA_VERSION,
+    DefenseCandidate, DungeonCandidate, DungeonEncounterCandidate, DungeonFacingCandidate,
+    EffectCandidate, EncounterCandidate, EncounterOutcomeCandidate, ItemInstanceCandidate,
+    ItemRarityCandidate, ReactionCandidate, ResourceCandidate, SessionSaveError, StorageCandidate,
+    D20_CANDIDATE_SCHEMA_VERSION,
 };
 use serde_json::json;
 use svc_rng::RngSeed;
@@ -31,6 +32,33 @@ fn id(value: &str) -> D20Id {
 
 fn operation(value: &str) -> OperationId {
     OperationId::parse(value).unwrap()
+}
+
+fn dungeon(encounter: &str) -> DungeonCandidate {
+    DungeonCandidate {
+        title: "Test dungeon".to_owned(),
+        wall_style: id("test-stone"),
+        width: 5,
+        height: 5,
+        rows: vec![
+            "#####".to_owned(),
+            "#...#".to_owned(),
+            "#.#.#".to_owned(),
+            "#...#".to_owned(),
+            "#####".to_owned(),
+        ],
+        start_x: 1,
+        start_y: 1,
+        checkpoint_x: 1,
+        checkpoint_y: 1,
+        start_facing: DungeonFacingCandidate::East,
+        encounters: vec![DungeonEncounterCandidate {
+            encounter: id(encounter),
+            x: 3,
+            y: 3,
+        }],
+        landmarks: Vec::new(),
+    }
 }
 
 fn effect_instance(value: &str) -> EffectInstanceId {
@@ -438,6 +466,7 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
             storage: vec![id("camp")],
             items: vec![id("orphan"), id("stored-equipped")],
             encounters: vec![id("broken-encounter")],
+            dungeon: dungeon("broken-encounter"),
             start_source: "Adventure".to_owned(),
             start_text: "The broken adventure starts.".to_owned(),
             start_details: vec![],
@@ -561,11 +590,105 @@ fn otherwise_valid_adventure_candidate(
             storage: vec![id("camp")],
             items: vec![],
             encounters: vec![id("duel")],
+            dungeon: dungeon("duel"),
             start_source: "Adventure".to_owned(),
             start_text: "The adventure starts.".to_owned(),
             start_details: vec![],
         }],
         ..D20RulesCandidate::default()
+    }
+}
+
+#[test]
+fn authored_dungeons_reject_malformed_blocked_and_unreachable_content() {
+    let compile = |package_name: &str,
+                   candidate: D20RulesCandidate|
+     -> gameplay_rules::RuleDiagnosticReport {
+        let base = admitted_base();
+        let dependency = RulePackageDependency::new(
+            base.identity().domain().clone(),
+            base.identity().package().clone(),
+            base.identity().version(),
+            Some(base.fingerprint().clone()),
+        );
+        let package = admit_d20_candidate(
+            envelope(
+                package_name,
+                vec![dependency],
+                &[
+                    "character-template:hero",
+                    "character-template:opponent",
+                    "storage:camp",
+                    "encounter:duel",
+                    "adventure:duel-adventure",
+                ],
+            ),
+            candidate,
+        )
+        .unwrap();
+        let D20CompileError::Diagnostics(report) =
+            D20Ruleset::compile(vec![package, base]).unwrap_err()
+        else {
+            panic!("invalid dungeon must fail semantic admission");
+        };
+        report
+    };
+    let valid = || otherwise_valid_adventure_candidate(vec![id("strike")], vec![id("strike")]);
+
+    let mut malformed = valid();
+    malformed.adventures[0].dungeon.rows[0] = "#...#".to_owned();
+    let mut blocked_start = valid();
+    blocked_start.adventures[0].dungeon.start_x = 0;
+    let mut blocked_placement = valid();
+    blocked_placement.adventures[0].dungeon.encounters[0].x = 2;
+    blocked_placement.adventures[0].dungeon.encounters[0].y = 2;
+    let mut unreachable = valid();
+    unreachable.adventures[0].dungeon.rows = vec![
+        "#####".to_owned(),
+        "#.#.#".to_owned(),
+        "###.#".to_owned(),
+        "#...#".to_owned(),
+        "#####".to_owned(),
+    ];
+    let mut excessive = valid();
+    excessive.adventures[0].dungeon.width = 25;
+
+    for (package, candidate, code) in [
+        (
+            "malformed-dungeon",
+            malformed,
+            "D20_INVALID_DUNGEON_TOPOLOGY",
+        ),
+        (
+            "blocked-dungeon-start",
+            blocked_start,
+            "D20_INVALID_DUNGEON_START",
+        ),
+        (
+            "blocked-dungeon-placement",
+            blocked_placement,
+            "D20_INVALID_DUNGEON_PLACEMENT",
+        ),
+        (
+            "unreachable-dungeon",
+            unreachable,
+            "D20_UNREACHABLE_DUNGEON_CONTENT",
+        ),
+        (
+            "excessive-dungeon",
+            excessive,
+            "D20_INVALID_DUNGEON_TOPOLOGY",
+        ),
+    ] {
+        let report = compile(package, candidate);
+        let diagnostic = report
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code() == code)
+            .unwrap_or_else(|| panic!("missing dungeon diagnostic {code} for {package}"));
+        let correlation = diagnostic.correlation().expect("source correlation");
+        assert_eq!(correlation.source().as_str(), format!("{package}-source"));
+        assert_eq!(correlation.line(), Some(5));
     }
 }
 

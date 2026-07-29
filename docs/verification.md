@@ -69,9 +69,10 @@ BASE_URL=http://127.0.0.1:PORT LIVE_RUN=1 pnpm run e2e:live
 
 Inspect milestone screenshots, visible text, console output, page errors, and
 the evidence packet under `test-results/`. The opt-in live scenario covers
-empty/new adventure, the durable camp, encounter entry, authored preview
-attribution, optional reactions, one deterministic player/opposition round,
-save, and desktop/mobile presentation.
+empty/new adventure, the durable camp, first-person grid movement, an authored
+landmark, trigger-driven encounter entry, authored preview attribution,
+optional reactions, one deterministic player/opposition round, save, and
+desktop/mobile presentation.
 
 The ordinary browser gate also launches an isolated Rust host, saves through
 normal loadout controls, stops that process, starts a fresh process against the
@@ -84,11 +85,13 @@ A two-page scenario proves a stale optimistic revision is rejected through a
 normal action control. Dedicated real-host scenarios complete Warden victory
 and defeat plus an Ember victory through ordinary controls. The Ember scenario
 starts on mobile, inspects distinct Resolve/Focus/Fire content and attribution,
-reopens its pre-encounter camp, completes the Ash Seer encounter, reopens the
-terminal outcome, returns to camp, and reopens the exactly-once reward. Those
+reopens its pre-encounter camp, traverses the reliquary grid to the Ash Seer,
+completes the encounter, reopens the terminal outcome, returns to camp, and
+reopens the exactly-once reward. Those
 terminal scenarios are part of `verify:browser`, not a non-idempotent
 requirement on an arbitrary already-running live save.
-The Warden scenario continues from its exactly-once first reward into the next
+The Warden scenario enters through the pass grid, continues from its
+exactly-once first reward at the exact trigger cell, traverses to the next
 authored encounter, records the ordered completion history, applies its
 terminal recovery, returns to camp with no third encounter, and reopens again.
 A separate real-host scenario displays the exact save identity, proves reset

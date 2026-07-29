@@ -14,7 +14,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::{
     ApiErrorDto, ApiErrorKindDto, ApplyActionRequestDto, ApplyReactionRequestDto,
-    EnterEncounterRequestDto, EquipItemRequestDto, ExpectedRevisionDto, GameRuntime,
+    EquipItemRequestDto, ExpectedRevisionDto, ExplorationCommandRequestDto, GameRuntime,
     GameRuntimeError, GameSnapshotDto, HealthDto, NewAdventureRequestDto, PreviewActionRequestDto,
     ResetSessionRequestDto, RuntimeReadoutDto, SaveStateDto, SaveStatusDto, TransferItemRequestDto,
     UnequipItemRequestDto,
@@ -56,7 +56,11 @@ fn router_with_recovery(
         .route("/api/v1/session/save-status", get(save_status))
         .route("/api/v1/session/reset", post(reset_session))
         .route("/api/v1/session/new", post(new_adventure))
-        .route("/api/v1/session/encounter", post(enter_encounter))
+        .route("/api/v1/session/exploration/start", post(begin_exploration))
+        .route(
+            "/api/v1/session/exploration/command",
+            post(exploration_command),
+        )
         .route("/api/v1/session/loadout/equip", post(equip_item))
         .route("/api/v1/session/loadout/unequip", post(unequip_item))
         .route("/api/v1/session/loadout/transfer", post(transfer_item))
@@ -234,11 +238,20 @@ async fn new_adventure(
     mutate(&state, |runtime| runtime.new_adventure_for(request))
 }
 
-async fn enter_encounter(
+async fn begin_exploration(
     State(state): State<HostState>,
-    Json(request): Json<EnterEncounterRequestDto>,
+    Json(request): Json<ExpectedRevisionDto>,
 ) -> ApiResult {
-    mutate(&state, |runtime| runtime.enter_encounter(request))
+    mutate(&state, |runtime| {
+        runtime.begin_exploration(request.expected_revision)
+    })
+}
+
+async fn exploration_command(
+    State(state): State<HostState>,
+    Json(request): Json<ExplorationCommandRequestDto>,
+) -> ApiResult {
+    mutate(&state, |runtime| runtime.exploration_command(request))
 }
 
 async fn equip_item(
@@ -453,6 +466,31 @@ mod tests {
             ),
             save,
         )
+    }
+
+    async fn enter_warden_dungeon(app: &Router, expected_revision: u64) -> GameSnapshotDto {
+        let (status, body) = post_json(
+            app,
+            "/api/v1/session/exploration/start",
+            &format!(r#"{{"expectedRevision":{expected_revision}}}"#),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let mut snapshot: GameSnapshotDto = serde_json::from_slice(&body).unwrap();
+        for _ in 0..8 {
+            let (status, body) = post_json(
+                app,
+                "/api/v1/session/exploration/command",
+                &format!(
+                    r#"{{"expectedRevision":{},"command":"step-forward"}}"#,
+                    snapshot.revision
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            snapshot = serde_json::from_slice(&body).unwrap();
+        }
+        snapshot
     }
 
     #[tokio::test]
@@ -693,16 +731,7 @@ mod tests {
         )
         .await;
         let camp: GameSnapshotDto = serde_json::from_slice(&camp_body).unwrap();
-        let (_, start_body) = post_json(
-            &app,
-            "/api/v1/session/encounter",
-            &format!(
-                r#"{{"expectedRevision":{},"encounterId":"iron-warden"}}"#,
-                camp.revision
-            ),
-        )
-        .await;
-        let start: GameSnapshotDto = serde_json::from_slice(&start_body).unwrap();
+        let start = enter_warden_dungeon(&app, camp.revision).await;
 
         let (save_status, _) = post_json(
             &app,

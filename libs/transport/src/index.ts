@@ -7,8 +7,8 @@ import {
   type ApplyActionRequestDto,
   type ApplyReactionRequestDto,
   type ClassifiedError,
-  type EnterEncounterRequestDto,
   type EquipItemRequestDto,
+  type ExplorationCommandRequestDto,
   type GameSnapshotDto,
   type NewAdventureRequestDto,
   type PreviewActionRequestDto,
@@ -28,7 +28,10 @@ export interface RustyD20Transport {
     request: ResetSessionRequestDto,
   ) => Promise<Result<GameSnapshotDto>>;
   readonly newAdventure: (request: NewAdventureRequestDto) => Promise<Result<GameSnapshotDto>>;
-  readonly enterEncounter: (request: EnterEncounterRequestDto) => Promise<Result<GameSnapshotDto>>;
+  readonly beginExploration: (expectedRevision: number) => Promise<Result<GameSnapshotDto>>;
+  readonly explorationCommand: (
+    request: ExplorationCommandRequestDto,
+  ) => Promise<Result<GameSnapshotDto>>;
   readonly equipItem: (request: EquipItemRequestDto) => Promise<Result<GameSnapshotDto>>;
   readonly unequipItem: (request: UnequipItemRequestDto) => Promise<Result<GameSnapshotDto>>;
   readonly transferItem: (request: TransferItemRequestDto) => Promise<Result<GameSnapshotDto>>;
@@ -55,7 +58,10 @@ export function createHttpRustyD20Transport(http: HttpPort): RustyD20Transport {
     loadSaveStatus: () => get('/api/v1/session/save-status', decodeSaveStatus),
     resetSession: (body) => post('/api/v1/session/reset', body, decodeGameSnapshot),
     newAdventure: (body) => post('/api/v1/session/new', body, decodeGameSnapshot),
-    enterEncounter: (body) => post('/api/v1/session/encounter', body, decodeGameSnapshot),
+    beginExploration: (expectedRevision) =>
+      post('/api/v1/session/exploration/start', { expectedRevision }, decodeGameSnapshot),
+    explorationCommand: (body) =>
+      post('/api/v1/session/exploration/command', body, decodeGameSnapshot),
     equipItem: (body) => post('/api/v1/session/loadout/equip', body, decodeGameSnapshot),
     unequipItem: (body) => post('/api/v1/session/loadout/unequip', body, decodeGameSnapshot),
     transferItem: (body) => post('/api/v1/session/loadout/transfer', body, decodeGameSnapshot),

@@ -79,7 +79,29 @@ test.describe.serial('real Rust encounter shell', () => {
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.getByRole('button', { name: 'Enter The Iron Warden' }).click();
+    await page.getByRole('button', { name: 'Enter the dungeon' }).click();
+    await expect(
+      page
+        .getByRole('region', { name: 'Dungeon exploration' })
+        .getByRole('heading', { name: "Warden's Gate Pass" })
+        .first(),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('img', { name: /Warden's Gate Pass, facing east at cell 1, 1/ }),
+    ).toBeVisible();
+    for (let step = 0; step < 4; step += 1) {
+      await page.getByRole('button', { name: '↑ Forward' }).click();
+    }
+    await expect(page.getByRole('heading', { name: 'Silent murder holes' })).toBeVisible();
+    await page.getByRole('button', { name: 'Inspect' }).click();
+    await expect(page.getByText('Inspected', { exact: true })).toBeVisible();
+    await testInfo.attach('first-person-dungeon-exploration.png', {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: 'image/png',
+    });
+    for (let step = 0; step < 4; step += 1) {
+      await page.getByRole('button', { name: '↑ Forward' }).click();
+    }
 
     await expect(page.locator('aui-character-status')).toHaveCount(2);
     await expect(page.getByText('Mara Venn', { exact: true })).toBeVisible();

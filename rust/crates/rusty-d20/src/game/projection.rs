@@ -55,6 +55,7 @@ impl GameRuntime {
             title: adventure.title.clone(),
             phase: match campaign.phase {
                 CampaignPhase::Camp => CampaignPhaseDto::Camp,
+                CampaignPhase::Exploration => CampaignPhaseDto::Exploration,
                 CampaignPhase::Encounter => CampaignPhaseDto::Encounter,
                 CampaignPhase::Outcome => CampaignPhaseDto::Outcome,
             },

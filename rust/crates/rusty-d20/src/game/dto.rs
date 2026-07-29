@@ -127,8 +127,76 @@ pub enum EncounterTurnOwnerDto {
 #[ts(rename_all = "kebab-case")]
 pub enum CampaignPhaseDto {
     Camp,
+    Exploration,
     Encounter,
     Outcome,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum ExplorationFacingDto {
+    North,
+    East,
+    South,
+    West,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum ExplorationCommandKindDto {
+    TurnLeft,
+    TurnRight,
+    StepForward,
+    StepBackward,
+    Interact,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ExplorationDepthDto {
+    pub depth: u16,
+    pub front_blocked: bool,
+    pub left_blocked: bool,
+    pub right_blocked: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct DiscoveredCellDto {
+    pub x: u16,
+    pub y: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ExplorationLandmarkDto {
+    pub id: String,
+    pub title: String,
+    pub text: String,
+    pub inspected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ExplorationDto {
+    pub dungeon_title: String,
+    pub wall_style: String,
+    pub width: u16,
+    pub height: u16,
+    pub x: u16,
+    pub y: u16,
+    pub facing: ExplorationFacingDto,
+    pub can_step_forward: bool,
+    pub can_step_backward: bool,
+    pub view: Vec<ExplorationDepthDto>,
+    pub discovered_cells: Vec<DiscoveredCellDto>,
+    pub landmark: Option<ExplorationLandmarkDto>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -280,6 +348,7 @@ pub struct GameSnapshotDto {
     pub saved: bool,
     pub available_adventures: Vec<AdventureChoiceDto>,
     pub campaign: Option<CampaignDto>,
+    pub exploration: Option<ExplorationDto>,
     pub encounter: Option<EncounterDto>,
 }
 
@@ -339,6 +408,15 @@ pub struct EnterEncounterRequestDto {
     #[ts(type = "number")]
     pub expected_revision: u64,
     pub encounter_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ExplorationCommandRequestDto {
+    #[ts(type = "number")]
+    pub expected_revision: u64,
+    pub command: ExplorationCommandKindDto,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

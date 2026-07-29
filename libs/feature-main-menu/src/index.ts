@@ -10,7 +10,15 @@ import {
 } from '@angular/core';
 import type { ElementRef, OnInit } from '@angular/core';
 import { browserAnimationFrame, browserClock } from '@rusty-d20/platform';
-import type { CharacterDto, LoadoutItemDto } from '@rusty-d20/protocol';
+import type {
+  CharacterDto,
+  ExplorationCommandKindDto,
+  LoadoutItemDto,
+} from '@rusty-d20/protocol';
+import {
+  DungeonViewportComponent,
+  type DungeonViewportView,
+} from '@rusty-d20/renderer';
 import { SessionStore } from '@rusty-d20/store';
 import { CharacterStatusComponent, type CharacterStatusView } from '@rusty-d20/ui-character-status';
 import { CombatLogComponent, type CombatLogEntryView } from '@rusty-d20/ui-combat-log';
@@ -21,15 +29,29 @@ import {
   type EquipmentSlotView,
 } from '@rusty-d20/ui-equipment';
 import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-inventory';
+import {
+  CompassComponent,
+  type CompassMarkerView,
+} from '@rusty-d20/ui-compass';
+import {
+  MinimapComponent,
+  type MinimapMarkerView,
+} from '@rusty-d20/ui-minimap';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '(window:keydown)': 'handleExplorationKeydown($event)',
+  },
   imports: [
     CharacterStatusComponent,
     CombatLogComponent,
+    CompassComponent,
+    DungeonViewportComponent,
     EquipmentPanelComponent,
     HotbarComponent,
     InventoryGridComponent,
+    MinimapComponent,
   ],
   selector: 'aui-main-menu-screen',
   standalone: true,
@@ -263,6 +285,52 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
         grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.75fr);
       }
 
+      .exploration {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: minmax(0, 1fr) 220px;
+      }
+
+      .exploration__main,
+      .exploration__sidebar,
+      .movement-pad,
+      .landmark {
+        align-content: start;
+        display: grid;
+        gap: 12px;
+      }
+
+      .exploration__sidebar aui-compass,
+      .exploration__sidebar aui-minimap {
+        width: 100%;
+      }
+
+      .movement-pad {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .movement-pad button {
+        min-height: 48px;
+      }
+
+      .movement-pad__forward,
+      .movement-pad__back {
+        grid-column: 2;
+      }
+
+      .movement-pad__left {
+        grid-column: 1;
+      }
+
+      .movement-pad__right {
+        grid-column: 3;
+      }
+
+      .exploration__status {
+        display: grid;
+        gap: 10px;
+      }
+
       .camp {
         align-content: start;
         display: grid;
@@ -461,6 +529,7 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
         .adventure-catalog,
         .loadout__widgets,
         .workspace,
+        .exploration,
         .action-catalog {
           grid-template-columns: minmax(0, 1fr);
         }
@@ -707,7 +776,13 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
               <h2>Continue {{ game()?.campaign?.title }}</h2>
               <p class="lede">
                 Resume in
-                {{ game()?.campaign?.phase === 'camp' ? 'camp' : 'the active encounter' }}
+                {{
+                  game()?.campaign?.phase === 'camp'
+                    ? 'camp'
+                    : game()?.campaign?.phase === 'exploration'
+                      ? 'the dungeon'
+                      : 'the active encounter'
+                }}
                 at state revision {{ game()?.revision }}.
               </p>
               @if (saveStatus(); as status) {
@@ -872,17 +947,20 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                       Rust owner without changing the live loadout.
                     </p>
 
-                    @for (choice of campaign.availableEncounters; track choice.id) {
+                    @if (campaign.availableEncounters.length > 0) {
                       <article class="action-note encounter-choice">
-                        <strong>{{ choice.title }}</strong>
-                        <span>{{ choice.summary }}</span>
+                        <strong>Begin the expedition</strong>
+                        <span>
+                          Enter the authored dungeon. Encounters begin only when the party reaches
+                          their hidden Rust-owned trigger.
+                        </span>
                         <button
                           class="primary"
                           type="button"
                           [disabled]="store.busy()"
-                          (click)="enterEncounter(choice.id)"
+                          (click)="beginExploration()"
                         >
-                          Enter {{ choice.title }}
+                          Enter the dungeon
                         </button>
                       </article>
                     }
@@ -896,6 +974,94 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                     }
                   </aside>
                 </section>
+              </section>
+            }
+          } @else if (game()?.campaign?.phase === 'exploration') {
+            @if (game()?.exploration; as exploration) {
+              <section class="exploration" aria-label="Dungeon exploration">
+                <div class="exploration__main">
+                  <header class="rusty-engine-panel">
+                    <p class="eyebrow">Rust-owned dungeon exploration</p>
+                    <h2>{{ exploration.dungeonTitle }}</h2>
+                    <p class="lede">
+                      Move one square at a time. Only visited cells reach the automap, and authored
+                      encounters remain hidden until the party steps onto them.
+                    </p>
+                  </header>
+                  <aui-dungeon-viewport [view]="dungeonViewport()" />
+                  @if (exploration.landmark; as landmark) {
+                    <section class="rusty-engine-panel landmark" aria-label="Dungeon landmark">
+                      <p class="meta-label">{{ landmark.inspected ? 'Inspected' : 'Landmark' }}</p>
+                      <h3>{{ landmark.title }}</h3>
+                      <p>{{ landmark.text }}</p>
+                      <button
+                        type="button"
+                        [disabled]="store.busy() || landmark.inspected"
+                        (click)="explorationCommand('interact')"
+                      >
+                        {{ landmark.inspected ? 'Already inspected' : 'Inspect' }}
+                      </button>
+                    </section>
+                  }
+                  <nav class="rusty-engine-panel movement-pad" aria-label="Dungeon movement">
+                    <button
+                      class="movement-pad__forward"
+                      type="button"
+                      [disabled]="store.busy() || !exploration.canStepForward"
+                      (click)="explorationCommand('step-forward')"
+                    >
+                      ↑ Forward
+                    </button>
+                    <button
+                      class="movement-pad__left"
+                      type="button"
+                      [disabled]="store.busy()"
+                      (click)="explorationCommand('turn-left')"
+                    >
+                      ↶ Left
+                    </button>
+                    <button
+                      class="movement-pad__right"
+                      type="button"
+                      [disabled]="store.busy()"
+                      (click)="explorationCommand('turn-right')"
+                    >
+                      Right ↷
+                    </button>
+                    <button
+                      class="movement-pad__back"
+                      type="button"
+                      [disabled]="store.busy() || !exploration.canStepBackward"
+                      (click)="explorationCommand('step-backward')"
+                    >
+                      ↓ Back
+                    </button>
+                  </nav>
+                </div>
+                <aside class="exploration__sidebar">
+                  <aui-compass
+                    [headingDegrees]="compassHeading()"
+                    [markers]="compassMarkers"
+                  />
+                  <aui-minimap
+                    [regionName]="exploration.dungeonTitle"
+                    [markers]="minimapMarkers()"
+                    [playerXPercent]="minimapPlayerX()"
+                    [playerYPercent]="minimapPlayerY()"
+                  />
+                  <section class="rusty-engine-panel exploration__status" aria-label="Party status">
+                    <p class="meta-label">Exploring party</p>
+                    <aui-character-status [status]="characterStatus(game()!.campaign!.hero)" />
+                    <span class="muted">
+                      Facing {{ exploration.facing }} · cell {{ exploration.x }},{{
+                        exploration.y
+                      }}
+                    </span>
+                    <span class="muted">
+                      {{ exploration.discoveredCells.length }} cells discovered
+                    </span>
+                  </section>
+                </aside>
               </section>
             }
           } @else {
@@ -970,7 +1136,11 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                       [disabled]="store.busy()"
                       (click)="returnToCamp()"
                     >
-                      Return to {{ game()?.campaign?.title }} Camp
+                      {{
+                        outcome.kind === 'victory' && game()?.exploration !== null
+                          ? 'Continue adventure'
+                          : 'Return to ' + game()?.campaign?.title + ' Camp'
+                      }}
                     </button>
                   </article>
                   <aside class="rusty-engine-panel outcome">
@@ -1149,6 +1319,7 @@ export class MainMenuScreenComponent implements OnInit {
   private readonly animationFrame = browserAnimationFrame;
   private readonly clock = browserClock;
   private resetDialogTrigger: HTMLElement | null = null;
+  protected readonly compassMarkers: readonly CompassMarkerView[] = [];
 
   protected readonly game = computed(() => {
     const state = this.store.session();
@@ -1158,6 +1329,58 @@ export class MainMenuScreenComponent implements OnInit {
   protected readonly saveStatus = computed(() => {
     const state = this.store.saveStatus();
     return state.kind === 'data' ? state.value : null;
+  });
+
+  protected readonly dungeonViewport = computed<DungeonViewportView>(() => {
+    const exploration = this.game()?.exploration;
+    if (exploration === null || exploration === undefined) {
+      throw new Error('Dungeon exploration is not available.');
+    }
+    return {
+      title: exploration.dungeonTitle,
+      wallStyle: exploration.wallStyle,
+      facing: exploration.facing,
+      x: exploration.x,
+      y: exploration.y,
+      depths: exploration.view,
+    };
+  });
+
+  protected readonly compassHeading = computed(() => {
+    const facing = this.game()?.exploration?.facing;
+    return facing === 'east' ? 90 : facing === 'south' ? 180 : facing === 'west' ? 270 : 0;
+  });
+
+  protected readonly minimapMarkers = computed<readonly MinimapMarkerView[]>(() => {
+    const exploration = this.game()?.exploration;
+    if (exploration === null || exploration === undefined) {
+      return [];
+    }
+    const xDivisor = Math.max(1, exploration.width - 1);
+    const yDivisor = Math.max(1, exploration.height - 1);
+    return exploration.discoveredCells
+      .filter((cell) => cell.x !== exploration.x || cell.y !== exploration.y)
+      .map((cell) => ({
+        id: `${cell.x}:${cell.y}`,
+        label: `Discovered cell ${cell.x},${cell.y}`,
+        kind: 'poi' as const,
+        x: (cell.x / xDivisor) * 100,
+        y: (cell.y / yDivisor) * 100,
+      }));
+  });
+
+  protected readonly minimapPlayerX = computed(() => {
+    const exploration = this.game()?.exploration;
+    return exploration === null || exploration === undefined
+      ? 50
+      : (exploration.x / Math.max(1, exploration.width - 1)) * 100;
+  });
+
+  protected readonly minimapPlayerY = computed(() => {
+    const exploration = this.game()?.exploration;
+    return exploration === null || exploration === undefined
+      ? 50
+      : (exploration.y / Math.max(1, exploration.height - 1)) * 100;
   });
 
   protected readonly inventorySlots = computed<readonly (InventoryItemView | null)[]>(() =>
@@ -1293,8 +1516,43 @@ export class MainMenuScreenComponent implements OnInit {
     this.campaignEntered.set(true);
   }
 
-  protected enterEncounter(encounterId: string): void {
-    void this.store.enterEncounter(encounterId);
+  protected beginExploration(): void {
+    void this.store.beginExploration();
+  }
+
+  protected explorationCommand(command: ExplorationCommandKindDto): void {
+    void this.store.explorationCommand(command);
+  }
+
+  protected handleExplorationKeydown(event: KeyboardEvent): void {
+    if (this.game()?.campaign?.phase !== 'exploration' || this.store.busy()) {
+      return;
+    }
+    const target = event.target;
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLButtonElement
+    ) {
+      return;
+    }
+    const command: ExplorationCommandKindDto | undefined =
+      event.key === 'ArrowUp' || event.key.toLowerCase() === 'w'
+        ? 'step-forward'
+        : event.key === 'ArrowDown' || event.key.toLowerCase() === 's'
+          ? 'step-backward'
+          : event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a'
+            ? 'turn-left'
+            : event.key === 'ArrowRight' || event.key.toLowerCase() === 'd'
+              ? 'turn-right'
+              : event.key.toLowerCase() === 'e'
+                ? 'interact'
+                : undefined;
+    if (command !== undefined) {
+      event.preventDefault();
+      this.explorationCommand(command);
+    }
   }
 
   protected activateInventoryItem(item: InventoryItemView): void {

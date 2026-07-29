@@ -1,6 +1,8 @@
 use super::*;
 
 pub(super) const LEGACY_D20G1_WARDEN_FINGERPRINT: &str = "rusty-d20/starter-core@1=af2dc794bdc02dcf8a99753fef15e706d664a7d3f2c2562468938163d6af2ff6|rusty-d20/steel-guard@1=d25c138ad46342423764603fe6302c3411e748b4bb85973d24d01e88e6f8c567|rusty-d20/wardens-gate@1=588af08d7e4e72e58222fde4a92f3b52946fde2b453b851ff33db133aa06aa76";
+pub(super) const SCHEMA_SIX_WARDEN_FINGERPRINT: &str = "rusty-d20/starter-core@1=af2dc794bdc02dcf8a99753fef15e706d664a7d3f2c2562468938163d6af2ff6|rusty-d20/steel-guard@1=d25c138ad46342423764603fe6302c3411e748b4bb85973d24d01e88e6f8c567|rusty-d20/wardens-gate@1=21dc5b9c5b3c22c89cfa3941d68e3159094bf6734c465e71791e75a147fe8886";
+const SCHEMA_SIX_EMBER_FINGERPRINT: &str = "rusty-d20/starter-core@1=af2dc794bdc02dcf8a99753fef15e706d664a7d3f2c2562468938163d6af2ff6|rusty-d20/ember-ward@1=a4c589aec018193d52ba9c32ac5ae01fedb909055e9a34de64d9358726aa797c|rusty-d20/embers-wake@1=a22256f90621321f8c9dc208be9ef01e57b2a178d6a6050a17ca9e63fe8b5624";
 
 impl GameRuntime {
     pub fn decode_save(input: &str) -> Result<Self, GameRuntimeError> {
@@ -43,6 +45,48 @@ impl GameRuntime {
                 },
                 campaign,
                 None,
+                false,
+            );
+        }
+        if envelope.schema_version == 6 {
+            let save: SchemaSixGameSave = serde_json::from_value(value)?;
+            let adventure_id = D20Id::parse(&save.campaign.adventure_id).map_err(|error| {
+                GameRuntimeError::InvalidSave(format!(
+                    "saved adventure identity is invalid: {error}"
+                ))
+            })?;
+            let rules = catalog
+                .rules_for(&adventure_id)
+                .map_err(GameRuntimeError::InvalidSave)?;
+            let expected_legacy = match adventure_id.as_str() {
+                "wardens-gate" => SCHEMA_SIX_WARDEN_FINGERPRINT,
+                "embers-wake" => SCHEMA_SIX_EMBER_FINGERPRINT,
+                _ => {
+                    return Err(GameRuntimeError::InvalidSave(format!(
+                        "schema-6 adventure {adventure_id} has no exploration migration"
+                    )));
+                }
+            };
+            if save.composition_fingerprint != expected_legacy {
+                return Err(GameRuntimeError::CompositionFingerprintMismatch {
+                    expected: expected_legacy.to_owned(),
+                    actual: save.composition_fingerprint,
+                });
+            }
+            let campaign = validate_schema_six_campaign_save(&rules, &adventure_id, save.campaign)?;
+            return Self::restore(
+                catalog,
+                rules,
+                adventure_id,
+                RestoreData {
+                    revision: save.revision,
+                    next_operation: save.next_operation,
+                    next_log_id: save.next_log_id,
+                    log: save.log,
+                    session: save.session,
+                },
+                campaign,
+                Some(expected_legacy),
                 false,
             );
         }
@@ -125,6 +169,7 @@ impl GameRuntime {
                         turn_owner: Some(EncounterTurnOwner::Player),
                         outcome: None,
                         completed_encounters: Vec::new(),
+                        exploration: None,
                     },
                     Some(&legacy_fingerprint),
                     true,
@@ -289,6 +334,7 @@ impl GameRuntime {
                 turn_owner: campaign.turn_owner,
                 outcome: campaign.outcome,
                 completed_encounters: campaign.completed_encounters.clone(),
+                exploration: campaign.exploration.clone(),
             },
             session,
         })?)
@@ -327,6 +373,19 @@ struct LegacyGameSave {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct CampaignSave {
+    adventure_id: String,
+    phase: CampaignPhase,
+    active_encounter_id: Option<String>,
+    resolved_encounter_id: Option<String>,
+    turn_owner: Option<EncounterTurnOwner>,
+    outcome: Option<EncounterOutcome>,
+    completed_encounters: Vec<CompletedEncounter>,
+    exploration: Option<ExplorationState>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct SchemaSixCampaignSave {
     adventure_id: String,
     phase: CampaignPhase,
     active_encounter_id: Option<String>,
@@ -400,6 +459,20 @@ struct GameSave {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct SchemaSixGameSave {
+    #[serde(rename = "schemaVersion")]
+    _schema_version: u32,
+    composition_fingerprint: String,
+    revision: u64,
+    next_operation: u64,
+    next_log_id: u64,
+    log: Vec<GameLogEntryDto>,
+    campaign: SchemaSixCampaignSave,
+    session: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct SchemaFiveGameSave {
     #[serde(rename = "schemaVersion")]
     _schema_version: u32,
@@ -459,6 +532,9 @@ fn validate_campaign_save(
         ));
     }
     let latest_completed = save.completed_encounters.last();
+    if let Some(exploration) = save.exploration.as_ref() {
+        validate_exploration_state(adventure, exploration)?;
+    }
     let valid_phase = match save.phase {
         CampaignPhase::Camp => {
             save.active_encounter_id.is_none()
@@ -468,6 +544,20 @@ fn validate_campaign_save(
                     (Some(outcome), Some(resolved)) => latest_completed.is_some_and(|completed| {
                         completed.encounter_id == resolved && completed.outcome == outcome
                     }),
+                    _ => false,
+                }
+        }
+        CampaignPhase::Exploration => {
+            save.exploration.is_some()
+                && save.active_encounter_id.is_none()
+                && save.turn_owner.is_none()
+                && match (save.outcome, save.resolved_encounter_id.as_deref()) {
+                    (None, None) => save.completed_encounters.is_empty(),
+                    (Some(EncounterOutcome::Victory), Some(resolved)) => latest_completed
+                        .is_some_and(|completed| {
+                            completed.encounter_id == resolved
+                                && completed.outcome == EncounterOutcome::Victory
+                        }),
                     _ => false,
                 }
         }
@@ -482,6 +572,13 @@ fn validate_campaign_save(
                     .is_some_and(|expected| {
                         save.active_encounter_id.as_deref() == Some(expected.as_str())
                     })
+                && save.exploration.as_ref().is_none_or(|exploration| {
+                    adventure.dungeon.encounters.iter().any(|trigger| {
+                        Some(trigger.encounter.as_str()) == save.active_encounter_id.as_deref()
+                            && trigger.x == exploration.position.x
+                            && trigger.y == exploration.position.y
+                    })
+                })
         }
         CampaignPhase::Outcome => {
             authored_encounter(&save.active_encounter_id)
@@ -507,7 +604,86 @@ fn validate_campaign_save(
         turn_owner: save.turn_owner,
         outcome: save.outcome,
         completed_encounters: save.completed_encounters,
+        exploration: save.exploration,
     })
+}
+
+fn validate_exploration_state(
+    adventure: &AdventureDefinition,
+    exploration: &ExplorationState,
+) -> Result<(), GameRuntimeError> {
+    let dungeon = &adventure.dungeon;
+    if !dungeon.is_floor(exploration.position.x, exploration.position.y)
+        || !exploration.discovered.contains(&exploration.position)
+        || exploration.discovered.is_empty()
+        || exploration.discovered.len() > usize::from(dungeon.width) * usize::from(dungeon.height)
+        || exploration
+            .discovered
+            .iter()
+            .any(|position| !dungeon.is_floor(position.x, position.y))
+        || exploration.inspected_landmarks.iter().any(|id| {
+            !dungeon
+                .landmarks
+                .iter()
+                .any(|landmark| landmark.id.as_str() == id)
+        })
+    {
+        return Err(GameRuntimeError::InvalidSave(
+            "exploration position, discoveries, or inspected landmarks are invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_schema_six_campaign_save(
+    rules: &D20Ruleset,
+    adventure_id: &D20Id,
+    save: SchemaSixCampaignSave,
+) -> Result<CampaignState, GameRuntimeError> {
+    let adventure = rules.adventure(adventure_id).ok_or_else(|| {
+        GameRuntimeError::InvalidSave(format!("compiled adventure {adventure_id} is missing"))
+    })?;
+    let trigger = save
+        .active_encounter_id
+        .as_deref()
+        .or(save.resolved_encounter_id.as_deref())
+        .and_then(|encounter_id| {
+            adventure
+                .dungeon
+                .encounters
+                .iter()
+                .find(|trigger| trigger.encounter.as_str() == encounter_id)
+        });
+    let exploration = trigger.map(|trigger| {
+        let start = DungeonPosition {
+            x: adventure.dungeon.start_x,
+            y: adventure.dungeon.start_y,
+        };
+        let position = DungeonPosition {
+            x: trigger.x,
+            y: trigger.y,
+        };
+        ExplorationState {
+            position,
+            facing: adventure.dungeon.start_facing,
+            discovered: BTreeSet::from([start, position]),
+            inspected_landmarks: BTreeSet::new(),
+        }
+    });
+    validate_campaign_save(
+        rules,
+        adventure_id,
+        CampaignSave {
+            adventure_id: save.adventure_id,
+            phase: save.phase,
+            active_encounter_id: save.active_encounter_id,
+            resolved_encounter_id: save.resolved_encounter_id,
+            turn_owner: save.turn_owner,
+            outcome: save.outcome,
+            completed_encounters: save.completed_encounters,
+            exploration,
+        },
+    )
 }
 
 fn validate_schema_five_campaign_save(
@@ -538,6 +714,7 @@ fn validate_schema_five_campaign_save(
             turn_owner: save.turn_owner,
             outcome: save.outcome,
             completed_encounters,
+            exploration: None,
         },
     )
 }
@@ -575,6 +752,7 @@ fn validate_schema_four_campaign_save(
             turn_owner: save.turn_owner,
             outcome: save.outcome,
             completed_encounters,
+            exploration: None,
         },
     )
 }
@@ -599,6 +777,7 @@ fn validate_legacy_campaign_save(
             turn_owner: (phase == CampaignPhase::Encounter).then_some(EncounterTurnOwner::Player),
             outcome: None,
             completed_encounters: Vec::new(),
+            exploration: None,
         },
     )
 }

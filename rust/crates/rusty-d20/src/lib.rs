@@ -24,6 +24,7 @@ pub use candidate::{
     AdventureCandidate, ArmorCandidate, CharacterAbilityCandidate, CharacterAffinityCandidate,
     CharacterAffinityKindCandidate, CharacterResourceCandidate, CharacterTemplateCandidate,
     D20PackageEnvelope, D20RulesCandidate, DamageCandidate, DamageTypeCandidate, DefenseCandidate,
+    DungeonCandidate, DungeonEncounterCandidate, DungeonFacingCandidate, DungeonLandmarkCandidate,
     EffectCandidate, EncounterCandidate, EncounterOutcomeCandidate, ItemInstanceCandidate,
     ItemRarityCandidate, ReactionCandidate, ResourceCandidate, StorageCandidate,
     D20_CANDIDATE_SCHEMA_VERSION,
@@ -31,11 +32,14 @@ pub use candidate::{
 pub use compiler::{
     AbilityDefinition, ActionDefinition, AdventureDefinition, ArmorDefinition,
     CharacterAffinityDefinition, CharacterAffinityKindDefinition, CharacterTemplateDefinition,
-    D20CompileError, D20Ruleset, DamageDefinition, DefenseDefinition, EffectDefinition,
-    EncounterDefinition, EncounterOutcomeDefinition, ItemInstanceDefinition, ItemRarityDefinition,
-    ReactionDefinition, ResourceDefinition, StorageDefinition, MAX_D20_ADVENTURES_PER_PACKAGE,
-    MAX_D20_ADVENTURE_ENTRIES, MAX_D20_AUTHORED_TEXT_BYTES, MAX_D20_DAMAGE_DICE,
-    MAX_D20_DAMAGE_DIE_SIDES, MAX_D20_DEFINITIONS_PER_KIND, MAX_D20_EFFECT_DURATION_TURNS,
+    D20CompileError, D20Ruleset, DamageDefinition, DefenseDefinition, DungeonDefinition,
+    DungeonEncounterDefinition, DungeonFacingDefinition, DungeonLandmarkDefinition,
+    EffectDefinition, EncounterDefinition, EncounterOutcomeDefinition, ItemInstanceDefinition,
+    ItemRarityDefinition, ReactionDefinition, ResourceDefinition, StorageDefinition,
+    MAX_D20_ADVENTURES_PER_PACKAGE, MAX_D20_ADVENTURE_ENTRIES, MAX_D20_AUTHORED_TEXT_BYTES,
+    MAX_D20_DAMAGE_DICE, MAX_D20_DAMAGE_DIE_SIDES, MAX_D20_DEFINITIONS_PER_KIND,
+    MAX_D20_DUNGEON_CELLS, MAX_D20_DUNGEON_HEIGHT, MAX_D20_DUNGEON_WIDTH,
+    MAX_D20_EFFECT_DURATION_TURNS,
 };
 pub use component::{
     d20_component_registry, register_d20_components, AbilityScore, AbilityScoresComponent,
@@ -49,13 +53,14 @@ pub use component::{
 pub use game::{
     ActionDto, AdventureChoiceDto, ApiErrorDto, ApiErrorKindDto, ApplyActionRequestDto,
     ApplyReactionRequestDto, CampaignDto, CampaignOutcomeDto, CampaignPhaseDto, CharacterDto,
-    CompletedEncounterDto, DefenseReadoutDto, EncounterChoiceDto, EncounterDto,
+    CompletedEncounterDto, DefenseReadoutDto, DiscoveredCellDto, EncounterChoiceDto, EncounterDto,
     EncounterOutcomeKindDto, EncounterTurnOwnerDto, EnterEncounterRequestDto, EquipItemRequestDto,
-    EquipmentSlotDto, ExpectedRevisionDto, GameLogEntryDto, GameLogKindDto, GameRuntime,
-    GameRuntimeError, GameSnapshotDto, LoadoutCapacityDto, LoadoutDto, LoadoutItemDto,
-    LoadoutRarityDto, NewAdventureRequestDto, PendingActionDto, PreviewActionRequestDto,
-    ReactionDto, ResetSessionRequestDto, ResourceDto, SaveStateDto, SaveStatusDto,
-    TransferItemRequestDto, UnequipItemRequestDto,
+    EquipmentSlotDto, ExpectedRevisionDto, ExplorationCommandKindDto, ExplorationCommandRequestDto,
+    ExplorationDepthDto, ExplorationDto, ExplorationFacingDto, ExplorationLandmarkDto,
+    GameLogEntryDto, GameLogKindDto, GameRuntime, GameRuntimeError, GameSnapshotDto,
+    LoadoutCapacityDto, LoadoutDto, LoadoutItemDto, LoadoutRarityDto, NewAdventureRequestDto,
+    PendingActionDto, PreviewActionRequestDto, ReactionDto, ResetSessionRequestDto, ResourceDto,
+    SaveStateDto, SaveStatusDto, TransferItemRequestDto, UnequipItemRequestDto,
 };
 pub use identity::{D20Id, D20IdentityError, D20_ID_PATTERN, MAX_D20_ID_BYTES};
 pub use session::{
@@ -121,6 +126,12 @@ pub fn generated_typescript() -> String {
         EncounterTurnOwnerDto::decl(),
         EncounterDto::decl(),
         CampaignPhaseDto::decl(),
+        ExplorationFacingDto::decl(),
+        ExplorationCommandKindDto::decl(),
+        ExplorationDepthDto::decl(),
+        DiscoveredCellDto::decl(),
+        ExplorationLandmarkDto::decl(),
+        ExplorationDto::decl(),
         EncounterOutcomeKindDto::decl(),
         CampaignOutcomeDto::decl(),
         CompletedEncounterDto::decl(),
@@ -140,6 +151,7 @@ pub fn generated_typescript() -> String {
         ExpectedRevisionDto::decl(),
         NewAdventureRequestDto::decl(),
         EnterEncounterRequestDto::decl(),
+        ExplorationCommandRequestDto::decl(),
         EquipItemRequestDto::decl(),
         UnequipItemRequestDto::decl(),
         TransferItemRequestDto::decl(),
@@ -155,6 +167,8 @@ export const D20_PROTOCOL_LIMITS = Object.freeze({{\n\
   maxAvailableAdventures: {MAX_D20_SELECTABLE_ADVENTURES},\n\
   maxAdventureDetails: {MAX_D20_ADVENTURE_ENTRIES},\n\
   maxCampaignEncounters: {MAX_D20_ADVENTURE_ENTRIES},\n\
+  maxDungeonCells: {MAX_D20_DUNGEON_CELLS},\n\
+  maxDungeonViewDepth: 3,\n\
 }} as const);\n\n\
 export {}\n",
         declarations.join("\n\nexport "),

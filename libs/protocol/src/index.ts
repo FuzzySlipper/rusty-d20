@@ -16,6 +16,9 @@ import type {
   EncounterOutcomeKindDto,
   EncounterTurnOwnerDto,
   EquipmentSlotDto,
+  ExplorationDepthDto,
+  ExplorationDto,
+  ExplorationLandmarkDto,
   GameLogEntryDto,
   GameLogKindDto,
   GameSnapshotDto,
@@ -180,6 +183,7 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
       'availableAdventures',
       'encounter',
       'engineRevision',
+      'exploration',
       'product',
       'revision',
       'rulesetFingerprint',
@@ -198,6 +202,8 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
   );
   const encounterValue = value['encounter'];
   const encounter = encounterValue === null ? null : decodeEncounter(encounterValue);
+  const explorationValue = value['exploration'];
+  const exploration = explorationValue === null ? null : decodeExploration(explorationValue);
   if (
     typeof value['product'] !== 'string' ||
     typeof value['version'] !== 'string' ||
@@ -209,9 +215,12 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
     availableAdventures.length === 0 ||
     new Set(availableAdventures.map((choice) => choice.id)).size !== availableAdventures.length ||
     campaign === undefined ||
+    exploration === undefined ||
     encounter === undefined ||
     (campaign === null && encounter !== null) ||
-    (campaign?.phase === 'camp' && encounter !== null) ||
+    (campaign === null && exploration !== null) ||
+    (campaign?.phase === 'camp' && (encounter !== null || exploration !== null)) ||
+    (campaign?.phase === 'exploration' && (exploration === null || encounter !== null)) ||
     ((campaign?.phase === 'encounter' || campaign?.phase === 'outcome') && encounter === null) ||
     (campaign?.phase === 'encounter' &&
       (encounter?.turnOwner === null || campaign.latestOutcome !== null)) ||
@@ -229,8 +238,137 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
     saved: value['saved'],
     availableAdventures,
     campaign,
+    exploration,
     encounter,
   };
+}
+
+function decodeExploration(value: unknown): ExplorationDto | undefined {
+  if (
+    !hasExactKeys(value, [
+      'canStepBackward',
+      'canStepForward',
+      'discoveredCells',
+      'dungeonTitle',
+      'facing',
+      'height',
+      'landmark',
+      'view',
+      'wallStyle',
+      'width',
+      'x',
+      'y',
+    ])
+  ) {
+    return undefined;
+  }
+  const view = decodeArray(
+    value['view'],
+    D20_PROTOCOL_LIMITS.maxDungeonViewDepth,
+    decodeExplorationDepth,
+  );
+  const discoveredCells = decodeArray(
+    value['discoveredCells'],
+    D20_PROTOCOL_LIMITS.maxDungeonCells,
+    decodeDiscoveredCell,
+  );
+  const landmarkValue = value['landmark'];
+  const landmark =
+    landmarkValue === null ? null : decodeExplorationLandmark(landmarkValue);
+  const width = value['width'];
+  const height = value['height'];
+  const x = value['x'];
+  const y = value['y'];
+  if (
+    typeof value['dungeonTitle'] !== 'string' ||
+    value['dungeonTitle'].length === 0 ||
+    typeof value['wallStyle'] !== 'string' ||
+    value['wallStyle'].length === 0 ||
+    !isSafePositiveInteger(width) ||
+    !isSafePositiveInteger(height) ||
+    width * height > D20_PROTOCOL_LIMITS.maxDungeonCells ||
+    !isSafeNonNegativeInteger(x) ||
+    !isSafeNonNegativeInteger(y) ||
+    x >= width ||
+    y >= height ||
+    !isExplorationFacing(value['facing']) ||
+    typeof value['canStepForward'] !== 'boolean' ||
+    typeof value['canStepBackward'] !== 'boolean' ||
+    view === undefined ||
+    view.length !== D20_PROTOCOL_LIMITS.maxDungeonViewDepth ||
+    view.some((depth, index) => depth.depth !== index) ||
+    discoveredCells === undefined ||
+    discoveredCells.length === 0 ||
+    discoveredCells.some((cell) => cell.x >= width || cell.y >= height) ||
+    new Set(discoveredCells.map((cell) => `${cell.x}:${cell.y}`)).size !==
+      discoveredCells.length ||
+    !discoveredCells.some((cell) => cell.x === x && cell.y === y) ||
+    landmark === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    dungeonTitle: value['dungeonTitle'],
+    wallStyle: value['wallStyle'],
+    width,
+    height,
+    x,
+    y,
+    facing: value['facing'],
+    canStepForward: value['canStepForward'],
+    canStepBackward: value['canStepBackward'],
+    view,
+    discoveredCells,
+    landmark,
+  };
+}
+
+function decodeExplorationDepth(value: unknown): ExplorationDepthDto | undefined {
+  if (!hasExactKeys(value, ['depth', 'frontBlocked', 'leftBlocked', 'rightBlocked'])) {
+    return undefined;
+  }
+  return isSafeNonNegativeInteger(value['depth']) &&
+    typeof value['frontBlocked'] === 'boolean' &&
+    typeof value['leftBlocked'] === 'boolean' &&
+    typeof value['rightBlocked'] === 'boolean'
+    ? {
+        depth: value['depth'],
+        frontBlocked: value['frontBlocked'],
+        leftBlocked: value['leftBlocked'],
+        rightBlocked: value['rightBlocked'],
+      }
+    : undefined;
+}
+
+function decodeDiscoveredCell(
+  value: unknown,
+): ExplorationDto['discoveredCells'][number] | undefined {
+  if (!hasExactKeys(value, ['x', 'y'])) {
+    return undefined;
+  }
+  return isSafeNonNegativeInteger(value['x']) && isSafeNonNegativeInteger(value['y'])
+    ? { x: value['x'], y: value['y'] }
+    : undefined;
+}
+
+function decodeExplorationLandmark(value: unknown): ExplorationLandmarkDto | undefined {
+  if (!hasExactKeys(value, ['id', 'inspected', 'text', 'title'])) {
+    return undefined;
+  }
+  return typeof value['id'] === 'string' &&
+    value['id'].length > 0 &&
+    typeof value['title'] === 'string' &&
+    value['title'].length > 0 &&
+    typeof value['text'] === 'string' &&
+    value['text'].length > 0 &&
+    typeof value['inspected'] === 'boolean'
+    ? {
+        id: value['id'],
+        title: value['title'],
+        text: value['text'],
+        inspected: value['inspected'],
+      }
+    : undefined;
 }
 
 function decodeCampaign(value: unknown): CampaignDto | undefined {
@@ -269,7 +407,10 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
   if (
     typeof value['id'] !== 'string' ||
     typeof value['title'] !== 'string' ||
-    (phase !== 'camp' && phase !== 'encounter' && phase !== 'outcome') ||
+    (phase !== 'camp' &&
+      phase !== 'exploration' &&
+      phase !== 'encounter' &&
+      phase !== 'outcome') ||
     (activeEncounterId !== null && typeof activeEncounterId !== 'string') ||
     hero === undefined ||
     loadout === undefined ||
@@ -278,8 +419,10 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
     new Set(completedEncounters.map((entry) => entry.encounterId)).size !==
       completedEncounters.length ||
     latestOutcome === undefined ||
-    (phase === 'camp' && activeEncounterId !== null) ||
-    (phase === 'camp' && latestOutcome === null && completedEncounters.length !== 0) ||
+    ((phase === 'camp' || phase === 'exploration') && activeEncounterId !== null) ||
+    ((phase === 'camp' || phase === 'exploration') &&
+      latestOutcome === null &&
+      completedEncounters.length !== 0) ||
     ((phase === 'encounter' || phase === 'outcome') && activeEncounterId === null) ||
     (phase === 'encounter' &&
       completedEncounters.some((completed) => completed.encounterId === activeEncounterId)) ||
@@ -859,6 +1002,10 @@ function isApiErrorKind(value: unknown): value is ApiErrorKindDto {
 
 function isLoadoutRarity(value: unknown): value is LoadoutRarityDto {
   return value === 'common' || value === 'uncommon' || value === 'rare' || value === 'epic';
+}
+
+function isExplorationFacing(value: unknown): value is ExplorationDto['facing'] {
+  return value === 'north' || value === 'east' || value === 'south' || value === 'west';
 }
 
 function isLogKind(value: unknown): value is GameLogKindDto {

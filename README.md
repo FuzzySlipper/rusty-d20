@@ -10,12 +10,15 @@ The current product is a deliberately bounded but real adventure shell. An
 Angular/Nx application is served by a Rust process and reaches Rust-owned state
 through a strict generated same-origin contract. The browser can choose either
 the Steel-oriented **The Warden's Gate** or Ember-oriented **Ember's Wake**,
-save in camp, enter authored encounters, manage Engine-backed
-inventory/equipment and camp storage, inspect every attributed defense, choose
-authored actions and targets, apply optional reactions, resolve deterministic
-source-attributed damage/effects, face an explicit deterministic opposition
-turn, and play through victory or defeat. Warden's Gate is an ordered
-two-encounter campaign; Ember's Wake is a distinct single-encounter path.
+save in camp, enter a first-person dungeon, move and turn on a Rust-owned grid,
+inspect landmarks, reveal only visited cells on the automap, and enter combat
+only by reaching a hidden authored trigger. Combat shifts to the existing modal
+screen, where the player manages Engine-backed inventory/equipment and camp
+storage, inspects attributed defenses, chooses authored actions and targets,
+applies optional reactions, resolves deterministic source-attributed
+damage/effects, faces an explicit opposition turn, and plays through victory or
+defeat. Warden's Gate is an ordered two-encounter campaign; Ember's Wake is a
+distinct single-encounter path.
 Victory transfers the path's
 canonical reward into camp storage; defeat applies its authored bounded
 recovery. A fresh Rust process continues the exact selected composition,
@@ -23,10 +26,11 @@ campaign phase, turn owner, outcome, loadout, and authoritative state without
 replay. The shell shows the configured save identity, offers an explicit
 destructive reset with identity/revision guards, and remains usable when a
 malformed save needs to be discarded.
-Characters, loadouts, storage, encounter presentation, outcomes, and rewards
-are defined in multi-file TypeScript authoring modules and compiled by Rust
-from checked canonical artifacts; the running host does not need Node. Fake
-transport remains available only from `libs/testing-fixtures`.
+Characters, loadouts, storage, dungeon topology/placements, encounter
+presentation, outcomes, and rewards are defined in multi-file TypeScript
+authoring modules and compiled by Rust from checked canonical artifacts; the
+running host does not need Node. Fake transport remains available only from
+`libs/testing-fixtures`.
 
 ## Start the product
 
@@ -36,14 +40,15 @@ pnpm run serve:local
 ```
 
 Open the printed `BASE_URL`. With no prior save, choose **The Warden's Gate**
-or **Ember's Wake**, inspect its camp and loadout, then enter the offered
-encounter. The host writes an explicit save to
+or **Ember's Wake**, inspect its camp and loadout, enter the dungeon, and use
+the movement pad or arrow/WASD keys to find its encounters. The browser cannot
+name or start an encounter directly. The host writes an explicit save to
 `target/rusty-d20/save.json`; after restart, **Continue Adventure** resumes the
-exact selected path, camp or encounter phase, and canonical loadout. Resolve
-any pending action before saving; the Rust host rejects pending saves before
-changing the existing save file. **Reset / New Adventure** names the exact
-save and live revision before deleting it. A malformed save starts a typed
-recovery screen rather than terminating the host.
+exact selected path, camp, dungeon cell and facing, encounter/outcome phase,
+and canonical loadout. Resolve any pending action before saving; the Rust host
+rejects pending saves before changing the existing save file. **Reset / New
+Adventure** names the exact save and live revision before deleting it. A
+malformed save starts a typed recovery screen rather than terminating the host.
 
 For a managed LAN-visible instance, use:
 
@@ -64,11 +69,12 @@ start at [docs/design.md](docs/design.md) and
 
 ## Current phase boundary
 
-The GM7 reference slice and D20G1 campaign shell are connected end to end. It
-is not yet a broad d20 product: initiative order beyond each
-bounded two-combatant encounter, movement, spellcasting, advancement, content
-publication, broader item/content catalogs, and branching campaign graphs
-remain later milestones. See
+The GM7 reference slice and first Gold Box exploration milestone are connected
+end to end. It is not yet the complete Ruleweaver game: overhead tactical grid
+combat, authoritative multi-combatant party/initiative turns, translated
+Ruleweaver vocabulary/content, spellcasting, advancement, content publication,
+broader item/content catalogs, and branching campaign graphs remain later
+milestones. See
 [docs/known-limitations.md](docs/known-limitations.md).
 
 ## Provenance
@@ -76,4 +82,6 @@ remain later milestones. See
 The UI was copied from `FuzzySlipper/rusty-engine-ui` at exact reviewed commit
 `68ddfa5430ec3bc2cf7ca96963982db9511e79ba`. Rusty Engine crates are pinned to
 exact reviewed commit `fb608e323a8b44a55195f5720101224ff37fd5db` with public
-Git dependencies. See [docs/source-provenance.md](docs/source-provenance.md).
+Git dependencies. The reviewed Ruleweaver and Asha D20 Fantasy translation
+references are recorded, but no content from them enters this exploration
+milestone. See [docs/source-provenance.md](docs/source-provenance.md).

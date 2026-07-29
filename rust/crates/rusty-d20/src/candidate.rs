@@ -252,6 +252,54 @@ pub struct EncounterCandidate {
     pub defeat: EncounterOutcomeCandidate,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum DungeonFacingCandidate {
+    North,
+    East,
+    South,
+    West,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct DungeonEncounterCandidate {
+    pub encounter: D20Id,
+    pub x: u16,
+    pub y: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct DungeonLandmarkCandidate {
+    pub id: D20Id,
+    pub x: u16,
+    pub y: u16,
+    pub title: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct DungeonCandidate {
+    pub title: String,
+    pub wall_style: D20Id,
+    pub width: u16,
+    pub height: u16,
+    pub rows: Vec<String>,
+    pub start_x: u16,
+    pub start_y: u16,
+    pub checkpoint_x: u16,
+    pub checkpoint_y: u16,
+    pub start_facing: DungeonFacingCandidate,
+    pub encounters: Vec<DungeonEncounterCandidate>,
+    pub landmarks: Vec<DungeonLandmarkCandidate>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
@@ -266,6 +314,7 @@ pub struct AdventureCandidate {
     pub storage: Vec<D20Id>,
     pub items: Vec<D20Id>,
     pub encounters: Vec<D20Id>,
+    pub dungeon: DungeonCandidate,
     pub start_source: String,
     pub start_text: String,
     pub start_details: Vec<String>,
@@ -324,6 +373,10 @@ pub fn generated_d20_candidate_typescript() -> String {
         ItemInstanceCandidate::decl(),
         EncounterOutcomeCandidate::decl(),
         EncounterCandidate::decl(),
+        DungeonFacingCandidate::decl(),
+        DungeonEncounterCandidate::decl(),
+        DungeonLandmarkCandidate::decl(),
+        DungeonCandidate::decl(),
         AdventureCandidate::decl(),
         D20RulesCandidate::decl(),
     ]

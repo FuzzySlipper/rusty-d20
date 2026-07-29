@@ -40,6 +40,7 @@ export function makeGameSnapshot(overrides: Partial<GameSnapshotDto> = {}): Game
       },
     ],
     campaign: null,
+    exploration: null,
     encounter: null,
     ...overrides,
   };
@@ -69,7 +70,8 @@ export function createFakeRustyD20Transport(
     loadSaveStatus: async () => ({ ok: true, value: saveStatus }),
     resetSession: async () => sessionResult,
     newAdventure: async () => sessionResult,
-    enterEncounter: async () => sessionResult,
+    beginExploration: async () => sessionResult,
+    explorationCommand: async () => sessionResult,
     equipItem: async () => sessionResult,
     unequipItem: async () => sessionResult,
     transferItem: async () => sessionResult,

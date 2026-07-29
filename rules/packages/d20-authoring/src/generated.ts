@@ -53,6 +53,14 @@ export type EncounterOutcomeCandidate = { title: string, summary: string, logSou
 
 export type EncounterCandidate = { id: D20Id, title: string, summary: string, opponent: D20Id, availableFromCamp: boolean, introductionSource: string, introductionText: string, introductionDetails: Array<string>, victory: EncounterOutcomeCandidate, defeat: EncounterOutcomeCandidate, };
 
-export type AdventureCandidate = { id: D20Id, title: string, default: boolean, selectable: boolean, hero: D20Id, characters: Array<D20Id>, campStorage: D20Id, storage: Array<D20Id>, items: Array<D20Id>, encounters: Array<D20Id>, startSource: string, startText: string, startDetails: Array<string>, };
+export type DungeonFacingCandidate = "north" | "east" | "south" | "west";
+
+export type DungeonEncounterCandidate = { encounter: D20Id, x: number, y: number, };
+
+export type DungeonLandmarkCandidate = { id: D20Id, x: number, y: number, title: string, text: string, };
+
+export type DungeonCandidate = { title: string, wallStyle: D20Id, width: number, height: number, rows: Array<string>, startX: number, startY: number, checkpointX: number, checkpointY: number, startFacing: DungeonFacingCandidate, encounters: Array<DungeonEncounterCandidate>, landmarks: Array<DungeonLandmarkCandidate>, };
+
+export type AdventureCandidate = { id: D20Id, title: string, default: boolean, selectable: boolean, hero: D20Id, characters: Array<D20Id>, campStorage: D20Id, storage: Array<D20Id>, items: Array<D20Id>, encounters: Array<D20Id>, dungeon: DungeonCandidate, startSource: string, startText: string, startDetails: Array<string>, };
 
 export type D20RulesCandidate = { schemaVersion: number, abilities: Array<AbilityCandidate>, defenses: Array<DefenseCandidate>, damageTypes: Array<DamageTypeCandidate>, resources: Array<ResourceCandidate>, armors: Array<ArmorCandidate>, effects: Array<EffectCandidate>, reactions: Array<ReactionCandidate>, actions: Array<ActionCandidate>, characterTemplates: Array<CharacterTemplateCandidate>, storage: Array<StorageCandidate>, itemInstances: Array<ItemInstanceCandidate>, encounters: Array<EncounterCandidate>, adventures: Array<AdventureCandidate>, };

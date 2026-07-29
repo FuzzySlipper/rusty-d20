@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use gameplay_mechanics::{
     CapacityMetricDefinition, CapacityMetricId, CatalogError, CatalogVersion, DamageKindDefinition,
@@ -15,18 +15,24 @@ use gameplay_rules::{
     RuleDiagnosticError, RuleDiagnosticReport, RuleDiagnosticSeverity, RulePackageIdentity,
     RulePackageSetError, RuleSubjectId, MAX_RULE_DIAGNOSTICS,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     ActionCandidate, AdventureCandidate, ArmorCandidate, CharacterAffinityKindCandidate,
-    CharacterTemplateCandidate, D20Id, D20RulesCandidate, DamageCandidate, EffectCandidate,
-    EncounterCandidate, EncounterOutcomeCandidate, ItemInstanceCandidate, ItemRarityCandidate,
-    ReactionCandidate, StorageCandidate, D20_CANDIDATE_SCHEMA_VERSION,
+    CharacterTemplateCandidate, D20Id, D20RulesCandidate, DamageCandidate, DungeonCandidate,
+    DungeonFacingCandidate, EffectCandidate, EncounterCandidate, EncounterOutcomeCandidate,
+    ItemInstanceCandidate, ItemRarityCandidate, ReactionCandidate, StorageCandidate,
+    D20_CANDIDATE_SCHEMA_VERSION,
 };
 
 pub const MAX_D20_DEFINITIONS_PER_KIND: usize = 64;
 pub const MAX_D20_ADVENTURES_PER_PACKAGE: usize = 16;
 pub const MAX_D20_ADVENTURE_ENTRIES: usize = 64;
 pub const MAX_D20_AUTHORED_TEXT_BYTES: usize = 512;
+pub const MAX_D20_DUNGEON_WIDTH: u16 = 24;
+pub const MAX_D20_DUNGEON_HEIGHT: u16 = 24;
+pub const MAX_D20_DUNGEON_CELLS: usize =
+    MAX_D20_DUNGEON_WIDTH as usize * MAX_D20_DUNGEON_HEIGHT as usize;
 pub const MAX_D20_DAMAGE_DICE: u8 = 32;
 pub const MAX_D20_DAMAGE_DIE_SIDES: u16 = 1_000;
 pub const MAX_D20_EFFECT_DURATION_TURNS: u16 = 10_000;
@@ -177,6 +183,56 @@ pub struct EncounterDefinition {
     pub defeat: EncounterOutcomeDefinition,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DungeonFacingDefinition {
+    North,
+    East,
+    South,
+    West,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonEncounterDefinition {
+    pub encounter: D20Id,
+    pub x: u16,
+    pub y: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonLandmarkDefinition {
+    pub id: D20Id,
+    pub x: u16,
+    pub y: u16,
+    pub title: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DungeonDefinition {
+    pub title: String,
+    pub wall_style: D20Id,
+    pub width: u16,
+    pub height: u16,
+    pub rows: Vec<String>,
+    pub start_x: u16,
+    pub start_y: u16,
+    pub checkpoint_x: u16,
+    pub checkpoint_y: u16,
+    pub start_facing: DungeonFacingDefinition,
+    pub encounters: Vec<DungeonEncounterDefinition>,
+    pub landmarks: Vec<DungeonLandmarkDefinition>,
+}
+
+impl DungeonDefinition {
+    pub fn is_floor(&self, x: u16, y: u16) -> bool {
+        self.rows
+            .get(usize::from(y))
+            .and_then(|row| row.as_bytes().get(usize::from(x)))
+            .is_some_and(|cell| *cell == b'.')
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdventureDefinition {
     pub id: D20Id,
@@ -189,6 +245,7 @@ pub struct AdventureDefinition {
     pub storage: Vec<D20Id>,
     pub items: Vec<D20Id>,
     pub encounters: Vec<D20Id>,
+    pub dungeon: DungeonDefinition,
     pub start_source: String,
     pub start_text: String,
     pub start_details: Vec<String>,
@@ -824,6 +881,7 @@ impl DefinitionCollector {
     ) {
         for (field, text) in [
             ("title", value.title.as_str()),
+            ("dungeon/title", value.dungeon.title.as_str()),
             ("startSource", value.start_source.as_str()),
             ("startText", value.start_text.as_str()),
         ] {
@@ -840,6 +898,8 @@ impl DefinitionCollector {
             ("storage", value.storage.len()),
             ("items", value.items.len()),
             ("encounters", value.encounters.len()),
+            ("dungeon/encounters", value.dungeon.encounters.len()),
+            ("dungeon/landmarks", value.dungeon.landmarks.len()),
             ("startDetails", value.start_details.len()),
         ] {
             self.validate_adventure_list(package, subject, "adventures", &value.id, field, actual);
@@ -851,6 +911,140 @@ impl DefinitionCollector {
                 "adventures/startDetails",
                 &value.id,
                 detail,
+            );
+        }
+        for landmark in &value.dungeon.landmarks {
+            for (field, text) in [
+                ("title", landmark.title.as_str()),
+                ("text", landmark.text.as_str()),
+            ] {
+                self.validate_text(
+                    package,
+                    subject,
+                    &format!("adventures/dungeon/landmarks/{field}"),
+                    &landmark.id,
+                    text,
+                );
+            }
+        }
+        self.validate_dungeon_candidate(package, subject, &value.id, &value.dungeon);
+    }
+
+    fn validate_dungeon_candidate(
+        &mut self,
+        package: &AdmittedRulePackage,
+        subject: &str,
+        adventure: &D20Id,
+        dungeon: &DungeonCandidate,
+    ) {
+        let dimensions_valid = dungeon.width >= 3
+            && dungeon.height >= 3
+            && dungeon.width <= MAX_D20_DUNGEON_WIDTH
+            && dungeon.height <= MAX_D20_DUNGEON_HEIGHT
+            && usize::from(dungeon.width) * usize::from(dungeon.height) <= MAX_D20_DUNGEON_CELLS;
+        let rows_valid = dimensions_valid
+            && dungeon.rows.len() == usize::from(dungeon.height)
+            && dungeon.rows.iter().all(|row| {
+                row.len() == usize::from(dungeon.width)
+                    && row.bytes().all(|cell| matches!(cell, b'#' | b'.'))
+            });
+        let enclosed = rows_valid
+            && dungeon
+                .rows
+                .first()
+                .is_some_and(|row| row.bytes().all(|cell| cell == b'#'))
+            && dungeon
+                .rows
+                .last()
+                .is_some_and(|row| row.bytes().all(|cell| cell == b'#'))
+            && dungeon.rows.iter().all(|row| {
+                row.as_bytes().first() == Some(&b'#') && row.as_bytes().last() == Some(&b'#')
+            });
+        if !dimensions_valid || !rows_valid || !enclosed {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_INVALID_DUNGEON_TOPOLOGY",
+                format!("$/payload/adventures/{adventure}/dungeon"),
+                format!(
+                    "dungeon must be an enclosed 3..={MAX_D20_DUNGEON_WIDTH} by 3..={MAX_D20_DUNGEON_HEIGHT} ASCII grid containing only # and ."
+                ),
+            );
+            return;
+        }
+
+        let is_floor = |x: u16, y: u16| {
+            dungeon
+                .rows
+                .get(usize::from(y))
+                .and_then(|row| row.as_bytes().get(usize::from(x)))
+                == Some(&b'.')
+        };
+        if !is_floor(dungeon.start_x, dungeon.start_y)
+            || !is_floor(dungeon.checkpoint_x, dungeon.checkpoint_y)
+        {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_INVALID_DUNGEON_START",
+                format!("$/payload/adventures/{adventure}/dungeon/start"),
+                "dungeon start and checkpoint must be traversable cells".to_owned(),
+            );
+        }
+
+        let mut placements = BTreeSet::new();
+        let invalid_placement = dungeon
+            .encounters
+            .iter()
+            .map(|entry| ("encounter", entry.x, entry.y))
+            .chain(
+                dungeon
+                    .landmarks
+                    .iter()
+                    .map(|entry| ("landmark", entry.x, entry.y)),
+            )
+            .find(|(_, x, y)| !is_floor(*x, *y) || !placements.insert((*x, *y)));
+        if let Some((kind, x, y)) = invalid_placement {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_INVALID_DUNGEON_PLACEMENT",
+                format!("$/payload/adventures/{adventure}/dungeon/{kind}s"),
+                format!("{kind} placement ({x},{y}) is blocked, out of bounds, or overlaps another placement"),
+            );
+        }
+
+        let mut reachable = BTreeSet::from([(dungeon.start_x, dungeon.start_y)]);
+        let mut queue = VecDeque::from([(dungeon.start_x, dungeon.start_y)]);
+        while let Some((x, y)) = queue.pop_front() {
+            for (next_x, next_y) in [
+                (x.wrapping_sub(1), y),
+                (x.saturating_add(1), y),
+                (x, y.wrapping_sub(1)),
+                (x, y.saturating_add(1)),
+            ] {
+                if is_floor(next_x, next_y) && reachable.insert((next_x, next_y)) {
+                    queue.push_back((next_x, next_y));
+                }
+            }
+        }
+        if !reachable.contains(&(dungeon.checkpoint_x, dungeon.checkpoint_y))
+            || dungeon
+                .encounters
+                .iter()
+                .any(|entry| !reachable.contains(&(entry.x, entry.y)))
+            || dungeon
+                .landmarks
+                .iter()
+                .any(|entry| !reachable.contains(&(entry.x, entry.y)))
+        {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_UNREACHABLE_DUNGEON_CONTENT",
+                format!("$/payload/adventures/{adventure}/dungeon"),
+                "checkpoint, encounters, and landmarks must be reachable from the dungeon start"
+                    .to_owned(),
             );
         }
     }
@@ -1296,6 +1490,44 @@ impl DefinitionCollector {
                 ("encounters", definition.encounters.as_slice()),
             ] {
                 self.validate_unique_ids(&package, &correlation, "adventures", &id, field, values);
+            }
+            let dungeon_encounters = definition
+                .dungeon
+                .encounters
+                .iter()
+                .map(|placement| placement.encounter.clone())
+                .collect::<Vec<_>>();
+            self.validate_unique_ids(
+                &package,
+                &correlation,
+                "adventures",
+                &id,
+                "dungeon/encounters",
+                &dungeon_encounters,
+            );
+            let landmark_ids = definition
+                .dungeon
+                .landmarks
+                .iter()
+                .map(|landmark| landmark.id.clone())
+                .collect::<Vec<_>>();
+            self.validate_unique_ids(
+                &package,
+                &correlation,
+                "adventures",
+                &id,
+                "dungeon/landmarks",
+                &landmark_ids,
+            );
+            if dungeon_encounters != definition.encounters {
+                self.push_for_identity(
+                    &package,
+                    Some(&correlation),
+                    "D20_INVALID_DUNGEON_ENCOUNTERS",
+                    format!("$/payload/adventures/{id}/dungeon/encounters"),
+                    "dungeon encounter placements must name every adventure encounter exactly once in authored order"
+                        .to_owned(),
+                );
             }
             if definition.characters.is_empty()
                 || definition.encounters.is_empty()
@@ -1796,9 +2028,50 @@ fn adventure_definition(value: AdventureCandidate) -> AdventureDefinition {
         storage: value.storage,
         items: value.items,
         encounters: value.encounters,
+        dungeon: dungeon_definition(value.dungeon),
         start_source: value.start_source,
         start_text: value.start_text,
         start_details: value.start_details,
+    }
+}
+
+fn dungeon_definition(value: DungeonCandidate) -> DungeonDefinition {
+    DungeonDefinition {
+        title: value.title,
+        wall_style: value.wall_style,
+        width: value.width,
+        height: value.height,
+        rows: value.rows,
+        start_x: value.start_x,
+        start_y: value.start_y,
+        checkpoint_x: value.checkpoint_x,
+        checkpoint_y: value.checkpoint_y,
+        start_facing: match value.start_facing {
+            DungeonFacingCandidate::North => DungeonFacingDefinition::North,
+            DungeonFacingCandidate::East => DungeonFacingDefinition::East,
+            DungeonFacingCandidate::South => DungeonFacingDefinition::South,
+            DungeonFacingCandidate::West => DungeonFacingDefinition::West,
+        },
+        encounters: value
+            .encounters
+            .into_iter()
+            .map(|entry| DungeonEncounterDefinition {
+                encounter: entry.encounter,
+                x: entry.x,
+                y: entry.y,
+            })
+            .collect(),
+        landmarks: value
+            .landmarks
+            .into_iter()
+            .map(|entry| DungeonLandmarkDefinition {
+                id: entry.id,
+                x: entry.x,
+                y: entry.y,
+                title: entry.title,
+                text: entry.text,
+            })
+            .collect(),
     }
 }
 

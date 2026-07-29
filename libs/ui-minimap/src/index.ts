@@ -65,9 +65,7 @@ export interface MinimapMarkerView {
         border: 2px solid var(--rusty-engine-accent);
         border-radius: 50%;
         height: 10px;
-        left: 50%;
         position: absolute;
-        top: 50%;
         transform: translate(-50%, -50%);
         width: 10px;
       }
@@ -84,7 +82,12 @@ export interface MinimapMarkerView {
     <section class="rusty-engine-panel" aria-label="Minimap">
       <h2 class="rusty-engine-panel__title">{{ regionName() }}</h2>
       <div class="map" role="img" [attr.aria-label]="'Map of ' + regionName()">
-        <span class="player" title="You"></span>
+        <span
+          class="player"
+          title="You"
+          [style.left.%]="playerXPercent()"
+          [style.top.%]="playerYPercent()"
+        ></span>
         @for (marker of markers(); track marker.id) {
           <span
             class="marker"
@@ -102,4 +105,6 @@ export interface MinimapMarkerView {
 export class MinimapComponent {
   readonly regionName = input.required<string>();
   readonly markers = input.required<readonly MinimapMarkerView[]>();
+  readonly playerXPercent = input(50);
+  readonly playerYPercent = input(50);
 }

@@ -32,6 +32,7 @@ const snapshot = {
     },
   ],
   campaign: null,
+  exploration: null,
   encounter: null,
 };
 
@@ -109,10 +110,14 @@ describe('createHttpRustyD20Transport', () => {
         adventureId: 'embers-wake',
       },
     });
+    await expect(transport.beginExploration(0)).resolves.toEqual({
+      ok: true,
+      value: snapshot,
+    });
     await expect(
-      transport.enterEncounter({
+      transport.explorationCommand({
         expectedRevision: 0,
-        encounterId: 'iron-warden',
+        command: 'step-forward',
       }),
     ).resolves.toEqual({ ok: true, value: snapshot });
     await expect(

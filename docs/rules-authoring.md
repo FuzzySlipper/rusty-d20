@@ -104,6 +104,19 @@ runtime TypeScript: Rust admits only the next incomplete encounter, persists
 the completed prefix, restores bounded returning vitality, and preserves prior
 resources, effects, loadout, and reward state.
 
+Every adventure also authors one bounded dungeon:
+
+- an enclosed `#`/`.` row grid with exact width and height;
+- traversable start and defeat checkpoint cells plus initial facing;
+- exactly one reachable placement for every encounter, in authored order; and
+- optional reachable, non-overlapping landmarks with bounded text.
+
+These are candidate facts, not executable TypeScript navigation. Rust rejects
+malformed, oversized, blocked, overlapping, unreachable, duplicated, or
+sequence-inconsistent dungeon content during semantic admission. At runtime,
+the same compiled definition owns collision, discovery, interaction, and
+encounter activation.
+
 The focused gate checks generated-contract freshness, package isolation,
 deterministic goldens, TypeScript tests, strict Rust canonical decode, package
 and catalog fingerprints, Node-free adventure compilation, and correlated

@@ -27,21 +27,21 @@
       "domain": "rusty-d20",
       "package": "embers-wake",
       "version": 1,
-      "fingerprint": "a22256f90621321f8c9dc208be9ef01e57b2a178d6a6050a17ca9e63fe8b5624"
+      "fingerprint": "4a6228e56e634fea1578924b35782f88855c97f3fb17e0dc5dc3b569ff9c8ddc"
     },
     {
       "path": "wardens-gate.json",
       "domain": "rusty-d20",
       "package": "wardens-gate",
       "version": 1,
-      "fingerprint": "21dc5b9c5b3c22c89cfa3941d68e3159094bf6734c465e71791e75a147fe8886"
+      "fingerprint": "def3e02b49235b7511e08f8f17427e20bc3389f7dfe3ae94a50e55f3c1407a00"
     },
     {
       "path": "catalog-probe.json",
       "domain": "rusty-d20",
       "package": "catalog-probe",
       "version": 1,
-      "fingerprint": "f964528d22a4318526f8fd1675a17a94951a0630b2794d0e518bd3661dc6be56"
+      "fingerprint": "6152411d01d01bf653153d6eac6f60f827c8bf5c1d4f57968ba84392402d522b"
     },
     {
       "path": "invalid-semantics.json",
