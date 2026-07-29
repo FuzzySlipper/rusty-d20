@@ -1240,7 +1240,20 @@ impl DefinitionCollector {
         }
         for (id, (definition, package)) in self.encounters.clone() {
             let correlation = subject("encounter", &id);
-            if !self.character_templates.contains_key(&definition.opponent) {
+            if let Some((opponent, _)) = self.character_templates.get(&definition.opponent) {
+                if opponent.actions.is_empty() {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_ACTIONLESS_ENCOUNTER_OPPONENT",
+                        format!("$/payload/encounters/{id}/opponent"),
+                        format!(
+                            "encounter opponent {} must define at least one action",
+                            definition.opponent
+                        ),
+                    );
+                }
+            } else {
                 self.push_for_identity(
                     &package,
                     Some(&correlation),
@@ -1296,6 +1309,20 @@ impl DefinitionCollector {
                     "adventure requires characters, encounters, a listed hero, and listed camp storage"
                         .to_owned(),
                 );
+            }
+            if let Some((hero, _)) = self.character_templates.get(&definition.hero) {
+                if hero.actions.is_empty() {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_ACTIONLESS_ADVENTURE_HERO",
+                        format!("$/payload/adventures/{id}/hero"),
+                        format!(
+                            "adventure hero {} must define at least one action",
+                            definition.hero
+                        ),
+                    );
+                }
             }
             for character in &definition.characters {
                 if !self.character_templates.contains_key(character) {

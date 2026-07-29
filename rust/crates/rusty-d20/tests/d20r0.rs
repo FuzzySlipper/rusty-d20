@@ -484,6 +484,159 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
     }
 }
 
+fn otherwise_valid_adventure_candidate(
+    hero_actions: Vec<D20Id>,
+    opponent_actions: Vec<D20Id>,
+) -> D20RulesCandidate {
+    let character = |id_value: &str, entity_id, actions| CharacterTemplateCandidate {
+        id: id(id_value),
+        entity_id,
+        name: id_value.to_owned(),
+        title: "Combatant".to_owned(),
+        level: 1,
+        vitality: 20,
+        inventory_capacity: 2,
+        abilities: vec![
+            CharacterAbilityCandidate {
+                ability: id("dexterity"),
+                score: 10,
+            },
+            CharacterAbilityCandidate {
+                ability: id("strength"),
+                score: 10,
+            },
+        ],
+        resources: vec![CharacterResourceCandidate {
+            resource: id("guard"),
+            current: 2,
+        }],
+        actions,
+        reactions: vec![],
+        affinities: vec![],
+    };
+    let outcome = |recovery_vitality| EncounterOutcomeCandidate {
+        title: "Outcome".to_owned(),
+        summary: "Outcome summary".to_owned(),
+        log_source: "Encounter".to_owned(),
+        log_text: "Outcome log".to_owned(),
+        log_details: vec![],
+        reward_item: None,
+        reward_label: None,
+        recovery_vitality,
+    };
+
+    D20RulesCandidate {
+        schema_version: D20_CANDIDATE_SCHEMA_VERSION,
+        character_templates: vec![
+            character("hero", 401, hero_actions),
+            character("opponent", 402, opponent_actions),
+        ],
+        storage: vec![StorageCandidate {
+            id: id("camp"),
+            entity_id: 403,
+            name: "Camp".to_owned(),
+            capacity: 4,
+        }],
+        encounters: vec![EncounterCandidate {
+            id: id("duel"),
+            title: "Duel".to_owned(),
+            summary: "A valid duel.".to_owned(),
+            opponent: id("opponent"),
+            available_from_camp: true,
+            introduction_source: "Encounter".to_owned(),
+            introduction_text: "The duel starts.".to_owned(),
+            introduction_details: vec![],
+            victory: outcome(None),
+            defeat: outcome(Some(1)),
+        }],
+        adventures: vec![AdventureCandidate {
+            id: id("duel-adventure"),
+            title: "Duel adventure".to_owned(),
+            default: true,
+            hero: id("hero"),
+            characters: vec![id("hero"), id("opponent")],
+            camp_storage: id("camp"),
+            storage: vec![id("camp")],
+            items: vec![],
+            encounters: vec![id("duel")],
+            start_source: "Adventure".to_owned(),
+            start_text: "The adventure starts.".to_owned(),
+            start_details: vec![],
+        }],
+        ..D20RulesCandidate::default()
+    }
+}
+
+#[test]
+fn adventure_combat_participants_require_actions_at_semantic_admission() {
+    let compile = |package_name: &str,
+                   candidate: D20RulesCandidate|
+     -> gameplay_rules::RuleDiagnosticReport {
+        let base = admitted_base();
+        let dependency = RulePackageDependency::new(
+            base.identity().domain().clone(),
+            base.identity().package().clone(),
+            base.identity().version(),
+            Some(base.fingerprint().clone()),
+        );
+        let package = admit_d20_candidate(
+            envelope(
+                package_name,
+                vec![dependency],
+                &[
+                    "character-template:hero",
+                    "character-template:opponent",
+                    "storage:camp",
+                    "encounter:duel",
+                    "adventure:duel-adventure",
+                ],
+            ),
+            candidate,
+        )
+        .unwrap();
+        let D20CompileError::Diagnostics(report) =
+            D20Ruleset::compile(vec![package, base]).unwrap_err()
+        else {
+            panic!("actionless combat participant must fail semantic admission");
+        };
+        report
+    };
+
+    let report = compile(
+        "actionless-opponent",
+        otherwise_valid_adventure_candidate(vec![id("strike")], vec![]),
+    );
+    let diagnostic = report
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "D20_ACTIONLESS_ENCOUNTER_OPPONENT")
+        .expect("actionless opponent diagnostic");
+    assert_eq!(
+        diagnostic.logical_path(),
+        "$/payload/encounters/duel/opponent"
+    );
+    let correlation = diagnostic.correlation().expect("source correlation");
+    assert_eq!(correlation.source().as_str(), "actionless-opponent-source");
+    assert_eq!(correlation.line(), Some(4));
+
+    let report = compile(
+        "actionless-hero",
+        otherwise_valid_adventure_candidate(vec![], vec![id("strike")]),
+    );
+    let diagnostic = report
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "D20_ACTIONLESS_ADVENTURE_HERO")
+        .expect("actionless hero diagnostic");
+    assert_eq!(
+        diagnostic.logical_path(),
+        "$/payload/adventures/duel-adventure/hero"
+    );
+    let correlation = diagnostic.correlation().expect("source correlation");
+    assert_eq!(correlation.source().as_str(), "actionless-hero-source");
+    assert_eq!(correlation.line(), Some(5));
+}
+
 #[test]
 fn content_only_package_extends_the_compiled_definition_set() {
     let mut base = base_candidate();
