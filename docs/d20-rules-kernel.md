@@ -29,7 +29,13 @@ twin.
 - armor definitions and equipment slots;
 - temporary/ongoing effects with explicit turn durations;
 - resource-spending defensive reactions;
-- attack/check actions with fixed dice damage and an optional effect.
+- attack/check actions with fixed dice damage and an optional effect;
+- character templates with abilities, resources, actions, reactions, and
+  damage affinities;
+- storage and concrete item instances with authored containment/equipment;
+- encounters with availability, presentation, terminal consequences, and
+  rewards;
+- adventures that select their hero, cast, storage, items, and encounters.
 
 Package dependencies, canonical bytes, fingerprints, sources, and provenance
 come from `gameplay-rules`. Provenance subjects use stable names such as
@@ -39,12 +45,13 @@ subject was authored.
 
 Resolved packages may contribute content-only fragments. Compilation rejects
 unsupported schema versions, strict-shape failures, quotas, duplicate
-definitions, unknown references, incompatible reaction/effect pairs, invalid
-dice or bounds, exact dependency failures, and package cycles. Direct Rust
+definitions, unknown references, duplicate entity identities, incompatible
+ownership or reaction/effect pairs, invalid dice/text/list bounds, exact
+dependency failures, and package cycles. Direct Rust
 candidate admission and canonical artifact decode converge on the same compiled
 ruleset and mechanics catalog fingerprints.
 
-The starter catalog demonstrates exact package dependencies with three
+The runtime catalog demonstrates exact package dependencies with five
 canonical packages:
 
 - `starter-core` contributes four abilities, three defenses, four damage
@@ -52,7 +59,11 @@ canonical packages:
 - `steel-guard` contributes armor, a defensive reaction, ongoing bleeding,
   and two physical actions;
 - `ember-ward` contributes resolve equipment, a focus reaction, a temporary
-  ward, and two fire/psychic actions.
+  ward, and two fire/psychic actions;
+- `wardens-gate` contributes its cast, concrete loadout/storage, encounter,
+  consequences, reward, and default adventure;
+- `catalog-probe` contributes a non-default content-only adventure over the
+  exact Warden's Gate closure.
 
 Module and definition order are normalized before canonical emission. Moving
 definitions between TypeScript helpers or reordering source modules therefore
@@ -116,8 +127,10 @@ component references, verifies active effects have matching schedules, and
 reacquires live component revisions. Roll-index scoping makes continuation
 constant-time rather than replaying every prior random draw.
 
-The product runtime wraps that session with its strict schema, optimistic
-revision, next operation/log identities, and bounded receipt-explanation log.
+The product runtime wraps that session with its strict schema, authored
+adventure and exact composition fingerprint, active/resolved encounter
+identities, optimistic revision, next operation/log identities, and bounded
+receipt-explanation log.
 Pending preview authority is process-local and deliberately excluded. The
 browser never receives the `ActionPreview`; it receives a token plus immutable
 projection, while Rust retains and applies the actual preview.

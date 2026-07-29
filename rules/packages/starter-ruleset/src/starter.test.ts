@@ -25,7 +25,7 @@ test('content-only addition uses the published authoring surface', () => {
   assert.equal(extension.package.dependencies[0]?.fingerprint, starter.core.fingerprint);
 });
 
-test('starter catalog contains two different complete compositions', () => {
+test('starter catalog keeps rules, adventure content, and content-only extension exact', () => {
   const starter = authorStarterArtifacts();
   assert.deepEqual(
     starter.steelGuard.package.payload.actions?.map((action) => action.id),
@@ -36,4 +36,36 @@ test('starter catalog contains two different complete compositions', () => {
     ['fire-bolt', 'mind-spike'],
   );
   assert.notEqual(starter.steelGuard.fingerprint, starter.emberWard.fingerprint);
+  assert.deepEqual(
+    starter.wardensGate.package.sources.map(({ path }) => path),
+    [
+      'rules/packages/starter-ruleset/src/content/adventures/warden_cast.ts',
+      'rules/packages/starter-ruleset/src/content/adventures/warden_loadout.ts',
+      'rules/packages/starter-ruleset/src/content/adventures/wardens_gate.ts',
+    ],
+  );
+  assert.equal(
+    starter.wardensGate.package.payload.adventures?.[0]?.id,
+    'wardens-gate',
+  );
+  assert.equal(
+    starter.catalogProbe.package.payload.adventures?.[0]?.id,
+    'catalog-probe',
+  );
+  assert.equal(
+    starter.catalogProbe.package.dependencies[0]?.fingerprint,
+    starter.wardensGate.fingerprint,
+  );
+  assert.deepEqual(
+    starter.wardensGate.package.provenance
+      .filter(({ subject }) => subject.startsWith('adventure:'))
+      .map(({ subject, source, line }) => ({ subject, source, line })),
+    [
+      {
+        subject: 'adventure:wardens-gate',
+        source: 'wardens-gate-adventure',
+        line: 52,
+      },
+    ],
+  );
 });

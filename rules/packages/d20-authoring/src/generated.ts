@@ -8,6 +8,9 @@ maxDefinitionsPerKind: 64,
 maxDamageDice: 32,
 maxDamageDieSides: 1000,
 maxEffectDurationTurns: 10000,
+maxAdventuresPerPackage: 16,
+maxAdventureEntries: 64,
+maxAuthoredTextBytes: 512,
 } as const);
 
 export type D20Id = string;
@@ -30,4 +33,26 @@ export type ReactionCandidate = { id: D20Id, defense: D20Id, bonus: number, reso
 
 export type ActionCandidate = { id: D20Id, ability: D20Id, defense: D20Id, damage: DamageCandidate, effect: D20Id | null, };
 
-export type D20RulesCandidate = { schemaVersion: number, abilities: Array<AbilityCandidate>, defenses: Array<DefenseCandidate>, damageTypes: Array<DamageTypeCandidate>, resources: Array<ResourceCandidate>, armors: Array<ArmorCandidate>, effects: Array<EffectCandidate>, reactions: Array<ReactionCandidate>, actions: Array<ActionCandidate>, };
+export type CharacterAbilityCandidate = { ability: D20Id, score: number, };
+
+export type CharacterResourceCandidate = { resource: D20Id, current: number, };
+
+export type CharacterAffinityKindCandidate = "resistant" | "vulnerable";
+
+export type CharacterAffinityCandidate = { damageType: D20Id, affinity: CharacterAffinityKindCandidate, };
+
+export type CharacterTemplateCandidate = { id: D20Id, entityId: number, name: string, title: string, level: number, vitality: number, inventoryCapacity: number, abilities: Array<CharacterAbilityCandidate>, resources: Array<CharacterResourceCandidate>, actions: Array<D20Id>, reactions: Array<D20Id>, affinities: Array<CharacterAffinityCandidate>, };
+
+export type StorageCandidate = { id: D20Id, entityId: number, name: string, capacity: number, };
+
+export type ItemRarityCandidate = "common" | "uncommon" | "rare" | "epic";
+
+export type ItemInstanceCandidate = { id: D20Id, entityId: number, name: string, armor: D20Id, owner: D20Id, icon: string, rarity: ItemRarityCandidate, equipped: boolean, };
+
+export type EncounterOutcomeCandidate = { title: string, summary: string, logSource: string, logText: string, logDetails: Array<string>, rewardItem: D20Id | null, rewardLabel: string | null, recoveryVitality: number | null, };
+
+export type EncounterCandidate = { id: D20Id, title: string, summary: string, opponent: D20Id, availableFromCamp: boolean, introductionSource: string, introductionText: string, introductionDetails: Array<string>, victory: EncounterOutcomeCandidate, defeat: EncounterOutcomeCandidate, };
+
+export type AdventureCandidate = { id: D20Id, title: string, default: boolean, hero: D20Id, characters: Array<D20Id>, campStorage: D20Id, storage: Array<D20Id>, items: Array<D20Id>, encounters: Array<D20Id>, startSource: string, startText: string, startDetails: Array<string>, };
+
+export type D20RulesCandidate = { schemaVersion: number, abilities: Array<AbilityCandidate>, defenses: Array<DefenseCandidate>, damageTypes: Array<DamageTypeCandidate>, resources: Array<ResourceCandidate>, armors: Array<ArmorCandidate>, effects: Array<EffectCandidate>, reactions: Array<ReactionCandidate>, actions: Array<ActionCandidate>, characterTemplates: Array<CharacterTemplateCandidate>, storage: Array<StorageCandidate>, itemInstances: Array<ItemInstanceCandidate>, encounters: Array<EncounterCandidate>, adventures: Array<AdventureCandidate>, };

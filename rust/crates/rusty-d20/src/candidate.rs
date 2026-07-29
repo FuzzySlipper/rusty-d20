@@ -7,13 +7,14 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::{
-    D20Id, D20_ID_PATTERN, MAX_D20_DAMAGE_DICE, MAX_D20_DAMAGE_DIE_SIDES,
+    D20Id, D20_ID_PATTERN, MAX_D20_ADVENTURES_PER_PACKAGE, MAX_D20_ADVENTURE_ENTRIES,
+    MAX_D20_AUTHORED_TEXT_BYTES, MAX_D20_DAMAGE_DICE, MAX_D20_DAMAGE_DIE_SIDES,
     MAX_D20_DEFINITIONS_PER_KIND, MAX_D20_EFFECT_DURATION_TURNS, MAX_D20_ID_BYTES,
 };
 
 pub const D20_CANDIDATE_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
 pub struct D20RulesCandidate {
@@ -34,6 +35,16 @@ pub struct D20RulesCandidate {
     pub reactions: Vec<ReactionCandidate>,
     #[serde(default)]
     pub actions: Vec<ActionCandidate>,
+    #[serde(default)]
+    pub character_templates: Vec<CharacterTemplateCandidate>,
+    #[serde(default)]
+    pub storage: Vec<StorageCandidate>,
+    #[serde(default)]
+    pub item_instances: Vec<ItemInstanceCandidate>,
+    #[serde(default)]
+    pub encounters: Vec<EncounterCandidate>,
+    #[serde(default)]
+    pub adventures: Vec<AdventureCandidate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -122,6 +133,143 @@ pub struct DamageCandidate {
     pub bonus: i16,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct CharacterAbilityCandidate {
+    pub ability: D20Id,
+    pub score: i16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct CharacterResourceCandidate {
+    pub resource: D20Id,
+    pub current: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum CharacterAffinityKindCandidate {
+    Resistant,
+    Vulnerable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct CharacterAffinityCandidate {
+    pub damage_type: D20Id,
+    pub affinity: CharacterAffinityKindCandidate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct CharacterTemplateCandidate {
+    pub id: D20Id,
+    #[ts(type = "number")]
+    pub entity_id: u64,
+    pub name: String,
+    pub title: String,
+    pub level: u16,
+    pub vitality: u32,
+    #[ts(type = "number")]
+    pub inventory_capacity: u64,
+    pub abilities: Vec<CharacterAbilityCandidate>,
+    pub resources: Vec<CharacterResourceCandidate>,
+    pub actions: Vec<D20Id>,
+    pub reactions: Vec<D20Id>,
+    pub affinities: Vec<CharacterAffinityCandidate>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct StorageCandidate {
+    pub id: D20Id,
+    #[ts(type = "number")]
+    pub entity_id: u64,
+    pub name: String,
+    #[ts(type = "number")]
+    pub capacity: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+pub enum ItemRarityCandidate {
+    Common,
+    Uncommon,
+    Rare,
+    Epic,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ItemInstanceCandidate {
+    pub id: D20Id,
+    #[ts(type = "number")]
+    pub entity_id: u64,
+    pub name: String,
+    pub armor: D20Id,
+    pub owner: D20Id,
+    pub icon: String,
+    pub rarity: ItemRarityCandidate,
+    pub equipped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct EncounterOutcomeCandidate {
+    pub title: String,
+    pub summary: String,
+    pub log_source: String,
+    pub log_text: String,
+    pub log_details: Vec<String>,
+    pub reward_item: Option<D20Id>,
+    pub reward_label: Option<String>,
+    pub recovery_vitality: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct EncounterCandidate {
+    pub id: D20Id,
+    pub title: String,
+    pub summary: String,
+    pub opponent: D20Id,
+    pub available_from_camp: bool,
+    pub introduction_source: String,
+    pub introduction_text: String,
+    pub introduction_details: Vec<String>,
+    pub victory: EncounterOutcomeCandidate,
+    pub defeat: EncounterOutcomeCandidate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct AdventureCandidate {
+    pub id: D20Id,
+    pub title: String,
+    pub default: bool,
+    pub hero: D20Id,
+    pub characters: Vec<D20Id>,
+    pub camp_storage: D20Id,
+    pub storage: Vec<D20Id>,
+    pub items: Vec<D20Id>,
+    pub encounters: Vec<D20Id>,
+    pub start_source: String,
+    pub start_text: String,
+    pub start_details: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct D20PackageEnvelope {
     pub domain: RuleDomainId,
@@ -165,6 +313,17 @@ pub fn generated_d20_candidate_typescript() -> String {
         DamageCandidate::decl(),
         ReactionCandidate::decl(),
         ActionCandidate::decl(),
+        CharacterAbilityCandidate::decl(),
+        CharacterResourceCandidate::decl(),
+        CharacterAffinityKindCandidate::decl(),
+        CharacterAffinityCandidate::decl(),
+        CharacterTemplateCandidate::decl(),
+        StorageCandidate::decl(),
+        ItemRarityCandidate::decl(),
+        ItemInstanceCandidate::decl(),
+        EncounterOutcomeCandidate::decl(),
+        EncounterCandidate::decl(),
+        AdventureCandidate::decl(),
         D20RulesCandidate::decl(),
     ]
     .into_iter()
@@ -182,6 +341,9 @@ export const D20_LIMITS = Object.freeze({{\n\
   maxDamageDice: {MAX_D20_DAMAGE_DICE},\n\
   maxDamageDieSides: {MAX_D20_DAMAGE_DIE_SIDES},\n\
   maxEffectDurationTurns: {MAX_D20_EFFECT_DURATION_TURNS},\n\
+  maxAdventuresPerPackage: {MAX_D20_ADVENTURES_PER_PACKAGE},\n\
+  maxAdventureEntries: {MAX_D20_ADVENTURE_ENTRIES},\n\
+  maxAuthoredTextBytes: {MAX_D20_AUTHORED_TEXT_BYTES},\n\
 }} as const);\n\n\
 {declarations}\n"
     )

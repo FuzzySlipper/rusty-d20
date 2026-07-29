@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adventure;
 mod candidate;
 mod compiler;
 mod component;
@@ -19,15 +20,21 @@ use ts_rs::TS;
 
 pub use candidate::{
     admit_d20_candidate, generated_d20_candidate_typescript, AbilityCandidate, ActionCandidate,
-    ArmorCandidate, D20PackageEnvelope, D20RulesCandidate, DamageCandidate, DamageTypeCandidate,
-    DefenseCandidate, EffectCandidate, ReactionCandidate, ResourceCandidate,
+    AdventureCandidate, ArmorCandidate, CharacterAbilityCandidate, CharacterAffinityCandidate,
+    CharacterAffinityKindCandidate, CharacterResourceCandidate, CharacterTemplateCandidate,
+    D20PackageEnvelope, D20RulesCandidate, DamageCandidate, DamageTypeCandidate, DefenseCandidate,
+    EffectCandidate, EncounterCandidate, EncounterOutcomeCandidate, ItemInstanceCandidate,
+    ItemRarityCandidate, ReactionCandidate, ResourceCandidate, StorageCandidate,
     D20_CANDIDATE_SCHEMA_VERSION,
 };
 pub use compiler::{
-    AbilityDefinition, ActionDefinition, ArmorDefinition, D20CompileError, D20Ruleset,
-    DamageDefinition, DefenseDefinition, EffectDefinition, ReactionDefinition, ResourceDefinition,
-    MAX_D20_DAMAGE_DICE, MAX_D20_DAMAGE_DIE_SIDES, MAX_D20_DEFINITIONS_PER_KIND,
-    MAX_D20_EFFECT_DURATION_TURNS,
+    AbilityDefinition, ActionDefinition, AdventureDefinition, ArmorDefinition,
+    CharacterAffinityDefinition, CharacterAffinityKindDefinition, CharacterTemplateDefinition,
+    D20CompileError, D20Ruleset, DamageDefinition, DefenseDefinition, EffectDefinition,
+    EncounterDefinition, EncounterOutcomeDefinition, ItemInstanceDefinition, ItemRarityDefinition,
+    ReactionDefinition, ResourceDefinition, StorageDefinition, MAX_D20_ADVENTURES_PER_PACKAGE,
+    MAX_D20_ADVENTURE_ENTRIES, MAX_D20_AUTHORED_TEXT_BYTES, MAX_D20_DAMAGE_DICE,
+    MAX_D20_DAMAGE_DIE_SIDES, MAX_D20_DEFINITIONS_PER_KIND, MAX_D20_EFFECT_DURATION_TURNS,
 };
 pub use component::{
     d20_component_registry, register_d20_components, AbilityScore, AbilityScoresComponent,

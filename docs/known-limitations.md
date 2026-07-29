@@ -10,19 +10,21 @@ authored d20 encounter. It is not yet a broad d20 game.
   authored encounter choice. It does not yet define multiple-combatant
   initiative, movement, spellcasting, advancement, encounter selection beyond
   this one resolved encounter, generated rewards, or broader content.
-- The checked authoring catalog also contains the Ember Ward composition, but
-  the first interactive encounter intentionally loads Starter Core plus Steel
-  Guard only.
+- The checked authoring catalog also contains the Ember Ward rules package and
+  a second content-only adventure composition. The interactive default selects
+  only the exact Starter Core, Steel Guard, and Warden's Gate dependency
+  closure; Ember Ward is not silently loaded.
 - There is no content publication service, watch mode, browser editor, or
   ruleset migration policy. Artifact generation remains an explicit build-time
   command.
 - The host uses one explicit local save path, defaulting to
   `target/rusty-d20/save.json`. There is no save-slot UI, cloud/storage policy,
   authentication, TLS, multi-user coordination, or migration between Engine or
-  ruleset revisions. Product schemas 1 through 3 have explicit migrations into
-  schema 4, including deterministic installation of the starter loadout and a
+  ruleset revisions. Product schemas 1 through 4 have explicit migrations into
+  schema 5, including deterministic installation of the starter loadout and a
   defined legacy encounter turn or vitality-derived terminal outcome; this is
-  not a general migration framework.
+  not a general migration framework. Schema 5 binds saves to the exact authored
+  adventure package composition.
 - Opaque action previews are process-local and intentionally not saved. Save is
   unavailable until the pending action is resolved, including after a reaction
   commits its cost and effect. Completed entity state, turn, RNG position,

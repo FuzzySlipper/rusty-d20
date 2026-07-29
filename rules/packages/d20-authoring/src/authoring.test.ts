@@ -74,6 +74,86 @@ test('invalid d20 identities fail at their authored source', () => {
       error.code === 'invalid-d20-identity' &&
       error.message.startsWith('rules/test-content.ts:27:5:'),
   );
+
+  assert.throws(
+    () =>
+      defineD20Module(source, ({ characterTemplate }) => ({
+        characterTemplates: [
+          characterTemplate(41, {
+            id: 'hero',
+            entityId: 1,
+            name: 'Hero',
+            title: 'Tester',
+            level: 1,
+            vitality: 10,
+            inventoryCapacity: 1,
+            abilities: [],
+            resources: [],
+            actions: ['Not Valid'],
+            reactions: [],
+            affinities: [],
+          }),
+        ],
+      })),
+    (error: unknown) =>
+      error instanceof D20AuthoringError &&
+      error.code === 'invalid-d20-identity' &&
+      error.message.startsWith('rules/test-content.ts:41:1:') &&
+      error.message.includes('actions is not a valid d20 identity'),
+  );
+});
+
+test('authored adventure payloads are deeply immutable and retain provenance', () => {
+  const module = defineD20Module(source, ({ adventure, storage }) => ({
+    storage: [
+      storage(10, {
+        id: 'camp',
+        entityId: 1,
+        name: 'Camp',
+        capacity: 4,
+      }),
+    ],
+    adventures: [
+      adventure(20, {
+        id: 'test-adventure',
+        title: 'Test Adventure',
+        default: true,
+        hero: 'hero',
+        characters: ['hero', 'opponent'],
+        campStorage: 'camp',
+        storage: ['camp'],
+        items: [],
+        encounters: ['encounter'],
+        startSource: 'Adventure',
+        startText: 'The test starts.',
+        startDetails: ['Authored, not hardcoded.'],
+      }),
+    ],
+  }));
+  const artifact = authorD20Package({
+    domain: 'rusty-d20',
+    package: 'authored-adventure',
+    version: 1,
+    modules: [module],
+  });
+  assert(Object.isFrozen(artifact.package.payload.adventures));
+  assert(Object.isFrozen(artifact.package.payload.adventures?.[0]?.characters));
+  assert.deepEqual(
+    artifact.package.provenance
+      .filter(({ subject }) => subject.startsWith('adventure:'))
+      .map(({ subject, source: sourceId, line }) => ({
+        subject,
+        source: sourceId,
+        line,
+      })),
+    [
+      {
+        subject: 'adventure:test-adventure',
+        source: 'test-source',
+        line: 20,
+      },
+    ],
+  );
 });
 
 test('neutral envelope version rejection stays typed', () => {

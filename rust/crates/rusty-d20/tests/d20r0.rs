@@ -10,11 +10,13 @@ use gameplay_rules::{
 };
 use rusty_d20::{
     ability_modifier, admit_d20_candidate, AbilityCandidate, AbilityScore, ActionCandidate,
-    ActionResource, AffinitySeed, ApplyActionRequest, ArmorCandidate, ArmorItemSeed, CharacterSeed,
-    D20CompileError, D20Id, D20PackageEnvelope, D20RulesCandidate, D20Ruleset, D20Session,
-    D20SessionError, DamageAffinity, DamageCandidate, DamageTypeCandidate, DefenseCandidate,
-    EffectCandidate, ReactionCandidate, ResourceCandidate, SessionSaveError,
-    D20_CANDIDATE_SCHEMA_VERSION,
+    ActionResource, AdventureCandidate, AffinitySeed, ApplyActionRequest, ArmorCandidate,
+    ArmorItemSeed, CharacterAbilityCandidate, CharacterResourceCandidate, CharacterSeed,
+    CharacterTemplateCandidate, D20CompileError, D20Id, D20PackageEnvelope, D20RulesCandidate,
+    D20Ruleset, D20Session, D20SessionError, DamageAffinity, DamageCandidate, DamageTypeCandidate,
+    DefenseCandidate, EffectCandidate, EncounterCandidate, EncounterOutcomeCandidate,
+    ItemInstanceCandidate, ItemRarityCandidate, ReactionCandidate, ResourceCandidate,
+    SessionSaveError, StorageCandidate, D20_CANDIDATE_SCHEMA_VERSION,
 };
 use serde_json::json;
 use svc_rng::RngSeed;
@@ -100,6 +102,7 @@ fn base_candidate() -> D20RulesCandidate {
             },
             effect: Some(id("bleeding")),
         }],
+        ..D20RulesCandidate::default()
     }
 }
 
@@ -258,6 +261,7 @@ fn compiler_reports_correlated_invalid_content_and_package_cycles() {
             effects: vec![],
             reactions: vec![],
             actions: vec![],
+            ..D20RulesCandidate::default()
         },
     )
     .unwrap();
@@ -333,6 +337,154 @@ fn compiler_rejects_strict_shape_duplicates_and_d20_quotas() {
 }
 
 #[test]
+fn authored_adventure_failures_are_bounded_and_source_correlated() {
+    let base = admitted_base();
+    let dependency = RulePackageDependency::new(
+        base.identity().domain().clone(),
+        base.identity().package().clone(),
+        base.identity().version(),
+        Some(base.fingerprint().clone()),
+    );
+    let hero = CharacterTemplateCandidate {
+        id: id("hero"),
+        entity_id: 101,
+        name: "Hero".to_owned(),
+        title: "Tester".to_owned(),
+        level: 1,
+        vitality: 20,
+        inventory_capacity: 2,
+        abilities: vec![
+            CharacterAbilityCandidate {
+                ability: id("dexterity"),
+                score: 10,
+            },
+            CharacterAbilityCandidate {
+                ability: id("strength"),
+                score: 10,
+            },
+        ],
+        resources: vec![CharacterResourceCandidate {
+            resource: id("guard"),
+            current: 2,
+        }],
+        actions: vec![id("strike")],
+        reactions: vec![id("parry")],
+        affinities: vec![],
+    };
+    let outcome =
+        |reward_item: Option<D20Id>, recovery_vitality: Option<u32>| EncounterOutcomeCandidate {
+            title: "Outcome".to_owned(),
+            summary: "Outcome summary".to_owned(),
+            log_source: "Encounter".to_owned(),
+            log_text: "Outcome log".to_owned(),
+            log_details: vec![],
+            reward_label: reward_item.as_ref().map(|_| "Reward".to_owned()),
+            reward_item,
+            recovery_vitality,
+        };
+    let mut characters = vec![id("hero")];
+    characters.extend((0..64).map(|index| id(&format!("missing-{index}"))));
+    let invalid = D20RulesCandidate {
+        schema_version: D20_CANDIDATE_SCHEMA_VERSION,
+        character_templates: vec![hero],
+        storage: vec![StorageCandidate {
+            id: id("camp"),
+            entity_id: 101,
+            name: "Camp".to_owned(),
+            capacity: 4,
+        }],
+        item_instances: vec![
+            ItemInstanceCandidate {
+                id: id("orphan"),
+                entity_id: 202,
+                name: "Orphan armor".to_owned(),
+                armor: id("chain"),
+                owner: id("missing-owner"),
+                icon: "armor".to_owned(),
+                rarity: ItemRarityCandidate::Common,
+                equipped: false,
+            },
+            ItemInstanceCandidate {
+                id: id("stored-equipped"),
+                entity_id: 203,
+                name: "Stored armor".to_owned(),
+                armor: id("chain"),
+                owner: id("camp"),
+                icon: "armor".to_owned(),
+                rarity: ItemRarityCandidate::Common,
+                equipped: true,
+            },
+        ],
+        encounters: vec![EncounterCandidate {
+            id: id("broken-encounter"),
+            title: "Broken encounter".to_owned(),
+            summary: "Missing its opponent and reward".to_owned(),
+            opponent: id("missing-opponent"),
+            available_from_camp: true,
+            introduction_source: "Encounter".to_owned(),
+            introduction_text: "A broken encounter starts.".to_owned(),
+            introduction_details: vec![],
+            victory: outcome(Some(id("missing-reward")), None),
+            defeat: outcome(None, Some(1)),
+        }],
+        adventures: vec![AdventureCandidate {
+            id: id("broken-adventure"),
+            title: "Broken adventure".to_owned(),
+            default: true,
+            hero: id("hero"),
+            characters,
+            camp_storage: id("camp"),
+            storage: vec![id("camp")],
+            items: vec![id("orphan"), id("stored-equipped")],
+            encounters: vec![id("broken-encounter")],
+            start_source: "Adventure".to_owned(),
+            start_text: "The broken adventure starts.".to_owned(),
+            start_details: vec![],
+        }],
+        ..D20RulesCandidate::default()
+    };
+    let package = admit_d20_candidate(
+        envelope(
+            "adventure-invalid",
+            vec![dependency],
+            &[
+                "character-template:hero",
+                "storage:camp",
+                "item-instance:orphan",
+                "item-instance:stored-equipped",
+                "encounter:broken-encounter",
+                "adventure:broken-adventure",
+            ],
+        ),
+        invalid,
+    )
+    .unwrap();
+
+    let D20CompileError::Diagnostics(report) =
+        D20Ruleset::compile(vec![package, base]).unwrap_err()
+    else {
+        panic!("invalid authored adventure must produce diagnostics");
+    };
+    for (code, source_line) in [
+        ("D20_DUPLICATE_ENTITY_ID", 2),
+        ("D20_UNKNOWN_ITEM_OWNER", 3),
+        ("D20_INCOMPATIBLE_EQUIPPED_OWNER", 4),
+        ("D20_UNKNOWN_ENCOUNTER_OPPONENT", 5),
+        ("D20_UNKNOWN_REWARD_ITEM", 5),
+        ("D20_ADVENTURE_ENTRY_QUOTA", 6),
+    ] {
+        let diagnostic = report
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code() == code)
+            .unwrap_or_else(|| panic!("missing diagnostic {code}"));
+        let correlation = diagnostic.correlation().expect("source correlation");
+        assert_eq!(correlation.source().as_str(), "adventure-invalid-source");
+        assert_eq!(correlation.line(), Some(source_line));
+    }
+}
+
+#[test]
 fn content_only_package_extends_the_compiled_definition_set() {
     let mut base = base_candidate();
     base.armors.clear();
@@ -360,6 +512,7 @@ fn content_only_package_extends_the_compiled_definition_set() {
             effects: vec![],
             reactions: vec![],
             actions: vec![],
+            ..D20RulesCandidate::default()
         },
     )
     .unwrap();

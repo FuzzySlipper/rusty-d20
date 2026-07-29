@@ -5,9 +5,15 @@
 | `rust/crates/rusty-d20/src/lib.rs` | Public Rust surface, bootstrap runtime, DTOs, Engine pin readout | `cargo test -p rusty-d20 --locked` |
 | `rust/crates/rusty-d20/src/candidate.rs` | Strict versioned d20 candidate types and neutral gameplay-rules envelope admission | `cargo test -p rusty-d20 --test d20r0 candidate --locked` |
 | `rust/crates/rusty-d20/src/compiler.rs` | Downstream semantic validation, correlated diagnostics, immutable definitions, mechanics catalog compilation | `cargo test -p rusty-d20 --test d20r0 compiler --locked` |
+| `rust/crates/rusty-d20/src/adventure.rs` | Strict embedded authored catalog, default selection, and exact dependency-closure compilation | `cargo test -p rusty-d20 --lib adventure --locked` |
 | `rust/crates/rusty-d20/src/component.rs` | Durable d20 ability, resource, and caller-owned effect-schedule components | `cargo test -p rusty-d20 --test d20r0 --locked` |
 | `rust/crates/rusty-d20/src/session.rs` | Atomic preview/reaction/apply, Engine inventory/equipment service adapter, deterministic rolls, explicit turn expiry, complete saves | `cargo test -p rusty-d20 --test d20r0 --locked` |
-| `rust/crates/rusty-d20/src/game.rs` | Product campaign phases, deterministic opposition/turn policy, outcome and reward transitions, fixed camp loadout policy, opaque preview custody, projection, optimistic revisions, strict schema migration, bounded explanations, product save/reopen | `cargo test -p rusty-d20 --lib --locked` |
+| `rust/crates/rusty-d20/src/game.rs` | Product command orchestration: campaign phases, deterministic opposition/turn policy, outcomes, opaque preview custody, and optimistic revisions | `cargo test -p rusty-d20 --lib --locked` |
+| `rust/crates/rusty-d20/src/game/dto.rs` | Generated-protocol DTO ownership | `pnpm run protocol:check` |
+| `rust/crates/rusty-d20/src/game/content.rs` | Admitted content-to-session seeds, loadout/reward adaptation, and product-state validation | `cargo test -p rusty-d20 --lib --locked` |
+| `rust/crates/rusty-d20/src/game/persistence.rs` | Strict schema-5 save/reopen, exact composition binding, and schemas 1–4 migration | `cargo test -p rusty-d20 --lib --locked` |
+| `rust/crates/rusty-d20/src/game/projection.rs` | Immutable campaign, encounter, character, loadout, and receipt projections | `cargo test -p rusty-d20 --lib --locked` |
+| `rust/crates/rusty-d20/src/game/tests.rs` | Product orchestration, persistence, atomicity, and catalog regressions | `cargo test -p rusty-d20 --lib --locked` |
 | `rust/crates/rusty-d20/src/identity.rs` | Bounded stable downstream definition identities | Rust tests and strict candidate decode |
 | `rust/crates/rusty-d20/tests/d20r0.rs` | Headless semantic, failure-atomicity, persistence, provenance, and composition evidence | `cargo test -p rusty-d20 --test d20r0 --locked` |
 | `rust/crates/rusty-d20/tests/d20a0.rs` | Node-free strict decode, starter composition, generated contract, fingerprint, and diagnostic-correlation proof | `cargo test -p rusty-d20 --test d20a0 --locked` |
@@ -25,7 +31,7 @@
 | `libs/testing-fixtures/` | Explicit fake transport/readout helpers | Must never enter production graph |
 | `rules/packages/d20-authoring/` | Isolated build-time d20 builders over Rust-generated types and exact Engine authoring packages | `pnpm --dir rules run verify` |
 | `rules/packages/starter-ruleset/` | Multi-file Rusty D20 content and package compositions | Rules tests plus `d20a0` Rust test |
-| `rules/artifacts/starter/` | Checked canonical packages and fingerprint manifest consumed by Node-free Rust | `pnpm --dir rules run generate:check` |
+| `rules/artifacts/starter/` | Checked canonical packages, fingerprint manifest, and runtime catalog consumed by Node-free Rust | `pnpm --dir rules run generate:check` |
 | `rules/scripts/` | Artifact generation and authoring/runtime/browser isolation audit | `pnpm --dir rules run boundary` |
 | `apps/app-e2e/` | Real-host browser smoke and opt-in evidence collector | `pnpm run verify:browser` |
 | `tools/scripts/` | Generated boundaries, product audit, live broker | `pnpm run verify:boundaries` |

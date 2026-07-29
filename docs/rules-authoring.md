@@ -27,8 +27,9 @@ revision.
   mapping, and canonical emission.
 - `@rusty-d20/starter-ruleset` owns concrete Rusty D20 content. It imports the
   SDK only through its package root.
-- `rules/artifacts/starter/` contains canonical JSON packages and the
-  fingerprint manifest consumed by Rust tests and the Rust product runtime.
+- `rules/artifacts/starter/` contains canonical JSON packages, the fingerprint
+  manifest, and `catalog.json`. The catalog embeds the canonical runtime
+  packages; it intentionally excludes negative-test artifacts.
 
 Definition arrays are sorted by stable identity before emission. Engine
 admission then canonicalizes dependencies, sources, provenance, object keys,
@@ -71,7 +72,29 @@ pnpm --dir rules run generate
 ./scripts/verify-rules.sh
 ```
 
+## Add an adventure
+
+Adventure content uses the same source-aware builders. Keep cohesive authored
+facts in separate modules, as the current example does:
+
+```text
+content/adventures/warden_cast.ts       character templates
+content/adventures/warden_loadout.ts    storage and item instances
+content/adventures/wardens_gate.ts      encounter, outcomes, reward, adventure
+content/adventures/catalog_probe.ts     content-only composition proof
+```
+
+Register the modules in a concrete package in
+`starter-ruleset/src/index.ts`, use `exactDependencyOn` for its prerequisite
+rules package, add the artifact to `generate-artifacts.mjs`, and regenerate.
+Rust discovers the adventure owner from the catalog and compiles only its exact
+dependency closure. Adding another adventure or changing names, character
+scores, inventory, equipment, explanations, availability, or outcome content
+does not require edits to `game.rs`, `session.rs`, the semantic compiler, or
+Rusty Engine. New semantic behavior still belongs in the Rust candidate and
+compiler.
+
 The focused gate checks generated-contract freshness, package isolation,
-deterministic goldens, TypeScript tests, strict Rust canonical decode, both
-starter compositions, fingerprints, and correlated invalid-content
-diagnostics.
+deterministic goldens, TypeScript tests, strict Rust canonical decode, package
+and catalog fingerprints, Node-free adventure compilation, and correlated
+invalid-content diagnostics.

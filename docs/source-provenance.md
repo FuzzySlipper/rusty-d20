@@ -73,10 +73,11 @@ These decisions are recorded in
 
 ## GM7 product composition
 
-The interactive reference slice compiles the checked `starter-core.json` and
-`steel-guard.json` artifacts into the Rust-owned runtime. Their canonical
-package fingerprints and exact source paths remain recorded by
-`rules/artifacts/starter/manifest.json` and the artifacts themselves. The
+The interactive reference slice resolves the default Warden's Gate adventure
+from checked `catalog.json`, then compiles the exact `starter-core`,
+`steel-guard`, and `wardens-gate` dependency closure into the Rust-owned
+runtime. Canonical package fingerprints and exact source paths remain recorded
+by `rules/artifacts/starter/manifest.json` and the artifacts themselves. The
 browser receives the compiled ruleset fingerprint, not authored TypeScript or
 an executable rules representation.
 

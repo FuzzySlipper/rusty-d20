@@ -24,13 +24,22 @@ Compose domain/store/components there, bind its route in `apps/app`, and add an
 opt-in live scenario with explicit non-claims. Update `libs/shell` for new route
 identities.
 
-## Add authored rules
+## Add authored rules or adventure content
 
 Add source modules under `rules/packages/starter-ruleset/src/content/` using the
 package-root `@rusty-d20/rules-authoring` builders. TypeScript may use
 functions, loops, tables, and helpers to emit a bounded immutable candidate.
 Run `pnpm --dir rules run generate`, inspect the artifact and fingerprint
-manifest, and add Rust assertions when the content proves a new composition.
+manifest/catalog, and add Rust assertions when the content proves a new
+composition. Character templates, storage, item instances, encounters,
+outcomes, rewards, and adventures are ordinary authored definitions; follow
+the multi-file example under `content/adventures/`.
+
+The runtime resolves an adventure to its exact package dependency closure.
+Content-only additions therefore change TypeScript source and regenerated
+artifacts, not `game.rs`, `session.rs`, the Rust semantic compiler, or Engine.
+If an addition needs new behavior rather than new data, extend the explicit
+Rust-owned semantic contract instead of hiding behavior in content.
 
 Rust owns schema admission and semantics. The checked artifact must remain
 usable by a Node-free Rust process; no callback or TypeScript evaluator may

@@ -18,14 +18,19 @@ import {
   D20_LIMITS,
   type AbilityCandidate,
   type ActionCandidate,
+  type AdventureCandidate,
   type ArmorCandidate,
+  type CharacterTemplateCandidate,
   type D20Id,
   type D20RulesCandidate,
   type DamageTypeCandidate,
   type DefenseCandidate,
   type EffectCandidate,
+  type EncounterCandidate,
+  type ItemInstanceCandidate,
   type ReactionCandidate,
   type ResourceCandidate,
+  type StorageCandidate,
 } from './generated.js';
 
 const d20IdRegex = new RegExp(D20_ID_PATTERN);
@@ -51,6 +56,11 @@ export interface D20Module {
   readonly effects: readonly Located<EffectCandidate>[];
   readonly reactions: readonly Located<ReactionCandidate>[];
   readonly actions: readonly Located<ActionCandidate>[];
+  readonly characterTemplates: readonly Located<CharacterTemplateCandidate>[];
+  readonly storage: readonly Located<StorageCandidate>[];
+  readonly itemInstances: readonly Located<ItemInstanceCandidate>[];
+  readonly encounters: readonly Located<EncounterCandidate>[];
+  readonly adventures: readonly Located<AdventureCandidate>[];
 }
 
 export interface D20ModuleDraft {
@@ -62,6 +72,11 @@ export interface D20ModuleDraft {
   readonly effects?: readonly Located<EffectCandidate>[];
   readonly reactions?: readonly Located<ReactionCandidate>[];
   readonly actions?: readonly Located<ActionCandidate>[];
+  readonly characterTemplates?: readonly Located<CharacterTemplateCandidate>[];
+  readonly storage?: readonly Located<StorageCandidate>[];
+  readonly itemInstances?: readonly Located<ItemInstanceCandidate>[];
+  readonly encounters?: readonly Located<EncounterCandidate>[];
+  readonly adventures?: readonly Located<AdventureCandidate>[];
 }
 
 export interface D20ModuleBuilder {
@@ -105,6 +120,31 @@ export interface D20ModuleBuilder {
     value: ActionCandidate,
     column?: number,
   ): Located<ActionCandidate>;
+  characterTemplate(
+    line: number,
+    value: CharacterTemplateCandidate,
+    column?: number,
+  ): Located<CharacterTemplateCandidate>;
+  storage(
+    line: number,
+    value: StorageCandidate,
+    column?: number,
+  ): Located<StorageCandidate>;
+  itemInstance(
+    line: number,
+    value: ItemInstanceCandidate,
+    column?: number,
+  ): Located<ItemInstanceCandidate>;
+  encounter(
+    line: number,
+    value: EncounterCandidate,
+    column?: number,
+  ): Located<EncounterCandidate>;
+  adventure(
+    line: number,
+    value: AdventureCandidate,
+    column?: number,
+  ): Located<AdventureCandidate>;
 }
 
 export interface D20PackageDraft {
@@ -166,6 +206,11 @@ export function defineD20Module(
     effects: [...(draft.effects ?? [])],
     reactions: [...(draft.reactions ?? [])],
     actions: [...(draft.actions ?? [])],
+    characterTemplates: [...(draft.characterTemplates ?? [])],
+    storage: [...(draft.storage ?? [])],
+    itemInstances: [...(draft.itemInstances ?? [])],
+    encounters: [...(draft.encounters ?? [])],
+    adventures: [...(draft.adventures ?? [])],
   });
 }
 
@@ -184,6 +229,17 @@ export function authorD20Package(
   const effects = collect<EffectCandidate>(draft.modules, 'effects');
   const reactions = collect<ReactionCandidate>(draft.modules, 'reactions');
   const actions = collect<ActionCandidate>(draft.modules, 'actions');
+  const characterTemplates = collect<CharacterTemplateCandidate>(
+    draft.modules,
+    'characterTemplates',
+  );
+  const storage = collect<StorageCandidate>(draft.modules, 'storage');
+  const itemInstances = collect<ItemInstanceCandidate>(
+    draft.modules,
+    'itemInstances',
+  );
+  const encounters = collect<EncounterCandidate>(draft.modules, 'encounters');
+  const adventures = collect<AdventureCandidate>(draft.modules, 'adventures');
   const payload = deepFreeze({
     schemaVersion: D20_CANDIDATE_SCHEMA_VERSION,
     abilities: values(abilities),
@@ -194,6 +250,11 @@ export function authorD20Package(
     effects: values(effects),
     reactions: values(reactions),
     actions: values(actions),
+    characterTemplates: values(characterTemplates),
+    storage: values(storage),
+    itemInstances: values(itemInstances),
+    encounters: values(encounters),
+    adventures: values(adventures),
   }) as CandidateJson;
   const provenance = [
     ...provenanceFor('ability', abilities),
@@ -204,6 +265,11 @@ export function authorD20Package(
     ...provenanceFor('effect', effects),
     ...provenanceFor('reaction', reactions),
     ...provenanceFor('action', actions),
+    ...provenanceFor('character-template', characterTemplates),
+    ...provenanceFor('storage', storage),
+    ...provenanceFor('item-instance', itemInstances),
+    ...provenanceFor('encounter', encounters),
+    ...provenanceFor('adventure', adventures),
   ];
 
   return authorRulePackage<JsonValue>({
@@ -318,6 +384,50 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
             : ([['effect', value.effect]] as const)),
         ],
       ),
+    characterTemplate: (line, value, column = 1) =>
+      locate(source, line, column, value, [
+        ['id', value.id],
+        ...value.abilities.map(
+          (entry) => ['abilities.ability', entry.ability] as const,
+        ),
+        ...value.resources.map(
+          (entry) => ['resources.resource', entry.resource] as const,
+        ),
+        ...value.actions.map((id) => ['actions', id] as const),
+        ...value.reactions.map((id) => ['reactions', id] as const),
+        ...value.affinities.map(
+          (entry) => ['affinities.damageType', entry.damageType] as const,
+        ),
+      ]),
+    storage: (line, value, column = 1) =>
+      locate(source, line, column, value, [['id', value.id]]),
+    itemInstance: (line, value, column = 1) =>
+      locate(source, line, column, value, [
+        ['id', value.id],
+        ['armor', value.armor],
+        ['owner', value.owner],
+      ]),
+    encounter: (line, value, column = 1) =>
+      locate(source, line, column, value, [
+        ['id', value.id],
+        ['opponent', value.opponent],
+        ...(value.victory.rewardItem === null
+          ? []
+          : ([['victory.rewardItem', value.victory.rewardItem]] as const)),
+        ...(value.defeat.rewardItem === null
+          ? []
+          : ([['defeat.rewardItem', value.defeat.rewardItem]] as const)),
+      ]),
+    adventure: (line, value, column = 1) =>
+      locate(source, line, column, value, [
+        ['id', value.id],
+        ['hero', value.hero],
+        ['campStorage', value.campStorage],
+        ...value.characters.map((id) => ['characters', id] as const),
+        ...value.storage.map((id) => ['storage', id] as const),
+        ...value.items.map((id) => ['items', id] as const),
+        ...value.encounters.map((id) => ['encounters', id] as const),
+      ]),
   };
   return Object.freeze(builder);
 }
@@ -415,7 +525,12 @@ type DefinitionKey =
   | 'armors'
   | 'effects'
   | 'reactions'
-  | 'actions';
+  | 'actions'
+  | 'characterTemplates'
+  | 'storage'
+  | 'itemInstances'
+  | 'encounters'
+  | 'adventures';
 
 type Collected<T> = Located<T> & { readonly source: D20Source };
 

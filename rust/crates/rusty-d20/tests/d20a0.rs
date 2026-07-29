@@ -13,6 +13,13 @@ struct ArtifactManifest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CatalogArtifact {
+    schema_version: u32,
+    packages: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct ArtifactEntry {
     path: String,
     domain: String,
@@ -46,7 +53,7 @@ fn generated_contract_and_artifact_manifest_match_rust_owners() {
     let manifest: ArtifactManifest =
         serde_json::from_slice(&fs::read(artifact_root().join("manifest.json")).unwrap()).unwrap();
     assert_eq!(manifest.schema_version, 1);
-    assert_eq!(manifest.artifacts.len(), 4);
+    assert_eq!(manifest.artifacts.len(), 6);
     for entry in manifest.artifacts {
         let package = load(&entry.path);
         assert_eq!(package.identity().domain().as_str(), entry.domain);
@@ -54,6 +61,33 @@ fn generated_contract_and_artifact_manifest_match_rust_owners() {
         assert_eq!(package.identity().version().get(), entry.version);
         assert_eq!(package.fingerprint().as_str(), entry.fingerprint);
     }
+
+    let catalog: CatalogArtifact =
+        serde_json::from_slice(&fs::read(artifact_root().join("catalog.json")).unwrap()).unwrap();
+    assert_eq!(catalog.schema_version, 1);
+    assert_eq!(catalog.packages.len(), 5);
+    let package_names = catalog
+        .packages
+        .iter()
+        .map(|canonical| {
+            decode_canonical_rule_package(canonical.as_bytes())
+                .expect("catalog contains strict canonical Engine packages")
+                .identity()
+                .package()
+                .as_str()
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        package_names,
+        [
+            "starter-core",
+            "steel-guard",
+            "ember-ward",
+            "wardens-gate",
+            "catalog-probe",
+        ]
+    );
 }
 
 #[test]
@@ -61,6 +95,8 @@ fn checked_artifacts_drive_two_node_free_rust_compositions() {
     let core = load("starter-core.json");
     let steel = load("steel-guard.json");
     let ember = load("ember-ward.json");
+    let warden = load("wardens-gate.json");
+    let probe = load("catalog-probe.json");
 
     let steel_rules = D20Ruleset::compile(vec![steel.clone(), core.clone()]).unwrap();
     assert!(steel_rules.action(&id("longsword-strike")).is_some());
@@ -90,6 +126,16 @@ fn checked_artifacts_drive_two_node_free_rust_compositions() {
     assert_eq!(combined.damage_types().count(), 4);
     assert_eq!(combined.resources().count(), 3);
     assert_eq!(combined.reactions().count(), 2);
+
+    let adventure_rules = D20Ruleset::compile(vec![
+        probe,
+        warden,
+        load("steel-guard.json"),
+        load("starter-core.json"),
+    ])
+    .expect("the content-only package composes without TypeScript at runtime");
+    assert!(adventure_rules.adventure(&id("wardens-gate")).is_some());
+    assert!(adventure_rules.adventure(&id("catalog-probe")).is_some());
 }
 
 #[test]

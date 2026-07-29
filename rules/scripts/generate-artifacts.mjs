@@ -13,7 +13,16 @@ const entries = [
   ['starter-core.json', artifacts.core],
   ['steel-guard.json', artifacts.steelGuard],
   ['ember-ward.json', artifacts.emberWard],
+  ['wardens-gate.json', artifacts.wardensGate],
+  ['catalog-probe.json', artifacts.catalogProbe],
   ['invalid-semantics.json', artifacts.invalidSemantics],
+];
+const runtimeArtifacts = [
+  artifacts.core,
+  artifacts.steelGuard,
+  artifacts.emberWard,
+  artifacts.wardensGate,
+  artifacts.catalogProbe,
 ];
 const manifest = `${JSON.stringify(
   {
@@ -35,6 +44,17 @@ for (const [path, artifact] of entries) {
   await update(new URL(path, root), artifact.canonicalJson);
 }
 await update(new URL('manifest.json', root), manifest);
+await update(
+  new URL('catalog.json', root),
+  `${JSON.stringify(
+    {
+      schemaVersion: 1,
+      packages: runtimeArtifacts.map((artifact) => artifact.canonicalJson),
+    },
+    null,
+    2,
+  )}\n`,
+);
 
 async function update(url, expected) {
   if (mode === '--write') {

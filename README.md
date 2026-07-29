@@ -19,8 +19,11 @@ applies bounded recovery when Mara returns to camp. A fresh Rust process
 continues the exact campaign phase, turn owner, outcome, loadout, and
 authoritative state without replay. The
 checked starter catalog also includes the separate ember/resolve composition
-for headless and authoring proof. Fake transport remains available only from
-`libs/testing-fixtures`.
+for headless and authoring proof plus a content-only adventure composition.
+Characters, loadouts, storage, encounter presentation, outcomes, and rewards
+are defined in multi-file TypeScript authoring modules and compiled by Rust
+from checked canonical artifacts; the running host does not need Node. Fake
+transport remains available only from `libs/testing-fixtures`.
 
 ## Start the product
 

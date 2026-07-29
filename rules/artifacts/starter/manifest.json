@@ -6,28 +6,42 @@
       "domain": "rusty-d20",
       "package": "starter-core",
       "version": 1,
-      "fingerprint": "c5b4d44a9061168090abd2eef9a9e60b9d1413af815b850bdfc6ac7ace2c9bec"
+      "fingerprint": "af2dc794bdc02dcf8a99753fef15e706d664a7d3f2c2562468938163d6af2ff6"
     },
     {
       "path": "steel-guard.json",
       "domain": "rusty-d20",
       "package": "steel-guard",
       "version": 1,
-      "fingerprint": "389635ef0c3da480f4fcedd93fa54884eb7e3a0c60985c3e3fcee1522fd5e3bd"
+      "fingerprint": "d25c138ad46342423764603fe6302c3411e748b4bb85973d24d01e88e6f8c567"
     },
     {
       "path": "ember-ward.json",
       "domain": "rusty-d20",
       "package": "ember-ward",
       "version": 1,
-      "fingerprint": "d4399ed43dd70d3a82f4ffe0dd1333a08b1f913c07b2fe80605dc6a5adb18c2d"
+      "fingerprint": "a4c589aec018193d52ba9c32ac5ae01fedb909055e9a34de64d9358726aa797c"
+    },
+    {
+      "path": "wardens-gate.json",
+      "domain": "rusty-d20",
+      "package": "wardens-gate",
+      "version": 1,
+      "fingerprint": "03586406a2cf92d72ff3e0f9d627e1374bcae6ea65e48e78dd3414fa7bfaeaab"
+    },
+    {
+      "path": "catalog-probe.json",
+      "domain": "rusty-d20",
+      "package": "catalog-probe",
+      "version": 1,
+      "fingerprint": "b9c091221189f66ead37565c42ab02bb50ccaae66f379e902d8f549ab5ddf16a"
     },
     {
       "path": "invalid-semantics.json",
       "domain": "rusty-d20",
       "package": "invalid-semantics",
       "version": 1,
-      "fingerprint": "fae0357c52f0aea984558c0677b831d3f9d30f55c9d0f6db93596533504a2cdf"
+      "fingerprint": "3b27727d910769006c9e151f617b7cbf799b8f3d20575d1c468c0f855b4b7d71"
     }
   ]
 }

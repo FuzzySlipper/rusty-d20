@@ -10,11 +10,17 @@ import { emberWardModule } from './content/ember_ward.js';
 import { fundamentalsModule } from './content/fundamentals.js';
 import { invalidSemanticsModule } from './content/invalid.js';
 import { steelGuardModule } from './content/steel_guard.js';
+import { catalogProbeModule } from './content/adventures/catalog_probe.js';
+import { wardenCastModule } from './content/adventures/warden_cast.js';
+import { wardenLoadoutModule } from './content/adventures/warden_loadout.js';
+import { wardensGateModule } from './content/adventures/wardens_gate.js';
 
 export interface StarterArtifacts {
   readonly core: D20CanonicalArtifact;
   readonly steelGuard: D20CanonicalArtifact;
   readonly emberWard: D20CanonicalArtifact;
+  readonly wardensGate: D20CanonicalArtifact;
+  readonly catalogProbe: D20CanonicalArtifact;
   readonly invalidSemantics: D20CanonicalArtifact;
 }
 
@@ -26,21 +32,37 @@ export function authorStarterArtifacts(): StarterArtifacts {
     modules: [abilitiesModule, fundamentalsModule],
   });
   const exactCore = exactDependencyOn(core);
+  const steelGuard = authorD20Package({
+    domain: 'rusty-d20',
+    package: 'steel-guard',
+    version: 1,
+    dependencies: [exactCore],
+    modules: [steelGuardModule],
+  });
+  const wardensGate = authorD20Package({
+    domain: 'rusty-d20',
+    package: 'wardens-gate',
+    version: 1,
+    dependencies: [exactDependencyOn(steelGuard)],
+    modules: [wardenCastModule, wardenLoadoutModule, wardensGateModule],
+  });
   return Object.freeze({
     core,
-    steelGuard: authorD20Package({
-      domain: 'rusty-d20',
-      package: 'steel-guard',
-      version: 1,
-      dependencies: [exactCore],
-      modules: [steelGuardModule],
-    }),
+    steelGuard,
     emberWard: authorD20Package({
       domain: 'rusty-d20',
       package: 'ember-ward',
       version: 1,
       dependencies: [exactCore],
       modules: [emberWardModule],
+    }),
+    wardensGate,
+    catalogProbe: authorD20Package({
+      domain: 'rusty-d20',
+      package: 'catalog-probe',
+      version: 1,
+      dependencies: [exactDependencyOn(wardensGate)],
+      modules: [catalogProbeModule],
     }),
     invalidSemantics: authorD20Package({
       domain: 'rusty-d20',

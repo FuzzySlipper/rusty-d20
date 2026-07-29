@@ -17,11 +17,16 @@ use gameplay_rules::{
 };
 
 use crate::{
-    ActionCandidate, ArmorCandidate, D20Id, D20RulesCandidate, DamageCandidate, EffectCandidate,
-    ReactionCandidate, D20_CANDIDATE_SCHEMA_VERSION,
+    ActionCandidate, AdventureCandidate, ArmorCandidate, CharacterAffinityKindCandidate,
+    CharacterTemplateCandidate, D20Id, D20RulesCandidate, DamageCandidate, EffectCandidate,
+    EncounterCandidate, EncounterOutcomeCandidate, ItemInstanceCandidate, ItemRarityCandidate,
+    ReactionCandidate, StorageCandidate, D20_CANDIDATE_SCHEMA_VERSION,
 };
 
 pub const MAX_D20_DEFINITIONS_PER_KIND: usize = 64;
+pub const MAX_D20_ADVENTURES_PER_PACKAGE: usize = 16;
+pub const MAX_D20_ADVENTURE_ENTRIES: usize = 64;
+pub const MAX_D20_AUTHORED_TEXT_BYTES: usize = 512;
 pub const MAX_D20_DAMAGE_DICE: u8 = 32;
 pub const MAX_D20_DAMAGE_DIE_SIDES: u16 = 1_000;
 pub const MAX_D20_EFFECT_DURATION_TURNS: u16 = 10_000;
@@ -90,6 +95,104 @@ pub struct ActionDefinition {
     pub effect: Option<D20Id>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CharacterAffinityKindDefinition {
+    Resistant,
+    Vulnerable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CharacterAffinityDefinition {
+    pub damage_type: D20Id,
+    pub affinity: CharacterAffinityKindDefinition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CharacterTemplateDefinition {
+    pub id: D20Id,
+    pub entity_id: u64,
+    pub name: String,
+    pub title: String,
+    pub level: u16,
+    pub vitality: u32,
+    pub inventory_capacity: u64,
+    pub abilities: BTreeMap<D20Id, i16>,
+    pub resources: BTreeMap<D20Id, u16>,
+    pub actions: Vec<D20Id>,
+    pub reactions: Vec<D20Id>,
+    pub affinities: Vec<CharacterAffinityDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageDefinition {
+    pub id: D20Id,
+    pub entity_id: u64,
+    pub name: String,
+    pub capacity: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ItemRarityDefinition {
+    Common,
+    Uncommon,
+    Rare,
+    Epic,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemInstanceDefinition {
+    pub id: D20Id,
+    pub entity_id: u64,
+    pub name: String,
+    pub armor: D20Id,
+    pub owner: D20Id,
+    pub icon: String,
+    pub rarity: ItemRarityDefinition,
+    pub equipped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncounterOutcomeDefinition {
+    pub title: String,
+    pub summary: String,
+    pub log_source: String,
+    pub log_text: String,
+    pub log_details: Vec<String>,
+    pub reward_item: Option<D20Id>,
+    pub reward_label: Option<String>,
+    pub recovery_vitality: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncounterDefinition {
+    pub id: D20Id,
+    pub title: String,
+    pub summary: String,
+    pub opponent: D20Id,
+    pub available_from_camp: bool,
+    pub introduction_source: String,
+    pub introduction_text: String,
+    pub introduction_details: Vec<String>,
+    pub victory: EncounterOutcomeDefinition,
+    pub defeat: EncounterOutcomeDefinition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdventureDefinition {
+    pub id: D20Id,
+    pub title: String,
+    pub default: bool,
+    pub hero: D20Id,
+    pub characters: Vec<D20Id>,
+    pub camp_storage: D20Id,
+    pub storage: Vec<D20Id>,
+    pub items: Vec<D20Id>,
+    pub encounters: Vec<D20Id>,
+    pub start_source: String,
+    pub start_text: String,
+    pub start_details: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct D20Ruleset {
     fingerprint: String,
@@ -102,6 +205,11 @@ pub struct D20Ruleset {
     effects: BTreeMap<D20Id, EffectDefinition>,
     reactions: BTreeMap<D20Id, ReactionDefinition>,
     actions: BTreeMap<D20Id, ActionDefinition>,
+    character_templates: BTreeMap<D20Id, CharacterTemplateDefinition>,
+    storage: BTreeMap<D20Id, StorageDefinition>,
+    item_instances: BTreeMap<D20Id, ItemInstanceDefinition>,
+    encounters: BTreeMap<D20Id, EncounterDefinition>,
+    adventures: BTreeMap<D20Id, AdventureDefinition>,
 }
 
 impl D20Ruleset {
@@ -180,6 +288,26 @@ impl D20Ruleset {
         self.actions.get(id)
     }
 
+    pub fn character_template(&self, id: &D20Id) -> Option<&CharacterTemplateDefinition> {
+        self.character_templates.get(id)
+    }
+
+    pub fn storage(&self, id: &D20Id) -> Option<&StorageDefinition> {
+        self.storage.get(id)
+    }
+
+    pub fn item_instance(&self, id: &D20Id) -> Option<&ItemInstanceDefinition> {
+        self.item_instances.get(id)
+    }
+
+    pub fn encounter(&self, id: &D20Id) -> Option<&EncounterDefinition> {
+        self.encounters.get(id)
+    }
+
+    pub fn adventure(&self, id: &D20Id) -> Option<&AdventureDefinition> {
+        self.adventures.get(id)
+    }
+
     pub fn abilities(&self) -> impl Iterator<Item = &AbilityDefinition> {
         self.abilities.values()
     }
@@ -206,6 +334,10 @@ impl D20Ruleset {
 
     pub fn damage_types(&self) -> impl Iterator<Item = &D20Id> {
         self.damage_types.iter()
+    }
+
+    pub fn adventures(&self) -> impl Iterator<Item = &AdventureDefinition> {
+        self.adventures.values()
     }
 }
 
@@ -235,6 +367,11 @@ struct DefinitionCollector {
     effects: BTreeMap<D20Id, (EffectDefinition, RulePackageIdentity)>,
     reactions: BTreeMap<D20Id, (ReactionDefinition, RulePackageIdentity)>,
     actions: BTreeMap<D20Id, (ActionDefinition, RulePackageIdentity)>,
+    character_templates: BTreeMap<D20Id, (CharacterTemplateDefinition, RulePackageIdentity)>,
+    storage: BTreeMap<D20Id, (StorageDefinition, RulePackageIdentity)>,
+    item_instances: BTreeMap<D20Id, (ItemInstanceDefinition, RulePackageIdentity)>,
+    encounters: BTreeMap<D20Id, (EncounterDefinition, RulePackageIdentity)>,
+    adventures: BTreeMap<D20Id, (AdventureDefinition, RulePackageIdentity)>,
     packages: BTreeMap<RulePackageIdentity, AdmittedRulePackage>,
     diagnostics: Vec<RuleDiagnostic>,
 }
@@ -265,6 +402,26 @@ impl DefinitionCollector {
         self.enforce_quota(package, "effects", candidate.effects.len());
         self.enforce_quota(package, "reactions", candidate.reactions.len());
         self.enforce_quota(package, "actions", candidate.actions.len());
+        self.enforce_quota(
+            package,
+            "characterTemplates",
+            candidate.character_templates.len(),
+        );
+        self.enforce_quota(package, "storage", candidate.storage.len());
+        self.enforce_quota(package, "itemInstances", candidate.item_instances.len());
+        self.enforce_quota(package, "encounters", candidate.encounters.len());
+        if candidate.adventures.len() > MAX_D20_ADVENTURES_PER_PACKAGE {
+            self.push_diagnostic(
+                package,
+                None,
+                "D20_ADVENTURE_QUOTA",
+                "$/payload/adventures",
+                format!(
+                    "adventures contains {} definitions; maximum is {MAX_D20_ADVENTURES_PER_PACKAGE}",
+                    candidate.adventures.len()
+                ),
+            );
+        }
 
         for value in candidate.abilities {
             let subject = subject("ability", &value.id);
@@ -440,6 +597,300 @@ impl DefinitionCollector {
                 package,
                 "action",
                 &mut self.diagnostics,
+            );
+        }
+        for value in candidate.character_templates {
+            let subject = subject("character-template", &value.id);
+            self.validate_character_candidate(package, &subject, &value);
+            let definition = character_template_definition(value);
+            insert_unique(
+                &mut self.character_templates,
+                definition.id.clone(),
+                definition,
+                package,
+                "character-template",
+                &mut self.diagnostics,
+            );
+        }
+        for value in candidate.storage {
+            let subject = subject("storage", &value.id);
+            if value.entity_id == 0 || value.capacity == 0 {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_INVALID_STORAGE",
+                    format!("$/payload/storage/{}", value.id),
+                    "storage requires nonzero entity identity and capacity".to_owned(),
+                );
+            }
+            self.validate_text(package, &subject, "storage/name", &value.id, &value.name);
+            let definition = storage_definition(value);
+            insert_unique(
+                &mut self.storage,
+                definition.id.clone(),
+                definition,
+                package,
+                "storage",
+                &mut self.diagnostics,
+            );
+        }
+        for value in candidate.item_instances {
+            let subject = subject("item-instance", &value.id);
+            if value.entity_id == 0 {
+                self.push_diagnostic(
+                    package,
+                    Some(&subject),
+                    "D20_INVALID_ITEM_ENTITY",
+                    format!("$/payload/itemInstances/{}/entityId", value.id),
+                    "item entity identity must be nonzero".to_owned(),
+                );
+            }
+            self.validate_text(
+                package,
+                &subject,
+                "itemInstances/name",
+                &value.id,
+                &value.name,
+            );
+            self.validate_text(
+                package,
+                &subject,
+                "itemInstances/icon",
+                &value.id,
+                &value.icon,
+            );
+            let definition = item_instance_definition(value);
+            insert_unique(
+                &mut self.item_instances,
+                definition.id.clone(),
+                definition,
+                package,
+                "item-instance",
+                &mut self.diagnostics,
+            );
+        }
+        for value in candidate.encounters {
+            let subject = subject("encounter", &value.id);
+            self.validate_encounter_candidate(package, &subject, &value);
+            let definition = encounter_definition(value);
+            insert_unique(
+                &mut self.encounters,
+                definition.id.clone(),
+                definition,
+                package,
+                "encounter",
+                &mut self.diagnostics,
+            );
+        }
+        for value in candidate.adventures {
+            let subject = subject("adventure", &value.id);
+            self.validate_adventure_candidate(package, &subject, &value);
+            let definition = adventure_definition(value);
+            insert_unique(
+                &mut self.adventures,
+                definition.id.clone(),
+                definition,
+                package,
+                "adventure",
+                &mut self.diagnostics,
+            );
+        }
+    }
+
+    fn validate_character_candidate(
+        &mut self,
+        package: &AdmittedRulePackage,
+        subject: &str,
+        value: &CharacterTemplateCandidate,
+    ) {
+        if value.entity_id == 0
+            || value.level == 0
+            || value.vitality == 0
+            || value.vitality > 1_000_000
+            || value.inventory_capacity == 0
+        {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_INVALID_CHARACTER_TEMPLATE",
+                format!("$/payload/characterTemplates/{}", value.id),
+                "character requires nonzero entity, level, vitality, and inventory capacity"
+                    .to_owned(),
+            );
+        }
+        for (field, text) in [
+            ("name", value.name.as_str()),
+            ("title", value.title.as_str()),
+        ] {
+            self.validate_text(
+                package,
+                subject,
+                &format!("characterTemplates/{field}"),
+                &value.id,
+                text,
+            );
+        }
+        for (field, actual) in [
+            ("abilities", value.abilities.len()),
+            ("resources", value.resources.len()),
+            ("actions", value.actions.len()),
+            ("reactions", value.reactions.len()),
+            ("affinities", value.affinities.len()),
+        ] {
+            self.validate_adventure_list(
+                package,
+                subject,
+                "characterTemplates",
+                &value.id,
+                field,
+                actual,
+            );
+        }
+    }
+
+    fn validate_encounter_candidate(
+        &mut self,
+        package: &AdmittedRulePackage,
+        subject: &str,
+        value: &EncounterCandidate,
+    ) {
+        for (field, text) in [
+            ("title", value.title.as_str()),
+            ("summary", value.summary.as_str()),
+            ("introductionSource", value.introduction_source.as_str()),
+            ("introductionText", value.introduction_text.as_str()),
+            ("victory/title", value.victory.title.as_str()),
+            ("victory/summary", value.victory.summary.as_str()),
+            ("victory/logSource", value.victory.log_source.as_str()),
+            ("victory/logText", value.victory.log_text.as_str()),
+            ("defeat/title", value.defeat.title.as_str()),
+            ("defeat/summary", value.defeat.summary.as_str()),
+            ("defeat/logSource", value.defeat.log_source.as_str()),
+            ("defeat/logText", value.defeat.log_text.as_str()),
+        ] {
+            self.validate_text(
+                package,
+                subject,
+                &format!("encounters/{field}"),
+                &value.id,
+                text,
+            );
+        }
+        for (field, details) in [
+            ("introductionDetails", value.introduction_details.as_slice()),
+            ("victory/logDetails", value.victory.log_details.as_slice()),
+            ("defeat/logDetails", value.defeat.log_details.as_slice()),
+        ] {
+            self.validate_adventure_list(
+                package,
+                subject,
+                "encounters",
+                &value.id,
+                field,
+                details.len(),
+            );
+            for detail in details {
+                self.validate_text(
+                    package,
+                    subject,
+                    &format!("encounters/{field}"),
+                    &value.id,
+                    detail,
+                );
+            }
+        }
+        if value.victory.reward_item.is_some() != value.victory.reward_label.is_some()
+            || value.victory.recovery_vitality.is_some()
+            || value.defeat.reward_item.is_some()
+            || value.defeat.reward_label.is_some()
+            || value.defeat.recovery_vitality == Some(0)
+        {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_INVALID_ENCOUNTER_OUTCOME",
+                format!("$/payload/encounters/{}", value.id),
+                "victory reward identity/label must be paired, victory cannot recover vitality, and defeat cannot reward or recover zero vitality".to_owned(),
+            );
+        }
+    }
+
+    fn validate_adventure_candidate(
+        &mut self,
+        package: &AdmittedRulePackage,
+        subject: &str,
+        value: &AdventureCandidate,
+    ) {
+        for (field, text) in [
+            ("title", value.title.as_str()),
+            ("startSource", value.start_source.as_str()),
+            ("startText", value.start_text.as_str()),
+        ] {
+            self.validate_text(
+                package,
+                subject,
+                &format!("adventures/{field}"),
+                &value.id,
+                text,
+            );
+        }
+        for (field, actual) in [
+            ("characters", value.characters.len()),
+            ("storage", value.storage.len()),
+            ("items", value.items.len()),
+            ("encounters", value.encounters.len()),
+            ("startDetails", value.start_details.len()),
+        ] {
+            self.validate_adventure_list(package, subject, "adventures", &value.id, field, actual);
+        }
+        for detail in &value.start_details {
+            self.validate_text(
+                package,
+                subject,
+                "adventures/startDetails",
+                &value.id,
+                detail,
+            );
+        }
+    }
+
+    fn validate_text(
+        &mut self,
+        package: &AdmittedRulePackage,
+        subject: &str,
+        field: &str,
+        id: &D20Id,
+        value: &str,
+    ) {
+        if value.is_empty() || value.len() > MAX_D20_AUTHORED_TEXT_BYTES {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_AUTHORED_TEXT_BOUNDS",
+                format!("$/payload/{field}/{id}"),
+                format!("authored text must contain 1..={MAX_D20_AUTHORED_TEXT_BYTES} bytes"),
+            );
+        }
+    }
+
+    fn validate_adventure_list(
+        &mut self,
+        package: &AdmittedRulePackage,
+        subject: &str,
+        kind: &str,
+        id: &D20Id,
+        field: &str,
+        actual: usize,
+    ) {
+        if actual > MAX_D20_ADVENTURE_ENTRIES {
+            self.push_diagnostic(
+                package,
+                Some(subject),
+                "D20_ADVENTURE_ENTRY_QUOTA",
+                format!("$/payload/{kind}/{id}/{field}"),
+                format!(
+                    "{field} contains {actual} entries; maximum is {MAX_D20_ADVENTURE_ENTRIES}"
+                ),
             );
         }
     }
@@ -634,6 +1085,348 @@ impl DefinitionCollector {
                 );
             }
         }
+        self.validate_authored_references();
+    }
+
+    fn validate_authored_references(&mut self) {
+        let mut entity_owners = BTreeMap::<u64, (String, RulePackageIdentity, String)>::new();
+        for (id, (definition, package)) in self.character_templates.clone() {
+            self.validate_unique_entity(
+                &mut entity_owners,
+                definition.entity_id,
+                format!("character template {id}"),
+                package.clone(),
+                subject("character-template", &id),
+            );
+            let correlation = subject("character-template", &id);
+            self.validate_unique_ids(
+                &package,
+                &correlation,
+                "characterTemplates",
+                &id,
+                "actions",
+                &definition.actions,
+            );
+            self.validate_unique_ids(
+                &package,
+                &correlation,
+                "characterTemplates",
+                &id,
+                "reactions",
+                &definition.reactions,
+            );
+            if definition.abilities.len() != self.abilities.len()
+                || definition.abilities.iter().any(|(ability, score)| {
+                    self.abilities.get(ability).is_none_or(|definition| {
+                        *score < definition.0.minimum || *score > definition.0.maximum
+                    })
+                })
+            {
+                self.push_for_identity(
+                    &package,
+                    Some(&correlation),
+                    "D20_INVALID_CHARACTER_ABILITIES",
+                    format!("$/payload/characterTemplates/{id}/abilities"),
+                    "character abilities must define every admitted ability exactly once within its bounds"
+                        .to_owned(),
+                );
+            }
+            if definition.resources.len() != self.resources.len()
+                || definition.resources.iter().any(|(resource, current)| {
+                    self.resources
+                        .get(resource)
+                        .is_none_or(|definition| *current > definition.0.maximum)
+                })
+            {
+                self.push_for_identity(
+                    &package,
+                    Some(&correlation),
+                    "D20_INVALID_CHARACTER_RESOURCES",
+                    format!("$/payload/characterTemplates/{id}/resources"),
+                    "character resources must define every admitted resource exactly once within its maximum"
+                        .to_owned(),
+                );
+            }
+            for action in &definition.actions {
+                if !self.actions.contains_key(action) {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_UNKNOWN_ACTION",
+                        format!("$/payload/characterTemplates/{id}/actions"),
+                        format!("unknown action {action}"),
+                    );
+                }
+            }
+            for reaction in &definition.reactions {
+                if !self.reactions.contains_key(reaction) {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_UNKNOWN_REACTION",
+                        format!("$/payload/characterTemplates/{id}/reactions"),
+                        format!("unknown reaction {reaction}"),
+                    );
+                }
+            }
+            let mut affinities = BTreeSet::new();
+            for affinity in &definition.affinities {
+                if !affinities.insert(affinity.damage_type.clone()) {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_DUPLICATE_CHARACTER_AFFINITY",
+                        format!("$/payload/characterTemplates/{id}/affinities"),
+                        format!("duplicate affinity for {}", affinity.damage_type),
+                    );
+                }
+                if !self.damage_types.contains_key(&affinity.damage_type) {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_UNKNOWN_DAMAGE_TYPE",
+                        format!("$/payload/characterTemplates/{id}/affinities"),
+                        format!("unknown damage type {}", affinity.damage_type),
+                    );
+                }
+            }
+        }
+        for (id, (definition, package)) in self.storage.clone() {
+            self.validate_unique_entity(
+                &mut entity_owners,
+                definition.entity_id,
+                format!("storage {id}"),
+                package,
+                subject("storage", &id),
+            );
+        }
+        for (id, (definition, package)) in self.item_instances.clone() {
+            self.validate_unique_entity(
+                &mut entity_owners,
+                definition.entity_id,
+                format!("item instance {id}"),
+                package.clone(),
+                subject("item-instance", &id),
+            );
+            let correlation = subject("item-instance", &id);
+            if !self.armors.contains_key(&definition.armor) {
+                self.push_for_identity(
+                    &package,
+                    Some(&correlation),
+                    "D20_UNKNOWN_ARMOR",
+                    format!("$/payload/itemInstances/{id}/armor"),
+                    format!("unknown armor {}", definition.armor),
+                );
+            }
+            let owner_is_character = self.character_templates.contains_key(&definition.owner);
+            let owner_is_storage = self.storage.contains_key(&definition.owner);
+            if !owner_is_character && !owner_is_storage {
+                self.push_for_identity(
+                    &package,
+                    Some(&correlation),
+                    "D20_UNKNOWN_ITEM_OWNER",
+                    format!("$/payload/itemInstances/{id}/owner"),
+                    format!("unknown character or storage owner {}", definition.owner),
+                );
+            } else if definition.equipped && !owner_is_character {
+                self.push_for_identity(
+                    &package,
+                    Some(&correlation),
+                    "D20_INCOMPATIBLE_EQUIPPED_OWNER",
+                    format!("$/payload/itemInstances/{id}/equipped"),
+                    "an equipped item must be owned by a character".to_owned(),
+                );
+            }
+        }
+        for (id, (definition, package)) in self.encounters.clone() {
+            let correlation = subject("encounter", &id);
+            if !self.character_templates.contains_key(&definition.opponent) {
+                self.push_for_identity(
+                    &package,
+                    Some(&correlation),
+                    "D20_UNKNOWN_ENCOUNTER_OPPONENT",
+                    format!("$/payload/encounters/{id}/opponent"),
+                    format!("unknown character template {}", definition.opponent),
+                );
+            }
+            if let Some(item) = definition.victory.reward_item.as_ref() {
+                if !self.item_instances.contains_key(item) {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_UNKNOWN_REWARD_ITEM",
+                        format!("$/payload/encounters/{id}/victory/rewardItem"),
+                        format!("unknown item instance {item}"),
+                    );
+                }
+            }
+        }
+        let default_count = self
+            .adventures
+            .values()
+            .filter(|(definition, _)| definition.default)
+            .count();
+        if default_count > 1 {
+            self.push_global(
+                "D20_MULTIPLE_DEFAULT_ADVENTURES",
+                "$/payload/adventures",
+                "a resolved package set may define at most one default adventure",
+            );
+        }
+        for (id, (definition, package)) in self.adventures.clone() {
+            let correlation = subject("adventure", &id);
+            for (field, values) in [
+                ("characters", definition.characters.as_slice()),
+                ("storage", definition.storage.as_slice()),
+                ("items", definition.items.as_slice()),
+                ("encounters", definition.encounters.as_slice()),
+            ] {
+                self.validate_unique_ids(&package, &correlation, "adventures", &id, field, values);
+            }
+            if definition.characters.is_empty()
+                || definition.encounters.is_empty()
+                || !definition.characters.contains(&definition.hero)
+                || !definition.storage.contains(&definition.camp_storage)
+            {
+                self.push_for_identity(
+                    &package,
+                    Some(&correlation),
+                    "D20_INVALID_ADVENTURE_ROOTS",
+                    format!("$/payload/adventures/{id}"),
+                    "adventure requires characters, encounters, a listed hero, and listed camp storage"
+                        .to_owned(),
+                );
+            }
+            for character in &definition.characters {
+                if !self.character_templates.contains_key(character) {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_UNKNOWN_CHARACTER_TEMPLATE",
+                        format!("$/payload/adventures/{id}/characters"),
+                        format!("unknown character template {character}"),
+                    );
+                }
+            }
+            for storage in &definition.storage {
+                if !self.storage.contains_key(storage) {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_UNKNOWN_STORAGE",
+                        format!("$/payload/adventures/{id}/storage"),
+                        format!("unknown storage {storage}"),
+                    );
+                }
+            }
+            for item in &definition.items {
+                let Some((item_definition, _)) = self.item_instances.get(item) else {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_UNKNOWN_ITEM_INSTANCE",
+                        format!("$/payload/adventures/{id}/items"),
+                        format!("unknown item instance {item}"),
+                    );
+                    continue;
+                };
+                if !definition.characters.contains(&item_definition.owner)
+                    && !definition.storage.contains(&item_definition.owner)
+                {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_ITEM_OWNER_OUTSIDE_ADVENTURE",
+                        format!("$/payload/adventures/{id}/items"),
+                        format!(
+                            "item {item} owner {} is not included in the adventure",
+                            item_definition.owner
+                        ),
+                    );
+                }
+            }
+            for encounter in &definition.encounters {
+                let Some((encounter_definition, _)) = self.encounters.get(encounter).cloned()
+                else {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_UNKNOWN_ENCOUNTER",
+                        format!("$/payload/adventures/{id}/encounters"),
+                        format!("unknown encounter {encounter}"),
+                    );
+                    continue;
+                };
+                if !definition
+                    .characters
+                    .contains(&encounter_definition.opponent)
+                {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_ENCOUNTER_OPPONENT_OUTSIDE_ADVENTURE",
+                        format!("$/payload/adventures/{id}/encounters"),
+                        format!(
+                            "encounter {encounter} opponent {} is not included in the adventure",
+                            encounter_definition.opponent
+                        ),
+                    );
+                }
+                if let Some(reward) = encounter_definition.victory.reward_item.as_ref() {
+                    if !definition.items.contains(reward) {
+                        self.push_for_identity(
+                            &package,
+                            Some(&correlation),
+                            "D20_REWARD_OUTSIDE_ADVENTURE",
+                            format!("$/payload/adventures/{id}/encounters"),
+                            format!("encounter {encounter} reward {reward} is not included"),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn validate_unique_entity(
+        &mut self,
+        owners: &mut BTreeMap<u64, (String, RulePackageIdentity, String)>,
+        entity: u64,
+        label: String,
+        package: RulePackageIdentity,
+        correlation: String,
+    ) {
+        if let Some((existing, _, _)) = owners.get(&entity) {
+            self.push_for_identity(
+                &package,
+                Some(&correlation),
+                "D20_DUPLICATE_ENTITY_ID",
+                "$/payload".to_owned(),
+                format!("entity identity {entity} is shared by {existing} and {label}"),
+            );
+        } else {
+            owners.insert(entity, (label, package, correlation));
+        }
+    }
+
+    fn validate_unique_ids(
+        &mut self,
+        package: &RulePackageIdentity,
+        correlation: &str,
+        kind: &str,
+        id: &D20Id,
+        field: &str,
+        values: &[D20Id],
+    ) {
+        let mut seen = BTreeSet::new();
+        if let Some(duplicate) = values.iter().find(|value| !seen.insert((*value).clone())) {
+            self.push_for_identity(
+                package,
+                Some(correlation),
+                "D20_DUPLICATE_ADVENTURE_REFERENCE",
+                format!("$/payload/{kind}/{id}/{field}"),
+                format!("duplicate {field} reference {duplicate}"),
+            );
+        }
     }
 
     fn finish(self, fingerprint: String) -> Result<D20Ruleset, D20CompileError> {
@@ -644,6 +1437,11 @@ impl DefinitionCollector {
         let effects = strip_origins(self.effects);
         let reactions = strip_origins(self.reactions);
         let actions = strip_origins(self.actions);
+        let character_templates = strip_origins(self.character_templates);
+        let storage = strip_origins(self.storage);
+        let item_instances = strip_origins(self.item_instances);
+        let encounters = strip_origins(self.encounters);
+        let adventures = strip_origins(self.adventures);
         let damage_types = self.damage_types.into_keys().collect::<BTreeSet<_>>();
         let mechanics = build_mechanics_catalog(&defenses, &damage_types, &armors, &effects)
             .map_err(D20CompileError::MechanicsCatalog)?;
@@ -658,6 +1456,11 @@ impl DefinitionCollector {
             effects,
             reactions,
             actions,
+            character_templates,
+            storage,
+            item_instances,
+            encounters,
+            adventures,
         })
     }
 
@@ -847,6 +1650,117 @@ fn action_definition(value: ActionCandidate) -> ActionDefinition {
             bonus: value.damage.bonus,
         },
         effect: value.effect,
+    }
+}
+
+fn character_template_definition(value: CharacterTemplateCandidate) -> CharacterTemplateDefinition {
+    CharacterTemplateDefinition {
+        id: value.id,
+        entity_id: value.entity_id,
+        name: value.name,
+        title: value.title,
+        level: value.level,
+        vitality: value.vitality,
+        inventory_capacity: value.inventory_capacity,
+        abilities: value
+            .abilities
+            .into_iter()
+            .map(|ability| (ability.ability, ability.score))
+            .collect(),
+        resources: value
+            .resources
+            .into_iter()
+            .map(|resource| (resource.resource, resource.current))
+            .collect(),
+        actions: value.actions,
+        reactions: value.reactions,
+        affinities: value
+            .affinities
+            .into_iter()
+            .map(|affinity| CharacterAffinityDefinition {
+                damage_type: affinity.damage_type,
+                affinity: match affinity.affinity {
+                    CharacterAffinityKindCandidate::Resistant => {
+                        CharacterAffinityKindDefinition::Resistant
+                    }
+                    CharacterAffinityKindCandidate::Vulnerable => {
+                        CharacterAffinityKindDefinition::Vulnerable
+                    }
+                },
+            })
+            .collect(),
+    }
+}
+
+fn storage_definition(value: StorageCandidate) -> StorageDefinition {
+    StorageDefinition {
+        id: value.id,
+        entity_id: value.entity_id,
+        name: value.name,
+        capacity: value.capacity,
+    }
+}
+
+fn item_instance_definition(value: ItemInstanceCandidate) -> ItemInstanceDefinition {
+    ItemInstanceDefinition {
+        id: value.id,
+        entity_id: value.entity_id,
+        name: value.name,
+        armor: value.armor,
+        owner: value.owner,
+        icon: value.icon,
+        rarity: match value.rarity {
+            ItemRarityCandidate::Common => ItemRarityDefinition::Common,
+            ItemRarityCandidate::Uncommon => ItemRarityDefinition::Uncommon,
+            ItemRarityCandidate::Rare => ItemRarityDefinition::Rare,
+            ItemRarityCandidate::Epic => ItemRarityDefinition::Epic,
+        },
+        equipped: value.equipped,
+    }
+}
+
+fn encounter_outcome_definition(value: EncounterOutcomeCandidate) -> EncounterOutcomeDefinition {
+    EncounterOutcomeDefinition {
+        title: value.title,
+        summary: value.summary,
+        log_source: value.log_source,
+        log_text: value.log_text,
+        log_details: value.log_details,
+        reward_item: value.reward_item,
+        reward_label: value.reward_label,
+        recovery_vitality: value.recovery_vitality,
+    }
+}
+
+fn encounter_definition(value: EncounterCandidate) -> EncounterDefinition {
+    EncounterDefinition {
+        id: value.id,
+        title: value.title,
+        summary: value.summary,
+        opponent: value.opponent,
+        available_from_camp: value.available_from_camp,
+        introduction_source: value.introduction_source,
+        introduction_text: value.introduction_text,
+        introduction_details: value.introduction_details,
+        victory: encounter_outcome_definition(value.victory),
+        defeat: encounter_outcome_definition(value.defeat),
+    }
+}
+
+fn adventure_definition(value: AdventureCandidate) -> AdventureDefinition {
+    AdventureDefinition {
+        id: value.id,
+        title: value.title,
+        default: value.default,
+        hero: value.hero,
+        characters: value.characters,
+        camp_storage: value.camp_storage,
+        storage: value.storage,
+        items: value.items,
+        encounters: value.encounters,
+        start_source: value.start_source,
+        start_text: value.start_text,
+        start_details: value.start_details,
     }
 }
 
