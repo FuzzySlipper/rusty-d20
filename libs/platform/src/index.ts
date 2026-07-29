@@ -4,6 +4,11 @@ export interface ClockPort {
   readonly clearTimeout: (handle: number) => void;
 }
 
+export interface AnimationFramePort {
+  readonly request: (callback: FrameRequestCallback) => number;
+  readonly cancel: (handle: number) => void;
+}
+
 export interface KeyValueStoragePort {
   readonly getItem: (key: string) => string | null;
   readonly setItem: (key: string, value: string) => void;
@@ -33,6 +38,11 @@ export const browserClock: ClockPort = {
   now: () => new Date(),
   setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
   clearTimeout: (handle) => window.clearTimeout(handle),
+};
+
+export const browserAnimationFrame: AnimationFramePort = {
+  request: (callback) => window.requestAnimationFrame(callback),
+  cancel: (handle) => window.cancelAnimationFrame(handle),
 };
 
 export const memoryStorage = (initial: Readonly<Record<string, string>> = {}): KeyValueStoragePort => {

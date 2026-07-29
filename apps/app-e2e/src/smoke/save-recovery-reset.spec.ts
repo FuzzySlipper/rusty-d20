@@ -28,7 +28,9 @@ test('visible save identity guards reset and malformed persistence has a usable 
     host = startHost(port, savePath);
     await waitForHealth(baseUrl, host);
     await page.goto(baseUrl);
-    await expect(page.getByText(savePath, { exact: true })).toBeVisible();
+    await expect(
+      page.getByLabel('New adventure').getByText(savePath, { exact: true }),
+    ).toBeVisible();
     await testInfo.attach('empty-save-identity.png', {
       body: await page.screenshot({ fullPage: true }),
       contentType: 'image/png',
@@ -41,17 +43,33 @@ test('visible save identity guards reset and malformed persistence has a usable 
       .click();
     await page.getByRole('button', { name: 'Save', exact: true }).click();
 
-    await page.getByRole('button', { name: 'Reset / New Adventure' }).click();
+    const resetButton = page.getByRole('button', { name: 'Reset / New Adventure' });
+    await resetButton.focus();
+    await page.keyboard.press('Enter');
     const dialog = page.getByRole('alertdialog', { name: 'Discard this adventure?' });
     await expect(dialog).toContainText(savePath);
     await expect(dialog).toContainText("The Warden's Gate at revision");
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toBeVisible();
+    await expect.poll(() => dialog.evaluate((element) => element.matches(':modal'))).toBe(true);
+    await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(
+      dialog.getByRole('button', { name: 'Discard save and start over' }),
+    ).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
+    await expect(resetButton).toBeFocused();
     await expect(page.getByRole('heading', { name: "The Warden's Gate Camp" })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Reset / New Adventure' }).click();
-    await dialog.getByRole('button', { name: 'Discard save and start over' }).click();
-    await expect(page.getByRole('heading', { name: 'Choose an adventure' })).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
+    const newAdventureHeading = page.getByRole('heading', { name: 'Choose an adventure' });
+    await expect(newAdventureHeading).toBeVisible();
+    await expect(newAdventureHeading).toBeFocused();
     await expect(access(savePath)).rejects.toThrow();
 
     await page
@@ -67,7 +85,9 @@ test('visible save identity guards reset and malformed persistence has a usable 
     await waitForHealth(baseUrl, host);
     await page.goto(baseUrl);
     await expect(page.getByRole('heading', { name: "Continue Ember's Wake" })).toBeVisible();
-    await expect(page.getByText(savePath, { exact: true })).toBeVisible();
+    await expect(
+      page.getByLabel('Continue adventure').getByText(savePath, { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText(/Adventure embers-wake · revision/)).toBeVisible();
 
     await stopHost(host);
@@ -87,11 +107,32 @@ test('visible save identity guards reset and malformed persistence has a usable 
     });
     expect(await readFile(savePath)).toEqual(malformed);
 
-    await page.getByRole('button', { name: 'Discard unreadable save' }).click();
+    const recoveryResetButton = page.getByRole('button', { name: 'Discard unreadable save' });
+    await recoveryResetButton.focus();
+    await page.keyboard.press('Enter');
     const recoveryDialog = page.getByRole('alertdialog', { name: 'Discard this adventure?' });
     await expect(recoveryDialog).toContainText('unreadable persisted session');
-    await recoveryDialog.getByRole('button', { name: 'Discard save and start over' }).click();
-    await expect(page.getByRole('heading', { name: 'Choose an adventure' })).toBeVisible();
+    await expect
+      .poll(() => recoveryDialog.evaluate((element) => element.matches(':modal')))
+      .toBe(true);
+    await expect(recoveryDialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(
+      recoveryDialog.getByRole('button', { name: 'Discard save and start over' }),
+    ).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(recoveryDialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(recoveryDialog).toBeHidden();
+    await expect(recoveryResetButton).toBeFocused();
+
+    await page.keyboard.press('Enter');
+    await expect(recoveryDialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
+    const recoveredHeading = page.getByRole('heading', { name: 'Choose an adventure' });
+    await expect(recoveredHeading).toBeVisible();
+    await expect(recoveredHeading).toBeFocused();
     await expect(access(savePath)).rejects.toThrow();
     const status = await request.get(`${baseUrl}/api/v1/session/save-status`);
     expect(status.ok()).toBe(true);

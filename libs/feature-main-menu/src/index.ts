@@ -1,5 +1,15 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import type { OnInit } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  Injector,
+  afterNextRender,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
+import type { ElementRef, OnInit } from '@angular/core';
+import { browserAnimationFrame, browserClock } from '@rusty-d20/platform';
 import type { CharacterDto, LoadoutItemDto } from '@rusty-d20/protocol';
 import { SessionStore } from '@rusty-d20/store';
 import { CharacterStatusComponent, type CharacterStatusView } from '@rusty-d20/ui-character-status';
@@ -137,15 +147,16 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
         border: 1px solid var(--rusty-engine-danger);
         border-radius: var(--rusty-engine-radius);
         color: var(--rusty-engine-text);
-        display: grid;
         gap: 14px;
         margin: auto;
         max-width: min(92vw, 620px);
         padding: 22px;
         position: fixed;
-        top: 50%;
-        transform: translateY(-50%);
         z-index: 20;
+      }
+
+      .reset-dialog[open] {
+        display: grid;
       }
 
       .reset-dialog::backdrop {
@@ -523,7 +534,7 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                 class="danger"
                 type="button"
                 [disabled]="store.busy() || saveStatus() === null"
-                (click)="openResetDialog()"
+                (click)="openResetDialog($event)"
               >
                 Reset / New Adventure
               </button>
@@ -551,39 +562,48 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
         }
       </header>
 
-      @if (resetDialogOpen()) {
-        <dialog
-          class="reset-dialog"
-          open
-          role="alertdialog"
-          aria-labelledby="reset-title"
-          aria-describedby="reset-description"
-          aria-modal="true"
-        >
-          <p class="eyebrow">Destructive save operation</p>
-          <h2 id="reset-title">Discard this adventure?</h2>
-          <p id="reset-description">
-            This removes the save at <strong>{{ saveStatus()?.saveIdentity }}</strong>
-            @if (game()?.campaign; as campaign) {
-              and discards {{ campaign.title }} at revision {{ game()?.revision }}
-            } @else {
-              and discards the unreadable persisted session
-            }
-            . Unsaved changes and any pending action cannot be recovered.
-          </p>
-          <div class="reset-dialog__actions">
-            <button type="button" [disabled]="store.busy()" (click)="cancelReset()">Cancel</button>
-            <button
-              class="danger"
-              type="button"
-              [disabled]="store.busy()"
-              (click)="confirmReset()"
-            >
-              Discard save and start over
-            </button>
-          </div>
-        </dialog>
-      }
+      <dialog
+        #resetDialog
+        class="reset-dialog"
+        role="alertdialog"
+        aria-labelledby="reset-title"
+        aria-describedby="reset-description"
+        aria-modal="true"
+        (cancel)="cancelReset($event)"
+        (keydown)="handleResetDialogKeydown($event)"
+      >
+        <p class="eyebrow">Destructive save operation</p>
+        <h2 id="reset-title">Discard this adventure?</h2>
+        <p id="reset-description">
+          This removes the save at <strong>{{ saveStatus()?.saveIdentity }}</strong>
+          @if (game()?.campaign; as campaign) {
+            and discards {{ campaign.title }} at revision {{ game()?.revision }}
+          } @else {
+            and discards the unreadable persisted session
+          }
+          . Unsaved changes and any pending action cannot be recovered.
+        </p>
+        <div class="reset-dialog__actions">
+          <button
+            #resetCancelButton
+            type="button"
+            autofocus
+            [disabled]="store.busy()"
+            (click)="cancelReset()"
+          >
+            Cancel
+          </button>
+          <button
+            #resetConfirmButton
+            class="danger"
+            type="button"
+            [disabled]="store.busy()"
+            (click)="confirmReset()"
+          >
+            Discard save and start over
+          </button>
+        </div>
+      </dialog>
 
       @switch (store.session().kind) {
         @case ('idle') {
@@ -614,7 +634,7 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                 class="danger"
                 type="button"
                 [disabled]="store.busy()"
-                (click)="openResetDialog()"
+                (click)="openResetDialog($event)"
               >
                 Discard unreadable save
               </button>
@@ -644,7 +664,7 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
           @if (game()?.campaign === null) {
             <section class="rusty-engine-panel empty" aria-label="New adventure">
               <p class="eyebrow">Rust-compiled authored catalog</p>
-              <h2>Choose an adventure</h2>
+              <h2 #newAdventureHeading tabindex="-1">Choose an adventure</h2>
               <p class="lede">
                 Each path has its own authored cast, loadout, actions, defenses, effects,
                 opposition, and reward. Selection becomes immutable when the Rust campaign starts.
@@ -703,7 +723,7 @@ import { InventoryGridComponent, type InventoryItemView } from '@rusty-d20/ui-in
                 class="danger"
                 type="button"
                 [disabled]="store.busy() || saveStatus() === null"
-                (click)="openResetDialog()"
+                (click)="openResetDialog($event)"
               >
                 Reset / New Adventure
               </button>
@@ -1117,7 +1137,18 @@ export class MainMenuScreenComponent implements OnInit {
   private readonly selectedTarget = signal<number | null>(null);
   private readonly selectedLoadoutItem = signal<number | null>(null);
   protected readonly campaignEntered = signal(false);
-  protected readonly resetDialogOpen = signal(false);
+  private readonly resetDialog =
+    viewChild.required<ElementRef<HTMLDialogElement>>('resetDialog');
+  private readonly resetCancelButton =
+    viewChild.required<ElementRef<HTMLButtonElement>>('resetCancelButton');
+  private readonly resetConfirmButton =
+    viewChild.required<ElementRef<HTMLButtonElement>>('resetConfirmButton');
+  private readonly newAdventureHeading =
+    viewChild<ElementRef<HTMLHeadingElement>>('newAdventureHeading');
+  private readonly injector = inject(Injector);
+  private readonly animationFrame = browserAnimationFrame;
+  private readonly clock = browserClock;
+  private resetDialogTrigger: HTMLElement | null = null;
 
   protected readonly game = computed(() => {
     const state = this.store.session();
@@ -1326,22 +1357,68 @@ export class MainMenuScreenComponent implements OnInit {
     void this.store.save();
   }
 
-  protected openResetDialog(): void {
+  protected openResetDialog(event: Event): void {
     if (this.saveStatus() !== null) {
-      this.resetDialogOpen.set(true);
+      this.resetDialogTrigger =
+        event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+      const dialog = this.resetDialog().nativeElement;
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+      this.animationFrame.request(() => {
+        this.animationFrame.request(() => {
+          if (dialog.open) {
+            this.resetCancelButton().nativeElement.focus();
+          }
+        });
+      });
     }
   }
 
-  protected cancelReset(): void {
-    this.resetDialogOpen.set(false);
+  protected cancelReset(event?: Event): void {
+    event?.preventDefault();
+    this.closeResetDialog(true);
+  }
+
+  protected handleResetDialogKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Tab') {
+      return;
+    }
+
+    event.preventDefault();
+    const cancelButton = this.resetCancelButton().nativeElement;
+    const confirmButton = this.resetConfirmButton().nativeElement;
+    if (event.shiftKey) {
+      (event.target === cancelButton ? confirmButton : cancelButton).focus();
+    } else {
+      (event.target === confirmButton ? cancelButton : confirmButton).focus();
+    }
   }
 
   protected async confirmReset(): Promise<void> {
     await this.store.resetSession();
     if (this.game()?.campaign === null) {
       this.campaignEntered.set(false);
-      this.resetDialogOpen.set(false);
+      this.closeResetDialog(false);
+      afterNextRender(
+        () => {
+          this.clock.setTimeout(() => this.newAdventureHeading()?.nativeElement.focus(), 0);
+        },
+        { injector: this.injector },
+      );
     }
+  }
+
+  private closeResetDialog(restoreTrigger: boolean): void {
+    const dialog = this.resetDialog().nativeElement;
+    if (dialog.open) {
+      dialog.close();
+    }
+
+    if (restoreTrigger && this.resetDialogTrigger?.isConnected) {
+      this.resetDialogTrigger.focus();
+    }
+    this.resetDialogTrigger = null;
   }
 
   protected reload(): void {
