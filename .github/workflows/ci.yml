@@ -48,6 +48,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:engine-revision
+      - run: pnpm run engine:check
       - run: pnpm run verify:boundaries
 
   verify-ui:
