@@ -2,14 +2,22 @@
 
 ## Rusty Engine
 
-All Engine packages are public Git dependencies pinned to reviewed revision
-`fb608e323a8b44a55195f5720101224ff37fd5db`:
+`engine-source.json` is the canonical selection of one exact reviewed public
+Engine commit. The updater described in
+[engine-revision-updates.md](engine-revision-updates.md) keeps every active
+carrier and lockfile at that revision. The Rust dependencies are:
 
 - `core-ids`
+- `core-space`
+- `core-voxel`
 - `entity-state`
 - `gameplay-mechanics`
 - `gameplay-rules`
+- `svc-collision`
+- `svc-pathfinding`
 - `svc-rng`
+- `svc-spatial`
+- `svc-volume`
 
 `Cargo.lock` records the resolved Git source. There is no sibling path fallback.
 
@@ -136,10 +144,9 @@ browser receives the compiled ruleset fingerprint and immutable selectable
 catalog projection, not authored TypeScript or an executable rules
 representation.
 
-This composition continues to use Rusty Engine revision
-`fb608e323a8b44a55195f5720101224ff37fd5db` and the UI donor revision
-`68ddfa5430ec3bc2cf7ca96963982db9511e79ba`; D20G1D and D20G1E do not change
-either pin.
+This composition did not change the then-selected Engine revision or the UI
+donor revision `68ddfa5430ec3bc2cf7ca96963982db9511e79ba`; D20G1D and D20G1E did not
+change either pin.
 
 ## D20G1 campaign-shell disposition
 

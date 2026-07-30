@@ -8,8 +8,10 @@ import type {
 import type { RustyD20Transport } from "@rusty-d20/transport";
 import { SessionStore } from "./index";
 
+const SYNTHETIC_ENGINE_REVISION = "1111111111111111111111111111111111111111";
+
 const readout: RuntimeReadoutDto = {
-  engineRevision: "fb608e323a8b44a55195f5720101224ff37fd5db",
+  engineRevision: SYNTHETIC_ENGINE_REVISION,
   entityCount: 0,
   product: "Rusty D20",
   status: "ready",
@@ -19,7 +21,7 @@ const readout: RuntimeReadoutDto = {
 const snapshot: GameSnapshotDto = {
   product: "Rusty D20",
   version: "0.1.0",
-  engineRevision: "fb608e323a8b44a55195f5720101224ff37fd5db",
+  engineRevision: SYNTHETIC_ENGINE_REVISION,
   rulesetFingerprint: "rules",
   revision: 1,
   saved: false,
@@ -303,7 +305,7 @@ describe("SessionStore", () => {
     await store.load();
     expect(store.session()).toMatchObject({
       kind: "data",
-      value: { revision: 1, engineRevisionShort: "fb608e323a8b" },
+      value: { revision: 1, engineRevisionShort: "111111111111" },
     });
     await store.beginOppositionTurn();
     expect(store.session()).toMatchObject({

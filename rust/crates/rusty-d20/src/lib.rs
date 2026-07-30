@@ -95,8 +95,8 @@ pub use session::{
     SessionSaveError, StorageSeed,
 };
 
-/// Exact reviewed Rusty Engine revision used by this repository.
-pub const ENGINE_REVISION: &str = "fb608e323a8b44a55195f5720101224ff37fd5db";
+/// Exact reviewed Rusty Engine revision selected by `engine-source.json`.
+pub const ENGINE_REVISION: &str = env!("RUSTY_D20_ENGINE_REVISION");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]

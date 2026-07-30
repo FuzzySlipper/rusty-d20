@@ -1,6 +1,12 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
+import {
+  ENGINE_CRATES,
+  ENGINE_REPOSITORY,
+  loadEngineSource,
+} from '../../scripts/engine-revision-lib.mjs';
+
 const root = process.cwd();
 const productionRoots = [
   'apps/app/src',
@@ -25,24 +31,25 @@ for (const relativeRoot of productionRoots) {
     const source = readFileSync(file, 'utf8');
     for (const forbidden of forbiddenProductionReferences) {
       if (source.includes(forbidden)) {
-        failures.push(`${file.slice(root.length + 1)} imports or names test-only wiring: ${forbidden}`);
+        failures.push(
+          `${file.slice(root.length + 1)} imports or names test-only wiring: ${forbidden}`,
+        );
       }
     }
   }
 }
 
-const manifest = readFileSync(join(root, 'rust/crates/rusty-d20/Cargo.toml'), 'utf8');
-const engineRevision = 'fb608e323a8b44a55195f5720101224ff37fd5db';
-for (const crateName of [
-  'core-ids',
-  'entity-state',
-  'gameplay-mechanics',
-  'gameplay-rules',
-  'svc-rng',
-]) {
-  const expected = `${crateName} = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "${engineRevision}" }`;
+const manifest = readFileSync(
+  join(root, 'rust/crates/rusty-d20/Cargo.toml'),
+  'utf8',
+);
+const engineRevision = loadEngineSource(root).commit;
+for (const crateName of ENGINE_CRATES) {
+  const expected = `${crateName} = { git = "${ENGINE_REPOSITORY}", rev = "${engineRevision}" }`;
   if (!manifest.includes(expected)) {
-    failures.push(`Rusty Engine dependency is not exactly pinned: ${crateName}`);
+    failures.push(
+      `Rusty Engine dependency is not exactly pinned: ${crateName}`,
+    );
   }
 }
 if (/^[a-z][a-z0-9-]*\s*=\s*\{[^}\n]*path\s*=/mu.test(manifest)) {

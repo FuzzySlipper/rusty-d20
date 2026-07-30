@@ -178,9 +178,12 @@ and is not a second authority, persistence replay mechanism, or command source.
 
 ## Dependencies
 
-Rusty Engine packages use exact public Git revisions. There is no ordinary
-sibling checkout dependency. Angular libraries follow the retained Nx boundary
-graph in `boundaries.json`; production code cannot import testing fixtures.
+`engine-source.json` selects one exact public Rusty Engine Git revision.
+`scripts/engine-revision` transactionally keeps every Rust crate, rules
+package, build policy, and lockfile at that revision; runtime provenance and
+boundary checks derive from the manifest. There is no ordinary sibling
+checkout dependency. Angular libraries follow the retained Nx boundary graph
+in `boundaries.json`; production code cannot import testing fixtures.
 
 ## Persistence and execution
 

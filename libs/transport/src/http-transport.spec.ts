@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { HttpPort, HttpResponse } from '@rusty-d20/platform';
 import { createHttpRustyD20Transport } from './index';
 
+const SYNTHETIC_ENGINE_REVISION = '1111111111111111111111111111111111111111';
+
 const readout = {
-  engineRevision: 'fb608e323a8b44a55195f5720101224ff37fd5db',
+  engineRevision: SYNTHETIC_ENGINE_REVISION,
   entityCount: 0,
   product: 'Rusty D20',
   status: 'ready',
@@ -13,7 +15,7 @@ const readout = {
 const snapshot = {
   product: 'Rusty D20',
   version: '0.1.0',
-  engineRevision: 'fb608e323a8b44a55195f5720101224ff37fd5db',
+  engineRevision: SYNTHETIC_ENGINE_REVISION,
   rulesetFingerprint: 'rules',
   revision: 0,
   saved: false,
@@ -123,7 +125,9 @@ describe('createHttpRustyD20Transport', () => {
     await expect(
       transport.equipItem({ expectedRevision: 0, itemId: 202, slotId: 'body' }),
     ).resolves.toEqual({ ok: true, value: snapshot });
-    await expect(transport.unequipItem({ expectedRevision: 0, itemId: 202 })).resolves.toEqual({
+    await expect(
+      transport.unequipItem({ expectedRevision: 0, itemId: 202 }),
+    ).resolves.toEqual({
       ok: true,
       value: snapshot,
     });

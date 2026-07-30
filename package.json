@@ -7,9 +7,12 @@
   "scripts": {
     "dev": "pnpm run serve:local",
     "build": "nx run-many -t build --all",
+    "engine:check": "./scripts/engine-revision check",
+    "engine:update": "./scripts/engine-revision update",
     "lint": "nx run-many -t lint --all",
     "typecheck": "nx run-many -t typecheck --all",
     "test": "vitest run --passWithNoTests",
+    "test:engine-revision": "node --test scripts/engine-revision.test.mjs",
     "verify": "./scripts/verify.sh",
     "verify:rust": "cargo fmt --check && cargo test --workspace --locked && cargo clippy --workspace --all-targets --locked -- -D warnings",
     "verify:rules": "./scripts/verify-rules.sh",

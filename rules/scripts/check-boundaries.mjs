@@ -1,8 +1,11 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+import { loadEngineSource } from '../../scripts/engine-revision-lib.mjs';
 
 const root = new URL('../', import.meta.url);
 const repositoryRoot = new URL('../../', import.meta.url);
-const engineRevision = 'fb608e323a8b44a55195f5720101224ff37fd5db';
+const engineRevision = loadEngineSource(fileURLToPath(repositoryRoot)).commit;
 const enginePrefix = `github:FuzzySlipper/rusty-engine#${engineRevision}&path:rules/packages/`;
 const packages = new Map([
   [
@@ -29,7 +32,12 @@ for (const [name, expected] of packages) {
   const manifest = JSON.parse(
     readFileSync(new URL(`packages/${name}/package.json`, root), 'utf8'),
   );
-  assertKeys(name, 'dependencies', manifest.dependencies, expected.dependencies);
+  assertKeys(
+    name,
+    'dependencies',
+    manifest.dependencies,
+    expected.dependencies,
+  );
   assertKeys(
     name,
     'devDependencies',
@@ -42,17 +50,16 @@ for (const [name, expected] of packages) {
 }
 
 const authoringManifest = JSON.parse(
-  readFileSync(
-    new URL('packages/d20-authoring/package.json', root),
-    'utf8',
-  ),
+  readFileSync(new URL('packages/d20-authoring/package.json', root), 'utf8'),
 );
 for (const [dependency, path] of [
   ['@rusty-engine/gameplay-rules-authoring', 'gameplay-rules-authoring'],
   ['@rusty-engine/gameplay-rules-contracts', 'gameplay-rules-contracts'],
 ]) {
   if (authoringManifest.dependencies[dependency] !== `${enginePrefix}${path}`) {
-    failures.push(`${dependency} is not pinned to the reviewed Engine subpackage`);
+    failures.push(
+      `${dependency} is not pinned to the reviewed Engine subpackage`,
+    );
   }
 }
 
@@ -95,9 +102,7 @@ if (
 const nxIgnore = new URL('.nxignore', repositoryRoot);
 if (
   !existsSync(nxIgnore) ||
-  !readFileSync(nxIgnore, 'utf8')
-    .split(/\r?\n/u)
-    .includes('rules/')
+  !readFileSync(nxIgnore, 'utf8').split(/\r?\n/u).includes('rules/')
 ) {
   failures.push('authoring rules must stay outside root Nx project discovery');
 }
@@ -109,13 +114,17 @@ for (const directory of ['apps', 'libs']) {
       source.includes('@rusty-d20/rules-authoring') ||
       source.includes('@rusty-d20/starter-ruleset')
     ) {
-      failures.push(`${relative(url)} imports build-time rules into the UI graph`);
+      failures.push(
+        `${relative(url)} imports build-time rules into the UI graph`,
+      );
     }
   });
 }
 
 if (failures.length > 0) {
-  throw new Error(`Rusty D20 rules boundary violations:\n${failures.join('\n')}`);
+  throw new Error(
+    `Rusty D20 rules boundary violations:\n${failures.join('\n')}`,
+  );
 }
 console.log('Rusty D20 rules package boundaries passed');
 
