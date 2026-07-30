@@ -31,6 +31,13 @@ test.describe.serial("real Rust encounter shell", () => {
     });
 
     await page.goto("/");
+    await expect(page.locator("aui-game-viewport canvas")).toHaveCount(1);
+    await expect(
+      page.locator("aui-game-viewport [data-scene-mode]"),
+    ).toHaveAttribute("data-scene-mode", "catalog");
+    await page.locator("aui-game-viewport canvas").evaluate((canvas) => {
+      canvas.setAttribute("data-lifecycle-witness", "persistent");
+    });
     await expect(
       page.getByRole("heading", { level: 1, name: "Rusty D20", exact: true }),
     ).toBeVisible();
@@ -50,6 +57,14 @@ test.describe.serial("real Rust encounter shell", () => {
     await expect(
       page.getByRole("heading", { name: "The Warden's Gate Camp" }),
     ).toBeVisible();
+    await expect(page.locator("aui-game-viewport canvas")).toHaveCount(1);
+    await expect(
+      page.locator("aui-game-viewport [data-scene-mode]"),
+    ).toHaveAttribute("data-scene-mode", "camp");
+    await expect(page.locator("aui-game-viewport canvas")).toHaveAttribute(
+      "data-lifecycle-witness",
+      "persistent",
+    );
     await expect(page.getByLabel("Armor defense readout")).toContainText("18");
     await expect(
       page.getByRole("region", { name: "Inventory", exact: true }),
@@ -62,6 +77,10 @@ test.describe.serial("real Rust encounter shell", () => {
       "Mara's field bow",
     );
     await expect(page.getByLabel("Camp stash")).toContainText("Spare buckler");
+    await testInfo.attach("renderer-root-camp-desktop.png", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
 
     await page.getByRole("button", { name: "Take" }).click();
     await expect(page.getByRole("alert")).toContainText("capacity rejection");
@@ -138,14 +157,14 @@ test.describe.serial("real Rust encounter shell", () => {
       contentType: "image/png",
     });
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.locator("aui-dungeon-viewport canvas")).toBeVisible();
+    await expect(page.locator("aui-game-viewport canvas")).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,
       ),
     ).toBe(true);
     await testInfo.attach("engine-dungeon-corridor-mobile.png", {
-      body: await page.locator("aui-dungeon-viewport").screenshot(),
+      body: await page.locator("aui-game-viewport").screenshot(),
       contentType: "image/png",
     });
     await page.setViewportSize({ width: 1280, height: 720 });
@@ -155,7 +174,7 @@ test.describe.serial("real Rust encounter shell", () => {
         name: new RegExp(`Warden's Gate Pass, facing ${facing} at cell 1, 1`),
       });
       await expect(rotatedViewport).toBeVisible();
-      await expect(page.locator("aui-dungeon-viewport canvas")).toBeVisible();
+      await expect(page.locator("aui-game-viewport canvas")).toBeVisible();
       if (facing === "north" || facing === "south") {
         await testInfo.attach(`engine-dungeon-facing-${facing}.png`, {
           body: await rotatedViewport.screenshot(),
@@ -166,7 +185,7 @@ test.describe.serial("real Rust encounter shell", () => {
     for (let step = 0; step < 4; step += 1) {
       await page.getByRole("button", { name: "↑ Forward" }).click();
     }
-    const movedDungeonViewport = page.locator("aui-dungeon-viewport");
+    const movedDungeonViewport = page.locator("aui-game-viewport");
     await expect(movedDungeonViewport.locator("canvas")).toBeVisible();
     await expect(movedDungeonViewport.getByRole("alert")).toHaveCount(0);
     await expect(
@@ -182,6 +201,14 @@ test.describe.serial("real Rust encounter shell", () => {
       await page.getByRole("button", { name: "↑ Forward" }).click();
     }
 
+    await expect(page.locator("aui-game-viewport canvas")).toHaveCount(1);
+    await expect(
+      page.locator("aui-game-viewport [data-scene-mode]"),
+    ).toHaveAttribute("data-scene-mode", "encounter");
+    await expect(page.locator("aui-game-viewport canvas")).toHaveAttribute(
+      "data-lifecycle-witness",
+      "persistent",
+    );
     await expect(page.locator("aui-character-status")).toHaveCount(6);
     await expect(page.getByText("Mara Venn", { exact: true })).toBeVisible();
     await expect(
@@ -206,6 +233,10 @@ test.describe.serial("real Rust encounter shell", () => {
         name: /Mara Venn, party, at 7, 4, acting/,
       }),
     ).toBeVisible();
+    await testInfo.attach("renderer-root-encounter-desktop.png", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
     await tacticalBoard
       .getByRole("gridcell", { name: "Move to 7, 3, cost 1" })
       .click();

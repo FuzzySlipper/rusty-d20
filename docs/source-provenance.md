@@ -220,6 +220,14 @@ No Engine pin change, new Engine mechanism, Ruleweaver bulk import, Asha
 runtime, fixture transport, browser rules evaluator, or direct browser
 encounter command was introduced.
 
+Task 6426 promotes that same public surface into the permanent full-window game
+viewport. It reuses the exact package-root APIs and reviewed Engine revision:
+no dependency or donor pin changed. Rusty D20 adds only downstream scene
+adaptation and abstract phase backdrops; Engine continues to own the surface,
+camera, retained application, render loop, resize, and disposal. The catalog,
+camp, encounter, outcome, terminal, loading, and failure backdrops intentionally
+carry no Rust or browser-authored gameplay identities.
+
 ## Ruleweaver foundation translation disposition
 
 The foundation translation keeps both reviewed Engine/UI pins unchanged.

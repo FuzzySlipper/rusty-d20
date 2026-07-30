@@ -16,9 +16,10 @@ import type {
   LoadoutItemDto,
 } from "@rusty-d20/protocol";
 import {
-  DungeonViewportComponent,
+  GameViewportComponent,
   TacticalBoardComponent,
   type DungeonViewportView,
+  type GameViewportView,
   type TacticalBoardSelection,
   type TacticalBoardView,
 } from "@rusty-d20/renderer";
@@ -59,8 +60,8 @@ import {
     CharacterStatusComponent,
     CombatLogComponent,
     CompassComponent,
-    DungeonViewportComponent,
     EquipmentPanelComponent,
+    GameViewportComponent,
     HotbarComponent,
     InventoryGridComponent,
     MinimapComponent,
@@ -72,16 +73,50 @@ import {
     `
       :host {
         display: block;
-        min-height: 100vh;
+        min-height: 100dvh;
       }
 
       .game-shell {
+        background: var(--rusty-engine-bg);
+        isolation: isolate;
+        min-height: 100dvh;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .game-viewport {
+        inset: 0;
+        position: fixed;
+        z-index: 0;
+      }
+
+      .game-overlay {
         display: grid;
         gap: 18px;
+        grid-template-rows: auto minmax(0, 1fr);
+        height: 100dvh;
         margin: 0 auto;
-        max-width: 1180px;
-        min-height: 100vh;
+        max-width: 1440px;
+        overflow-x: hidden;
+        overflow-y: auto;
         padding: clamp(16px, 3vw, 32px);
+        pointer-events: none;
+        position: relative;
+        scrollbar-gutter: stable;
+        z-index: 2;
+      }
+
+      .game-overlay > *,
+      .game-overlay__stage > * {
+        pointer-events: auto;
+      }
+
+      .game-overlay__stage {
+        align-content: start;
+        display: grid;
+        min-height: 0;
+        pointer-events: none;
+        position: relative;
       }
 
       .topbar,
@@ -97,7 +132,15 @@ import {
       }
 
       .topbar {
+        backdrop-filter: blur(14px);
+        background: rgb(6 11 14 / 0.72);
+        border: 1px solid var(--rusty-engine-border);
+        border-radius: var(--rusty-engine-radius);
         justify-content: space-between;
+        padding: 10px 12px;
+        position: sticky;
+        top: 0;
+        z-index: 8;
       }
 
       .mark {
@@ -217,6 +260,7 @@ import {
       .empty,
       .fatal {
         align-self: center;
+        backdrop-filter: blur(16px);
         justify-self: center;
         max-width: 680px;
         padding: clamp(24px, 7vw, 64px);
@@ -305,7 +349,9 @@ import {
       .exploration {
         display: grid;
         gap: 14px;
-        grid-template-columns: minmax(0, 1fr) 220px;
+        grid-template-columns: minmax(250px, 360px) minmax(190px, 230px);
+        justify-content: space-between;
+        min-height: calc(100dvh - 132px);
       }
 
       .exploration__main,
@@ -315,6 +361,14 @@ import {
         align-content: start;
         display: grid;
         gap: 12px;
+      }
+
+      .exploration__main {
+        grid-template-rows: auto minmax(32px, 1fr) auto;
+      }
+
+      .exploration__main > .landmark {
+        align-self: start;
       }
 
       .exploration__sidebar aui-compass,
@@ -352,6 +406,7 @@ import {
         align-content: start;
         display: grid;
         gap: 16px;
+        min-height: calc(100dvh - 132px);
       }
 
       .camp__header,
@@ -519,6 +574,7 @@ import {
       }
 
       .command-error {
+        backdrop-filter: blur(14px);
         background: var(--rusty-engine-danger-bg);
         border: 1px solid var(--rusty-engine-danger);
         border-radius: var(--rusty-engine-radius);
@@ -575,10 +631,14 @@ import {
         .topbar__controls button {
           flex: 1 1 auto;
         }
+
+        .exploration {
+          min-height: auto;
+        }
       }
 
       @media (max-width: 420px) {
-        .game-shell {
+        .game-overlay {
           padding: 12px;
         }
 
@@ -594,738 +654,45 @@ import {
     `,
   ],
   template: `
-    <main class="game-shell">
-      <header class="topbar">
-        <div class="topbar__identity">
-          <div class="mark" aria-hidden="true">D20</div>
-          <div>
-            <p class="eyebrow">Rust-owned adventure</p>
-            <h1>Rusty D20</h1>
-          </div>
-        </div>
-
-        @if (game(); as snapshot) {
-          @if (campaignEntered() && snapshot.campaign !== null) {
-            <div class="topbar__controls">
-              <span
-                class="save-state"
-                [class.save-state--saved]="snapshot.saved"
-                aria-live="polite"
-              >
-                {{ snapshot.saved ? "Saved" : "Unsaved changes" }}
-              </span>
-              <button
-                type="button"
-                [disabled]="
-                  store.busy() ||
-                  (snapshot.encounter !== null &&
-                    snapshot.encounter.reactionPrompt !== null)
-                "
-                [attr.title]="
-                  snapshot.encounter !== null &&
-                  snapshot.encounter.reactionPrompt !== null
-                    ? 'Choose or decline the reaction before saving'
-                    : null
-                "
-                (click)="save()"
-              >
-                Save
-              </button>
-              <button
-                class="danger"
-                type="button"
-                [disabled]="store.busy() || saveStatus() === null"
-                (click)="openResetDialog($event)"
-              >
-                Reset / New Adventure
-              </button>
-              @if (
-                snapshot.encounter !== null &&
-                snapshot.encounter.reactionPrompt !== null
-              ) {
-                <span class="save-hint" role="status">
-                  Choose or decline the reaction before saving.
-                </span>
-              }
-              @if (
-                snapshot.campaign.phase === "encounter" &&
-                snapshot.encounter?.currentFaction === "opposition" &&
-                snapshot.encounter.reactionPrompt === null
-              ) {
-                <button
-                  class="primary"
-                  type="button"
-                  [disabled]="store.busy()"
-                  (click)="beginOppositionTurn()"
-                >
-                  Begin {{ opponentName() }} turn
-                </button>
-              }
+    <main class="game-shell" [attr.data-scene-mode]="gameViewport().mode">
+      <aui-game-viewport class="game-viewport" [view]="gameViewport()" />
+      <div class="game-overlay">
+        <header class="topbar" data-overlay-region="top">
+          <div class="topbar__identity">
+            <div class="mark" aria-hidden="true">D20</div>
+            <div>
+              <p class="eyebrow">Rust-owned adventure</p>
+              <h1>Rusty D20</h1>
             </div>
-          }
-        }
-      </header>
+          </div>
 
-      <dialog
-        #resetDialog
-        class="reset-dialog"
-        role="alertdialog"
-        aria-labelledby="reset-title"
-        aria-describedby="reset-description"
-        aria-modal="true"
-        (cancel)="cancelReset($event)"
-        (keydown)="handleResetDialogKeydown($event)"
-      >
-        <p class="eyebrow">Destructive save operation</p>
-        <h2 id="reset-title">Discard this adventure?</h2>
-        <p id="reset-description">
-          This removes the save at
-          <strong>{{ saveStatus()?.saveIdentity }}</strong>
-          @if (game()?.campaign; as campaign) {
-            and discards {{ campaign.title }} at revision {{ game()?.revision }}
-          } @else {
-            and discards the unreadable persisted session
-          }
-          . Unsaved changes and any pending reaction cannot be recovered.
-        </p>
-        <div class="reset-dialog__actions">
-          <button
-            #resetCancelButton
-            type="button"
-            autofocus
-            [disabled]="store.busy()"
-            (click)="cancelReset()"
-          >
-            Cancel
-          </button>
-          <button
-            #resetConfirmButton
-            class="danger"
-            type="button"
-            [disabled]="store.busy()"
-            (click)="confirmReset()"
-          >
-            Discard save and start over
-          </button>
-        </div>
-      </dialog>
-
-      @switch (store.session().kind) {
-        @case ("idle") {
-          <section class="rusty-engine-panel empty" aria-live="polite">
-            <p>Preparing the authoritative session…</p>
-          </section>
-        }
-        @case ("loading") {
-          <section
-            class="rusty-engine-panel empty"
-            aria-live="polite"
-            aria-busy="true"
-          >
-            <p>Loading authored rules and Rust state…</p>
-          </section>
-        }
-        @case ("error") {
-          <section class="rusty-engine-panel fatal" role="alert">
-            <p class="eyebrow">{{ sessionError().kind }} failure</p>
-            @if (saveStatus()?.state === "recovery-required") {
-              <h2>Saved adventure needs recovery</h2>
-              <p>
-                The runtime rejected the persisted session without changing it.
-              </p>
-              <div class="identity-readout">
-                <strong>Recovery required</strong>
-                <span>{{ saveStatus()?.saveIdentity }}</span>
-                <span>{{ saveStatus()?.persistenceError }}</span>
-              </div>
-              @if (store.commandError(); as resetError) {
-                <p class="command-error">{{ resetError.message }}</p>
-              }
-              <button
-                class="danger"
-                type="button"
-                [disabled]="store.busy()"
-                (click)="openResetDialog($event)"
-              >
-                Discard unreadable save
-              </button>
-            } @else {
-              <h2>Could not reach the game runtime</h2>
-              <p>{{ sessionError().message }}</p>
-              @if (sessionError().retryable) {
-                <button class="primary" type="button" (click)="reload()">
-                  Retry connection
-                </button>
-              }
-            }
-          </section>
-        }
-        @case ("data") {
-          @if (store.commandError(); as error) {
-            <section class="command-error" role="alert">
-              <strong>{{ error.kind }} rejection</strong>
-              <span>{{ error.message }}</span>
-              <div class="command-error__actions">
-                @if (error.retryable) {
-                  <button type="button" (click)="reload()">
-                    Reload current state
-                  </button>
-                }
-                <button type="button" (click)="dismissError()">Dismiss</button>
-              </div>
-            </section>
-          }
-
-          @if (game()?.campaign === null) {
-            <section
-              class="rusty-engine-panel empty"
-              aria-label="New adventure"
-            >
-              <p class="eyebrow">Rust-compiled authored catalog</p>
-              <h2 #newAdventureHeading tabindex="-1">Choose an adventure</h2>
-              <p class="lede">
-                Each path has its own authored cast, loadout, actions, defenses,
-                effects, opposition, and reward. Selection becomes immutable
-                when the Rust campaign starts.
-              </p>
-              <div class="adventure-catalog">
-                @for (
-                  choice of game()?.availableAdventures ?? [];
-                  track choice.id
-                ) {
-                  <article class="adventure-choice">
-                    <div>
-                      <p class="meta-label">Authored path · {{ choice.id }}</p>
-                      <h3>{{ choice.title }}</h3>
-                    </div>
-                    <p>{{ choice.summary }}</p>
-                    <ul class="detail-list">
-                      @for (detail of choice.details; track detail) {
-                        <li>{{ detail }}</li>
-                      }
-                    </ul>
-                    <button
-                      class="primary"
-                      type="button"
-                      [disabled]="store.busy()"
-                      (click)="newAdventure(choice.id)"
-                    >
-                      New Adventure · {{ choice.title }}
-                    </button>
-                  </article>
-                }
-              </div>
-              @if (saveStatus(); as status) {
-                <div class="muted identity-readout">
-                  <span>New adventures use save identity</span>
-                  <strong>{{ status.saveIdentity }}</strong>
-                </div>
-              }
-              <p class="muted">
-                Engine {{ game()?.engineRevisionShort }} · exact checked catalog
-              </p>
-            </section>
-          } @else if (!campaignEntered()) {
-            <section
-              class="rusty-engine-panel empty"
-              aria-label="Continue adventure"
-            >
-              <p class="eyebrow">Durable campaign found</p>
-              <h2>Continue {{ game()?.campaign?.title }}</h2>
-              <p class="lede">
-                Resume in
-                {{
-                  game()?.campaign?.phase === "camp"
-                    ? "camp"
-                    : game()?.campaign?.phase === "exploration"
-                      ? "the dungeon"
-                      : game()?.campaign?.phase === "adventure-complete"
-                        ? "the completed expedition"
-                        : "the active encounter"
-                }}
-                at state revision {{ game()?.revision }}.
-              </p>
-              @if (saveStatus(); as status) {
-                <div class="identity-readout">
-                  <strong>{{ status.saveIdentity }}</strong>
-                  <span
-                    >Adventure {{ status.campaignId }} · revision
-                    {{ status.revision }}</span
-                  >
-                </div>
-              }
-              <button
-                class="primary"
-                type="button"
-                (click)="continueCampaign()"
-              >
-                Continue Adventure
-              </button>
-              <button
-                class="danger"
-                type="button"
-                [disabled]="store.busy() || saveStatus() === null"
-                (click)="openResetDialog($event)"
-              >
-                Reset / New Adventure
-              </button>
-            </section>
-          } @else if (game()?.campaign?.phase === "camp") {
-            @if (game()?.campaign; as campaign) {
-              <section class="camp" aria-label="Adventure camp">
-                <header class="rusty-engine-panel camp__header">
-                  <div>
-                    <p class="eyebrow">
-                      Rust-owned camp · Engine-backed loadout
-                    </p>
-                    <h2>{{ campaign.title }} Camp</h2>
-                    <p class="lede">
-                      Equip every party member from canonical inventory state,
-                      move spare gear through the camp stash, and inspect every
-                      attributed defense before entering the encounter.
-                    </p>
-                  </div>
-                  <span class="capacity">
-                    Carried
-                    {{ activePartyMember()?.loadout?.capacity?.used }}/{{
-                      activePartyMember()?.loadout?.capacity?.maximum
-                    }}
-                  </span>
-                </header>
-
-                @if (campaign.latestOutcome; as outcome) {
-                  <section
-                    class="rusty-engine-panel outcome-banner"
-                    [attr.aria-label]="'Latest encounter ' + outcome.kind"
-                  >
-                    <div>
-                      <p class="eyebrow">{{ outcome.kind }}</p>
-                      <h2>{{ outcome.title }}</h2>
-                    </div>
-                    <p>{{ outcome.summary }}</p>
-                    @if (outcome.reward !== null) {
-                      <p class="muted">
-                        Reward: {{ outcome.reward }} · entity
-                        {{ outcome.rewardItemId }}
-                      </p>
-                    }
-                  </section>
-                }
-
-                <section class="camp__layout">
-                  <div class="loadout">
-                    <nav
-                      class="reaction-list"
-                      aria-label="Party loadout selection"
-                    >
-                      @for (
-                        member of campaign.party;
-                        track member.character.id
-                      ) {
-                        <button
-                          type="button"
-                          [class.primary]="
-                            activePartyMember()?.character?.id ===
-                            member.character.id
-                          "
-                          (click)="selectPartyMember(member.character.id)"
-                        >
-                          {{ member.character.name }}
-                        </button>
-                      }
-                    </nav>
-                    <article class="character-card">
-                      @if (activePartyMember(); as member) {
-                        <aui-character-status
-                          [status]="characterStatus(member.character)"
-                        />
-                      }
-                    </article>
-
-                    <section class="loadout" aria-label="Defense readout">
-                      @for (
-                        defense of activePartyMember()?.loadout?.defenses ?? [];
-                        track defense.id
-                      ) {
-                        <article
-                          class="defense-readout"
-                          [attr.aria-label]="defense.label + ' defense readout'"
-                        >
-                          <div>
-                            <p class="meta-label">
-                              Derived {{ defense.label }} defense
-                            </p>
-                            <strong>{{ defense.value }}</strong>
-                          </div>
-                          <details>
-                            <summary>Attributed sources</summary>
-                            <ul class="source-list">
-                              @for (source of defense.sources; track source) {
-                                <li>{{ source }}</li>
-                              }
-                            </ul>
-                          </details>
-                        </article>
-                      }
-                    </section>
-
-                    <div class="loadout__widgets">
-                      <aui-inventory-grid
-                        [columns]="2"
-                        [selectedItemId]="selectedInventoryItemId()"
-                        [slots]="inventorySlots()"
-                        (itemActivated)="activateInventoryItem($event)"
-                      />
-                      <aui-equipment-panel
-                        [slots]="equipmentSlots()"
-                        (itemDropped)="equipDroppedItem($event)"
-                        (slotSelected)="unequipSlot($event)"
-                      />
-                    </div>
-
-                    <section
-                      class="rusty-engine-panel"
-                      aria-label="Inventory item actions"
-                    >
-                      <p class="meta-label">Carried gear</p>
-                      <ul class="stash__items">
-                        @for (item of carriedItems(); track item.entityId) {
-                          <li class="stash__item">
-                            <span class="stash__identity">
-                              <span class="stash__icon" aria-hidden="true">{{
-                                item.icon
-                              }}</span>
-                              <span>
-                                {{ item.name }}
-                                @if (item.equippedSlotId !== null) {
-                                  · equipped {{ item.equippedSlotId }}
-                                }
-                              </span>
-                            </span>
-                            <button
-                              type="button"
-                              [disabled]="
-                                store.busy() || item.equippedSlotId !== null
-                              "
-                              [attr.title]="
-                                item.equippedSlotId !== null
-                                  ? 'Unequip this item before moving it to the stash'
-                                  : null
-                              "
-                              (click)="storeItem(item)"
-                            >
-                              Store
-                            </button>
-                          </li>
-                        }
-                      </ul>
-                    </section>
-                  </div>
-
-                  <aside
-                    class="stash rusty-engine-panel"
-                    aria-label="Camp stash"
-                  >
-                    <div>
-                      <p class="meta-label">Canonical storage</p>
-                      <h2>Camp stash</h2>
-                    </div>
-                    @if (
-                      (activePartyMember()?.loadout?.stashItems?.length ??
-                        0) === 0
-                    ) {
-                      <p class="muted">The stash is empty.</p>
-                    } @else {
-                      <ul class="stash__items">
-                        @for (
-                          item of activePartyMember()?.loadout?.stashItems ??
-                            [];
-                          track item.entityId
-                        ) {
-                          <li class="stash__item">
-                            <span class="stash__identity">
-                              <span class="stash__icon" aria-hidden="true">{{
-                                item.icon
-                              }}</span>
-                              <span>{{ item.name }}</span>
-                            </span>
-                            <button
-                              type="button"
-                              [disabled]="store.busy()"
-                              (click)="takeItem(item)"
-                            >
-                              Take
-                            </button>
-                          </li>
-                        }
-                      </ul>
-                    }
-                    <p class="muted">
-                      Capacity, containment, equipped-item, and stale-state
-                      rejections come from the Rust owner without changing the
-                      live loadout.
-                    </p>
-
-                    @if (campaign.availableEncounters.length > 0) {
-                      <article class="action-note encounter-choice">
-                        <strong>Begin the expedition</strong>
-                        <span>
-                          Enter the authored dungeon. Encounters begin only when
-                          the party reaches their hidden Rust-owned trigger.
-                        </span>
-                        <button
-                          class="primary"
-                          type="button"
-                          [disabled]="store.busy()"
-                          (click)="beginExploration()"
-                        >
-                          Enter the dungeon
-                        </button>
-                      </article>
-                    }
-                    @if (campaign.completedEncounters.length > 0) {
-                      <section
-                        class="identity-readout"
-                        aria-label="Completed encounters"
-                      >
-                        <strong>Campaign progress</strong>
-                        @for (
-                          completed of campaign.completedEncounters;
-                          track completed.encounterId
-                        ) {
-                          <span
-                            >{{ completed.title }} ·
-                            {{ completed.outcome }}</span
-                          >
-                        }
-                      </section>
-                    }
-                  </aside>
-                </section>
-              </section>
-            }
-          } @else if (game()?.campaign?.phase === "exploration") {
-            @if (game()?.exploration; as exploration) {
-              <section class="exploration" aria-label="Dungeon exploration">
-                <div class="exploration__main">
-                  <header class="rusty-engine-panel">
-                    <p class="eyebrow">Rust-owned dungeon exploration</p>
-                    <h2>{{ exploration.dungeonTitle }}</h2>
-                    <p class="lede">
-                      Move one square at a time. Only visited cells reach the
-                      automap, and authored encounters remain hidden until the
-                      party steps onto them.
-                    </p>
-                  </header>
-                  <aui-dungeon-viewport [view]="dungeonViewport()" />
-                  @if (exploration.landmark; as landmark) {
-                    <section
-                      class="rusty-engine-panel landmark"
-                      aria-label="Dungeon landmark"
-                    >
-                      <p class="meta-label">
-                        {{ landmark.inspected ? "Inspected" : "Landmark" }}
-                      </p>
-                      <h3>{{ landmark.title }}</h3>
-                      <p>{{ landmark.text }}</p>
-                      <button
-                        type="button"
-                        [disabled]="store.busy() || landmark.inspected"
-                        (click)="explorationCommand('interact')"
-                      >
-                        {{
-                          landmark.inspected ? "Already inspected" : "Inspect"
-                        }}
-                      </button>
-                    </section>
-                  }
-                  @if (exploration.treasure; as treasure) {
-                    <section
-                      class="rusty-engine-panel landmark"
-                      aria-label="Dungeon treasure"
-                    >
-                      <p class="meta-label">
-                        {{
-                          treasure.collected ? "Claimed treasure" : "Treasure"
-                        }}
-                      </p>
-                      <h3>{{ treasure.title }}</h3>
-                      <p>{{ treasure.text }}</p>
-                      <button
-                        class="primary"
-                        type="button"
-                        [disabled]="store.busy() || treasure.collected"
-                        (click)="explorationCommand('interact')"
-                      >
-                        {{
-                          treasure.collected
-                            ? "Already claimed"
-                            : "Claim treasure"
-                        }}
-                      </button>
-                    </section>
-                  }
-                  @if (exploration.doorAhead; as door) {
-                    <section
-                      class="rusty-engine-panel landmark"
-                      aria-label="Dungeon door"
-                    >
-                      <p class="meta-label">
-                        {{
-                          door.opened
-                            ? "Opened passage"
-                            : door.locked
-                              ? "Locked passage"
-                              : "Door"
-                        }}
-                      </p>
-                      <h3>{{ door.title }}</h3>
-                      <p>{{ door.text }}</p>
-                      <button
-                        class="primary"
-                        type="button"
-                        [disabled]="store.busy() || door.opened || door.locked"
-                        (click)="explorationCommand('interact')"
-                      >
-                        {{
-                          door.opened
-                            ? "Door opened"
-                            : door.locked
-                              ? "Requires its authored treasure"
-                              : "Open door"
-                        }}
-                      </button>
-                    </section>
-                  }
-                  @if (exploration.checkpoint; as checkpoint) {
-                    <section
-                      class="rusty-engine-panel landmark"
-                      aria-label="Dungeon checkpoint"
-                    >
-                      <p class="meta-label">
-                        {{
-                          checkpoint.active
-                            ? "Active checkpoint"
-                            : "Safe return"
-                        }}
-                      </p>
-                      <h3>{{ checkpoint.title }}</h3>
-                      <p>{{ checkpoint.text }}</p>
-                      <button
-                        type="button"
-                        [disabled]="store.busy()"
-                        (click)="explorationCommand('interact')"
-                      >
-                        Return safely to camp
-                      </button>
-                    </section>
-                  }
-                  <nav
-                    class="rusty-engine-panel movement-pad"
-                    aria-label="Dungeon movement"
-                  >
-                    <button
-                      class="movement-pad__forward"
-                      type="button"
-                      [disabled]="store.busy() || !exploration.canStepForward"
-                      (click)="explorationCommand('step-forward')"
-                    >
-                      ↑ Forward
-                    </button>
-                    <button
-                      class="movement-pad__left"
-                      type="button"
-                      [disabled]="store.busy()"
-                      (click)="explorationCommand('turn-left')"
-                    >
-                      ↶ Left
-                    </button>
-                    <button
-                      class="movement-pad__right"
-                      type="button"
-                      [disabled]="store.busy()"
-                      (click)="explorationCommand('turn-right')"
-                    >
-                      Right ↷
-                    </button>
-                    <button
-                      class="movement-pad__back"
-                      type="button"
-                      [disabled]="store.busy() || !exploration.canStepBackward"
-                      (click)="explorationCommand('step-backward')"
-                    >
-                      ↓ Back
-                    </button>
-                  </nav>
-                </div>
-                <aside class="exploration__sidebar">
-                  <aui-compass
-                    [headingDegrees]="compassHeading()"
-                    [markers]="compassMarkers"
-                  />
-                  <aui-minimap
-                    [regionName]="exploration.dungeonTitle"
-                    [markers]="minimapMarkers()"
-                    [playerXPercent]="minimapPlayerX()"
-                    [playerYPercent]="minimapPlayerY()"
-                  />
-                  <section
-                    class="rusty-engine-panel exploration__status"
-                    aria-label="Party status"
-                  >
-                    <p class="meta-label">Exploring party</p>
-                    @for (
-                      member of game()!.campaign!.party;
-                      track member.character.id
-                    ) {
-                      <aui-character-status
-                        [status]="characterStatus(member.character)"
-                      />
-                    }
-                    <span class="muted">
-                      Facing {{ exploration.facing }} · cell
-                      {{ exploration.x }},{{ exploration.y }}
-                    </span>
-                    <span class="muted">
-                      {{ exploration.discoveredCells.length }} cells discovered
-                    </span>
-                  </section>
-                </aside>
-              </section>
-            }
-          } @else if (game()?.campaign?.phase === "adventure-complete") {
-            @if (game()?.campaign?.completion; as completion) {
-              <section
-                class="rusty-engine-panel adventure-complete"
-                [attr.aria-label]="'Adventure complete: ' + completion.kind"
-              >
-                <p class="eyebrow">
-                  Adventure complete · {{ completion.kind }}
-                </p>
-                <h2>{{ completion.title }}</h2>
-                <p class="lede">{{ completion.text }}</p>
-                <ul class="detail-list">
-                  @for (detail of completion.details; track detail) {
-                    <li>{{ detail }}</li>
-                  }
-                </ul>
-                <section
-                  class="identity-readout"
-                  aria-label="Final encounter record"
+          @if (game(); as snapshot) {
+            @if (campaignEntered() && snapshot.campaign !== null) {
+              <div class="topbar__controls">
+                <span
+                  class="save-state"
+                  [class.save-state--saved]="snapshot.saved"
+                  aria-live="polite"
                 >
-                  <strong>{{ game()?.campaign?.title }}</strong>
-                  @for (
-                    completed of game()?.campaign?.completedEncounters ?? [];
-                    track completed.encounterId
-                  ) {
-                    <span>{{ completed.title }} · {{ completed.outcome }}</span>
-                  }
-                </section>
-                <p class="muted">
-                  Save preserves the terminal ending, party state, treasure,
-                  opened door, checkpoint, discoveries, and every encounter
-                  outcome.
-                </p>
+                  {{ snapshot.saved ? "Saved" : "Unsaved changes" }}
+                </span>
+                <button
+                  type="button"
+                  [disabled]="
+                    store.busy() ||
+                    (snapshot.encounter !== null &&
+                      snapshot.encounter.reactionPrompt !== null)
+                  "
+                  [attr.title]="
+                    snapshot.encounter !== null &&
+                    snapshot.encounter.reactionPrompt !== null
+                      ? 'Choose or decline the reaction before saving'
+                      : null
+                  "
+                  (click)="save()"
+                >
+                  Save
+                </button>
                 <button
                   class="danger"
                   type="button"
@@ -1334,336 +701,1091 @@ import {
                 >
                   Reset / New Adventure
                 </button>
+                @if (
+                  snapshot.encounter !== null &&
+                  snapshot.encounter.reactionPrompt !== null
+                ) {
+                  <span class="save-hint" role="status">
+                    Choose or decline the reaction before saving.
+                  </span>
+                }
+                @if (
+                  snapshot.campaign.phase === "encounter" &&
+                  snapshot.encounter?.currentFaction === "opposition" &&
+                  snapshot.encounter.reactionPrompt === null
+                ) {
+                  <button
+                    class="primary"
+                    type="button"
+                    [disabled]="store.busy()"
+                    (click)="beginOppositionTurn()"
+                  >
+                    Begin {{ opponentName() }} turn
+                  </button>
+                }
+              </div>
+            }
+          }
+        </header>
+
+        <dialog
+          #resetDialog
+          class="reset-dialog"
+          role="alertdialog"
+          aria-labelledby="reset-title"
+          aria-describedby="reset-description"
+          aria-modal="true"
+          (cancel)="cancelReset($event)"
+          (keydown)="handleResetDialogKeydown($event)"
+        >
+          <p class="eyebrow">Destructive save operation</p>
+          <h2 id="reset-title">Discard this adventure?</h2>
+          <p id="reset-description">
+            This removes the save at
+            <strong>{{ saveStatus()?.saveIdentity }}</strong>
+            @if (game()?.campaign; as campaign) {
+              and discards {{ campaign.title }} at revision
+              {{ game()?.revision }}
+            } @else {
+              and discards the unreadable persisted session
+            }
+            . Unsaved changes and any pending reaction cannot be recovered.
+          </p>
+          <div class="reset-dialog__actions">
+            <button
+              #resetCancelButton
+              type="button"
+              autofocus
+              [disabled]="store.busy()"
+              (click)="cancelReset()"
+            >
+              Cancel
+            </button>
+            <button
+              #resetConfirmButton
+              class="danger"
+              type="button"
+              [disabled]="store.busy()"
+              (click)="confirmReset()"
+            >
+              Discard save and start over
+            </button>
+          </div>
+        </dialog>
+
+        <div class="game-overlay__stage">
+          @switch (store.session().kind) {
+            @case ("idle") {
+              <section class="rusty-engine-panel empty" aria-live="polite">
+                <p>Preparing the authoritative session…</p>
               </section>
             }
-          } @else {
-            <section class="encounter-meta" aria-label="Encounter identity">
-              <span>Round {{ encounter().round }}</span>
-              <span>
-                {{
-                  encounter().currentFaction === "party"
-                    ? encounter().currentActor?.name + " acting"
-                    : encounter().currentFaction === "opposition"
-                      ? encounter().currentActor?.name + " acting"
-                      : "Encounter resolved"
-                }}
-              </span>
-              <span>State revision {{ game()?.revision }}</span>
-              @for (
-                defense of activePartyMember()?.loadout?.defenses ?? [];
-                track defense.id
-              ) {
-                <span>{{ defense.label }} defense {{ defense.value }}</span>
-              }
-              <span
-                >Engine <code>{{ game()?.engineRevisionShort }}</code></span
+            @case ("loading") {
+              <section
+                class="rusty-engine-panel empty"
+                aria-live="polite"
+                aria-busy="true"
               >
-              <span>
-                Rules
-                <code [title]="game()?.rulesetFingerprint">{{
-                  game()?.campaign?.title
-                }}</code>
-              </span>
-            </section>
-
-            <section class="characters" aria-label="Character status">
-              @for (
-                participant of encounter().participants;
-                track participant.character.id
-              ) {
-                <article
-                  class="character-card"
-                  [class.defeated]="participant.defeated"
-                  [attr.data-faction]="participant.faction"
-                >
-                  <p class="meta-label">
-                    {{ participant.faction }} · initiative
-                    {{ participant.initiative }}
-                    @if (
-                      participant.character.id === encounter().currentActorId
-                    ) {
-                      · acting
-                    }
-                    @if (participant.defeated) {
-                      · defeated
-                    }
+                <p>Loading authored rules and Rust state…</p>
+              </section>
+            }
+            @case ("error") {
+              <section class="rusty-engine-panel fatal" role="alert">
+                <p class="eyebrow">{{ sessionError().kind }} failure</p>
+                @if (saveStatus()?.state === "recovery-required") {
+                  <h2>Saved adventure needs recovery</h2>
+                  <p>
+                    The runtime rejected the persisted session without changing
+                    it.
                   </p>
-                  <aui-character-status
-                    [status]="characterStatus(participant.character)"
-                  />
-                  <div
-                    class="resources"
-                    [attr.aria-label]="
-                      participant.character.name + ' resources'
-                    "
-                  >
-                    @for (
-                      resource of participant.character.resources;
-                      track resource.id
-                    ) {
-                      <span class="resource-chip">
-                        {{ resource.label }} {{ resource.current }}/{{
-                          resource.maximum
-                        }}
-                      </span>
-                    }
+                  <div class="identity-readout">
+                    <strong>Recovery required</strong>
+                    <span>{{ saveStatus()?.saveIdentity }}</span>
+                    <span>{{ saveStatus()?.persistenceError }}</span>
                   </div>
-                </article>
-              }
-            </section>
-
-            @if (game()?.campaign?.phase === "outcome") {
-              @if (game()?.campaign?.latestOutcome; as outcome) {
-                <section class="workspace">
-                  <article
-                    class="rusty-engine-panel outcome-banner"
-                    [attr.aria-label]="'Encounter ' + outcome.kind"
+                  @if (store.commandError(); as resetError) {
+                    <p class="command-error">{{ resetError.message }}</p>
+                  }
+                  <button
+                    class="danger"
+                    type="button"
+                    [disabled]="store.busy()"
+                    (click)="openResetDialog($event)"
                   >
-                    <p class="eyebrow">{{ outcome.kind }}</p>
-                    <h2>{{ outcome.title }}</h2>
-                    <p class="lede">{{ outcome.summary }}</p>
-                    @if (outcome.reward !== null) {
-                      <p>
-                        <strong>Reward admitted:</strong>
-                        {{ outcome.reward }} · canonical entity
-                        {{ outcome.rewardItemId }}
-                      </p>
-                    } @else if (outcome.kind === "defeat") {
-                      <p class="muted">
-                        Returning to camp applies bounded recovery without
-                        granting a reward.
-                      </p>
-                    } @else {
-                      <p class="muted">
-                        This victory advances the campaign without granting
-                        another item.
-                      </p>
-                    }
-                    <button
-                      class="primary"
-                      type="button"
-                      [disabled]="store.busy()"
-                      (click)="returnToCamp()"
-                    >
-                      {{
-                        outcome.kind === "victory" &&
-                        game()?.exploration !== null
-                          ? "Continue adventure"
-                          : "Return to " + game()?.campaign?.title + " Camp"
-                      }}
+                    Discard unreadable save
+                  </button>
+                } @else {
+                  <h2>Could not reach the game runtime</h2>
+                  <p>{{ sessionError().message }}</p>
+                  @if (sessionError().retryable) {
+                    <button class="primary" type="button" (click)="reload()">
+                      Retry connection
                     </button>
-                  </article>
-                  <aside class="rusty-engine-panel outcome">
-                    <aui-combat-log [entries]="combatLog()" />
-                    @if (latestLog(); as latest) {
-                      <section
-                        class="latest"
-                        aria-label="Latest outcome explanation"
-                      >
-                        <p class="meta-label">
-                          Latest receipt · turn {{ latest.turn }}
-                        </p>
-                        <strong>{{ latest.source }}</strong>
-                        <p>{{ latest.text }}</p>
+                  }
+                }
+              </section>
+            }
+            @case ("data") {
+              @if (store.commandError(); as error) {
+                <section
+                  class="command-error"
+                  data-overlay-region="status"
+                  role="alert"
+                >
+                  <strong>{{ error.kind }} rejection</strong>
+                  <span>{{ error.message }}</span>
+                  <div class="command-error__actions">
+                    @if (error.retryable) {
+                      <button type="button" (click)="reload()">
+                        Reload current state
+                      </button>
+                    }
+                    <button type="button" (click)="dismissError()">
+                      Dismiss
+                    </button>
+                  </div>
+                </section>
+              }
+
+              @if (game()?.campaign === null) {
+                <section
+                  class="rusty-engine-panel empty"
+                  data-overlay-region="modal"
+                  aria-label="New adventure"
+                >
+                  <p class="eyebrow">Rust-compiled authored catalog</p>
+                  <h2 #newAdventureHeading tabindex="-1">
+                    Choose an adventure
+                  </h2>
+                  <p class="lede">
+                    Each path has its own authored cast, loadout, actions,
+                    defenses, effects, opposition, and reward. Selection becomes
+                    immutable when the Rust campaign starts.
+                  </p>
+                  <div class="adventure-catalog">
+                    @for (
+                      choice of game()?.availableAdventures ?? [];
+                      track choice.id
+                    ) {
+                      <article class="adventure-choice">
+                        <div>
+                          <p class="meta-label">
+                            Authored path · {{ choice.id }}
+                          </p>
+                          <h3>{{ choice.title }}</h3>
+                        </div>
+                        <p>{{ choice.summary }}</p>
                         <ul class="detail-list">
-                          @for (detail of latest.details; track detail) {
+                          @for (detail of choice.details; track detail) {
                             <li>{{ detail }}</li>
                           }
                         </ul>
-                      </section>
+                        <button
+                          class="primary"
+                          type="button"
+                          [disabled]="store.busy()"
+                          (click)="newAdventure(choice.id)"
+                        >
+                          New Adventure · {{ choice.title }}
+                        </button>
+                      </article>
                     }
-                  </aside>
+                  </div>
+                  @if (saveStatus(); as status) {
+                    <div class="muted identity-readout">
+                      <span>New adventures use save identity</span>
+                      <strong>{{ status.saveIdentity }}</strong>
+                    </div>
+                  }
+                  <p class="muted">
+                    Engine {{ game()?.engineRevisionShort }} · exact checked
+                    catalog
+                  </p>
                 </section>
-              }
-            } @else {
-              <section class="workspace">
-                <div class="action-workbench">
-                  <aui-tactical-board
-                    [view]="tacticalBoard()"
-                    (cellSelected)="selectTacticalCell($event)"
-                  />
-                  <section class="rusty-engine-panel">
-                    <header class="actions__header">
+              } @else if (!campaignEntered()) {
+                <section
+                  class="rusty-engine-panel empty"
+                  data-overlay-region="modal"
+                  aria-label="Continue adventure"
+                >
+                  <p class="eyebrow">Durable campaign found</p>
+                  <h2>Continue {{ game()?.campaign?.title }}</h2>
+                  <p class="lede">
+                    Resume in
+                    {{
+                      game()?.campaign?.phase === "camp"
+                        ? "camp"
+                        : game()?.campaign?.phase === "exploration"
+                          ? "the dungeon"
+                          : game()?.campaign?.phase === "adventure-complete"
+                            ? "the completed expedition"
+                            : "the active encounter"
+                    }}
+                    at state revision {{ game()?.revision }}.
+                  </p>
+                  @if (saveStatus(); as status) {
+                    <div class="identity-readout">
+                      <strong>{{ status.saveIdentity }}</strong>
+                      <span
+                        >Adventure {{ status.campaignId }} · revision
+                        {{ status.revision }}</span
+                      >
+                    </div>
+                  }
+                  <button
+                    class="primary"
+                    type="button"
+                    (click)="continueCampaign()"
+                  >
+                    Continue Adventure
+                  </button>
+                  <button
+                    class="danger"
+                    type="button"
+                    [disabled]="store.busy() || saveStatus() === null"
+                    (click)="openResetDialog($event)"
+                  >
+                    Reset / New Adventure
+                  </button>
+                </section>
+              } @else if (game()?.campaign?.phase === "camp") {
+                @if (game()?.campaign; as campaign) {
+                  <section class="camp" aria-label="Adventure camp">
+                    <header class="rusty-engine-panel camp__header">
                       <div>
-                        <p class="meta-label">
-                          {{
-                            encounter().currentFaction === "party"
-                              ? "Authored party actions"
-                              : "Rust-owned opposition"
-                          }}
+                        <p class="eyebrow">
+                          Rust-owned camp · Engine-backed loadout
                         </p>
-                        <h2>
-                          {{
-                            encounter().currentFaction === "party"
-                              ? "Choose an action"
-                              : encounter().reactionPrompt === null
-                                ? opponentName() + " is ready"
-                                : "Respond to " + opponentName()
-                          }}
-                        </h2>
+                        <h2>{{ campaign.title }} Camp</h2>
+                        <p class="lede">
+                          Equip every party member from canonical inventory
+                          state, move spare gear through the camp stash, and
+                          inspect every attributed defense before entering the
+                          encounter.
+                        </p>
                       </div>
-                      @if (encounter().currentFaction === "party") {
-                        <div class="target-control">
-                          <label for="target">Target</label>
-                          <select
-                            id="target"
-                            [value]="targetId()"
-                            (change)="selectTarget($event)"
-                          >
-                            @for (
-                              target of encounter().targets;
-                              track target.id
-                            ) {
-                              <option [value]="target.id">
-                                {{ target.name }}
-                              </option>
-                            }
-                          </select>
-                        </div>
-                      }
+                      <span class="capacity">
+                        Carried
+                        {{ activePartyMember()?.loadout?.capacity?.used }}/{{
+                          activePartyMember()?.loadout?.capacity?.maximum
+                        }}
+                      </span>
                     </header>
 
-                    @if (encounter().currentFaction === "party") {
-                      <aui-hotbar
-                        [slots]="hotbarSlots()"
-                        (slotSelected)="chooseAction($event)"
-                      />
-
-                      <button
-                        type="button"
-                        [disabled]="
-                          store.busy() || encounter().reactionPrompt !== null
-                        "
-                        (click)="endActivation()"
+                    @if (campaign.latestOutcome; as outcome) {
+                      <section
+                        class="rusty-engine-panel outcome-banner"
+                        [attr.aria-label]="'Latest encounter ' + outcome.kind"
                       >
-                        End {{ encounter().currentActor?.name }} activation
-                      </button>
-
-                      <div class="action-catalog">
-                        @for (action of encounter().actions; track action.id) {
-                          <div class="action-note">
-                            <strong>{{ action.label }}</strong>
-                            <span>
-                              {{ action.ability }} vs {{ action.defense }} ·
-                              {{ action.damage }}
-                              · range {{ action.range }} ·
-                              {{ action.activation.join(" + ") }} ·
-                              {{ action.target }}
-                              @if (action.implement !== null) {
-                                · {{ action.implement }}
-                              }
-                              @if (action.effect !== null) {
-                                · {{ action.effect }}
-                              }
-                              @if (action.forcedMovement > 0) {
-                                · pushes {{ action.forcedMovement }}
-                              }
-                            </span>
-                          </div>
+                        <div>
+                          <p class="eyebrow">{{ outcome.kind }}</p>
+                          <h2>{{ outcome.title }}</h2>
+                        </div>
+                        <p>{{ outcome.summary }}</p>
+                        @if (outcome.reward !== null) {
+                          <p class="muted">
+                            Reward: {{ outcome.reward }} · entity
+                            {{ outcome.rewardItemId }}
+                          </p>
                         }
-                      </div>
-                    } @else if (encounter().reactionPrompt === null) {
-                      <p class="lede">
-                        Begin the explicit opposition phase to let Rust choose
-                        and resolve {{ opponentName() }}'s action from admitted
-                        definitions. If a reaction is available, Rust will pause
-                        for that gameplay choice before resolving the roll.
-                      </p>
-                      <button
-                        class="primary resolve"
-                        type="button"
-                        [disabled]="store.busy()"
-                        (click)="beginOppositionTurn()"
-                      >
-                        Begin {{ opponentName() }} turn
-                      </button>
+                      </section>
                     }
-                  </section>
 
-                  @if (encounter().reactionPrompt; as prompt) {
-                    <section
-                      class="rusty-engine-panel preview"
-                      aria-label="Available reaction"
-                    >
-                      <p class="meta-label">
-                        Reaction window ·
-                        {{ pendingActorName(prompt.actorId) }} ·
-                        {{ prompt.actionLabel }}
-                      </p>
-                      <p class="preview__math">
-                        Ability {{ prompt.abilityScore }} ({{
-                          signed(prompt.abilityModifier)
-                        }}) against defense {{ prompt.defense }}
-                      </p>
-                      <div>
-                        <h3>Defense attribution</h3>
-                        <ul class="source-list">
-                          @for (source of prompt.defenseSources; track source) {
-                            <li>{{ source }}</li>
-                          }
-                        </ul>
-                      </div>
-
-                      @if (prompt.reactions.length > 0) {
-                        <div
+                    <section class="camp__layout">
+                      <div class="loadout">
+                        <nav
                           class="reaction-list"
-                          aria-label="Available reactions"
+                          aria-label="Party loadout selection"
                         >
                           @for (
-                            reaction of prompt.reactions;
-                            track reaction.id
+                            member of campaign.party;
+                            track member.character.id
                           ) {
                             <button
-                              class="reaction"
                               type="button"
-                              [disabled]="store.busy()"
-                              (click)="applyReaction(prompt.token, reaction.id)"
+                              [class.primary]="
+                                activePartyMember()?.character?.id ===
+                                member.character.id
+                              "
+                              (click)="selectPartyMember(member.character.id)"
                             >
-                              {{ reaction.label }} · {{ reaction.cost }}
-                              {{ reaction.resource }} ·
-                              {{ signed(reaction.bonus) }} defense
+                              {{ member.character.name }}
                             </button>
                           }
+                        </nav>
+                        <article class="character-card">
+                          @if (activePartyMember(); as member) {
+                            <aui-character-status
+                              [status]="characterStatus(member.character)"
+                            />
+                          }
+                        </article>
+
+                        <section class="loadout" aria-label="Defense readout">
+                          @for (
+                            defense of activePartyMember()?.loadout?.defenses ??
+                              [];
+                            track defense.id
+                          ) {
+                            <article
+                              class="defense-readout"
+                              [attr.aria-label]="
+                                defense.label + ' defense readout'
+                              "
+                            >
+                              <div>
+                                <p class="meta-label">
+                                  Derived {{ defense.label }} defense
+                                </p>
+                                <strong>{{ defense.value }}</strong>
+                              </div>
+                              <details>
+                                <summary>Attributed sources</summary>
+                                <ul class="source-list">
+                                  @for (
+                                    source of defense.sources;
+                                    track source
+                                  ) {
+                                    <li>{{ source }}</li>
+                                  }
+                                </ul>
+                              </details>
+                            </article>
+                          }
+                        </section>
+
+                        <div class="loadout__widgets">
+                          <aui-inventory-grid
+                            [columns]="2"
+                            [selectedItemId]="selectedInventoryItemId()"
+                            [slots]="inventorySlots()"
+                            (itemActivated)="activateInventoryItem($event)"
+                          />
+                          <aui-equipment-panel
+                            [slots]="equipmentSlots()"
+                            (itemDropped)="equipDroppedItem($event)"
+                            (slotSelected)="unequipSlot($event)"
+                          />
                         </div>
-                      }
 
-                      <button
-                        class="primary resolve"
-                        type="button"
-                        [disabled]="store.busy()"
-                        (click)="declineReaction(prompt.token)"
+                        <section
+                          class="rusty-engine-panel"
+                          aria-label="Inventory item actions"
+                        >
+                          <p class="meta-label">Carried gear</p>
+                          <ul class="stash__items">
+                            @for (item of carriedItems(); track item.entityId) {
+                              <li class="stash__item">
+                                <span class="stash__identity">
+                                  <span
+                                    class="stash__icon"
+                                    aria-hidden="true"
+                                    >{{ item.icon }}</span
+                                  >
+                                  <span>
+                                    {{ item.name }}
+                                    @if (item.equippedSlotId !== null) {
+                                      · equipped {{ item.equippedSlotId }}
+                                    }
+                                  </span>
+                                </span>
+                                <button
+                                  type="button"
+                                  [disabled]="
+                                    store.busy() || item.equippedSlotId !== null
+                                  "
+                                  [attr.title]="
+                                    item.equippedSlotId !== null
+                                      ? 'Unequip this item before moving it to the stash'
+                                      : null
+                                  "
+                                  (click)="storeItem(item)"
+                                >
+                                  Store
+                                </button>
+                              </li>
+                            }
+                          </ul>
+                        </section>
+                      </div>
+
+                      <aside
+                        class="stash rusty-engine-panel"
+                        data-overlay-region="right"
+                        aria-label="Camp stash"
                       >
-                        Do not react
-                      </button>
-                    </section>
-                  }
-                </div>
+                        <div>
+                          <p class="meta-label">Canonical storage</p>
+                          <h2>Camp stash</h2>
+                        </div>
+                        @if (
+                          (activePartyMember()?.loadout?.stashItems?.length ??
+                            0) === 0
+                        ) {
+                          <p class="muted">The stash is empty.</p>
+                        } @else {
+                          <ul class="stash__items">
+                            @for (
+                              item of activePartyMember()?.loadout
+                                ?.stashItems ?? [];
+                              track item.entityId
+                            ) {
+                              <li class="stash__item">
+                                <span class="stash__identity">
+                                  <span
+                                    class="stash__icon"
+                                    aria-hidden="true"
+                                    >{{ item.icon }}</span
+                                  >
+                                  <span>{{ item.name }}</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  [disabled]="store.busy()"
+                                  (click)="takeItem(item)"
+                                >
+                                  Take
+                                </button>
+                              </li>
+                            }
+                          </ul>
+                        }
+                        <p class="muted">
+                          Capacity, containment, equipped-item, and stale-state
+                          rejections come from the Rust owner without changing
+                          the live loadout.
+                        </p>
 
-                <aside class="rusty-engine-panel outcome">
-                  <aui-combat-log [entries]="combatLog()" />
-                  @if (latestLog(); as latest) {
+                        @if (campaign.availableEncounters.length > 0) {
+                          <article class="action-note encounter-choice">
+                            <strong>Begin the expedition</strong>
+                            <span>
+                              Enter the authored dungeon. Encounters begin only
+                              when the party reaches their hidden Rust-owned
+                              trigger.
+                            </span>
+                            <button
+                              class="primary"
+                              type="button"
+                              [disabled]="store.busy()"
+                              (click)="beginExploration()"
+                            >
+                              Enter the dungeon
+                            </button>
+                          </article>
+                        }
+                        @if (campaign.completedEncounters.length > 0) {
+                          <section
+                            class="identity-readout"
+                            aria-label="Completed encounters"
+                          >
+                            <strong>Campaign progress</strong>
+                            @for (
+                              completed of campaign.completedEncounters;
+                              track completed.encounterId
+                            ) {
+                              <span
+                                >{{ completed.title }} ·
+                                {{ completed.outcome }}</span
+                              >
+                            }
+                          </section>
+                        }
+                      </aside>
+                    </section>
+                  </section>
+                }
+              } @else if (game()?.campaign?.phase === "exploration") {
+                @if (game()?.exploration; as exploration) {
+                  <section class="exploration" aria-label="Dungeon exploration">
+                    <div class="exploration__main" data-overlay-region="left">
+                      <header class="rusty-engine-panel">
+                        <p class="eyebrow">Rust-owned dungeon exploration</p>
+                        <h2>{{ exploration.dungeonTitle }}</h2>
+                        <p class="lede">
+                          Move one square at a time. Only visited cells reach
+                          the automap, and authored encounters remain hidden
+                          until the party steps onto them.
+                        </p>
+                      </header>
+                      @if (exploration.landmark; as landmark) {
+                        <section
+                          class="rusty-engine-panel landmark"
+                          aria-label="Dungeon landmark"
+                        >
+                          <p class="meta-label">
+                            {{ landmark.inspected ? "Inspected" : "Landmark" }}
+                          </p>
+                          <h3>{{ landmark.title }}</h3>
+                          <p>{{ landmark.text }}</p>
+                          <button
+                            type="button"
+                            [disabled]="store.busy() || landmark.inspected"
+                            (click)="explorationCommand('interact')"
+                          >
+                            {{
+                              landmark.inspected
+                                ? "Already inspected"
+                                : "Inspect"
+                            }}
+                          </button>
+                        </section>
+                      }
+                      @if (exploration.treasure; as treasure) {
+                        <section
+                          class="rusty-engine-panel landmark"
+                          aria-label="Dungeon treasure"
+                        >
+                          <p class="meta-label">
+                            {{
+                              treasure.collected
+                                ? "Claimed treasure"
+                                : "Treasure"
+                            }}
+                          </p>
+                          <h3>{{ treasure.title }}</h3>
+                          <p>{{ treasure.text }}</p>
+                          <button
+                            class="primary"
+                            type="button"
+                            [disabled]="store.busy() || treasure.collected"
+                            (click)="explorationCommand('interact')"
+                          >
+                            {{
+                              treasure.collected
+                                ? "Already claimed"
+                                : "Claim treasure"
+                            }}
+                          </button>
+                        </section>
+                      }
+                      @if (exploration.doorAhead; as door) {
+                        <section
+                          class="rusty-engine-panel landmark"
+                          aria-label="Dungeon door"
+                        >
+                          <p class="meta-label">
+                            {{
+                              door.opened
+                                ? "Opened passage"
+                                : door.locked
+                                  ? "Locked passage"
+                                  : "Door"
+                            }}
+                          </p>
+                          <h3>{{ door.title }}</h3>
+                          <p>{{ door.text }}</p>
+                          <button
+                            class="primary"
+                            type="button"
+                            [disabled]="
+                              store.busy() || door.opened || door.locked
+                            "
+                            (click)="explorationCommand('interact')"
+                          >
+                            {{
+                              door.opened
+                                ? "Door opened"
+                                : door.locked
+                                  ? "Requires its authored treasure"
+                                  : "Open door"
+                            }}
+                          </button>
+                        </section>
+                      }
+                      @if (exploration.checkpoint; as checkpoint) {
+                        <section
+                          class="rusty-engine-panel landmark"
+                          aria-label="Dungeon checkpoint"
+                        >
+                          <p class="meta-label">
+                            {{
+                              checkpoint.active
+                                ? "Active checkpoint"
+                                : "Safe return"
+                            }}
+                          </p>
+                          <h3>{{ checkpoint.title }}</h3>
+                          <p>{{ checkpoint.text }}</p>
+                          <button
+                            type="button"
+                            [disabled]="store.busy()"
+                            (click)="explorationCommand('interact')"
+                          >
+                            Return safely to camp
+                          </button>
+                        </section>
+                      }
+                      <nav
+                        class="rusty-engine-panel movement-pad"
+                        data-overlay-region="bottom"
+                        aria-label="Dungeon movement"
+                      >
+                        <button
+                          class="movement-pad__forward"
+                          type="button"
+                          [disabled]="
+                            store.busy() || !exploration.canStepForward
+                          "
+                          (click)="explorationCommand('step-forward')"
+                        >
+                          ↑ Forward
+                        </button>
+                        <button
+                          class="movement-pad__left"
+                          type="button"
+                          [disabled]="store.busy()"
+                          (click)="explorationCommand('turn-left')"
+                        >
+                          ↶ Left
+                        </button>
+                        <button
+                          class="movement-pad__right"
+                          type="button"
+                          [disabled]="store.busy()"
+                          (click)="explorationCommand('turn-right')"
+                        >
+                          Right ↷
+                        </button>
+                        <button
+                          class="movement-pad__back"
+                          type="button"
+                          [disabled]="
+                            store.busy() || !exploration.canStepBackward
+                          "
+                          (click)="explorationCommand('step-backward')"
+                        >
+                          ↓ Back
+                        </button>
+                      </nav>
+                    </div>
+                    <aside
+                      class="exploration__sidebar"
+                      data-overlay-region="right"
+                    >
+                      <aui-compass
+                        [headingDegrees]="compassHeading()"
+                        [markers]="compassMarkers"
+                      />
+                      <aui-minimap
+                        [regionName]="exploration.dungeonTitle"
+                        [markers]="minimapMarkers()"
+                        [playerXPercent]="minimapPlayerX()"
+                        [playerYPercent]="minimapPlayerY()"
+                      />
+                      <section
+                        class="rusty-engine-panel exploration__status"
+                        aria-label="Party status"
+                      >
+                        <p class="meta-label">Exploring party</p>
+                        @for (
+                          member of game()!.campaign!.party;
+                          track member.character.id
+                        ) {
+                          <aui-character-status
+                            [status]="characterStatus(member.character)"
+                          />
+                        }
+                        <span class="muted">
+                          Facing {{ exploration.facing }} · cell
+                          {{ exploration.x }},{{ exploration.y }}
+                        </span>
+                        <span class="muted">
+                          {{ exploration.discoveredCells.length }} cells
+                          discovered
+                        </span>
+                      </section>
+                    </aside>
+                  </section>
+                }
+              } @else if (game()?.campaign?.phase === "adventure-complete") {
+                @if (game()?.campaign?.completion; as completion) {
+                  <section
+                    class="rusty-engine-panel adventure-complete"
+                    data-overlay-region="modal"
+                    [attr.aria-label]="'Adventure complete: ' + completion.kind"
+                  >
+                    <p class="eyebrow">
+                      Adventure complete · {{ completion.kind }}
+                    </p>
+                    <h2>{{ completion.title }}</h2>
+                    <p class="lede">{{ completion.text }}</p>
+                    <ul class="detail-list">
+                      @for (detail of completion.details; track detail) {
+                        <li>{{ detail }}</li>
+                      }
+                    </ul>
                     <section
-                      class="latest"
-                      aria-label="Latest outcome explanation"
+                      class="identity-readout"
+                      aria-label="Final encounter record"
+                    >
+                      <strong>{{ game()?.campaign?.title }}</strong>
+                      @for (
+                        completed of game()?.campaign?.completedEncounters ??
+                          [];
+                        track completed.encounterId
+                      ) {
+                        <span
+                          >{{ completed.title }} · {{ completed.outcome }}</span
+                        >
+                      }
+                    </section>
+                    <p class="muted">
+                      Save preserves the terminal ending, party state, treasure,
+                      opened door, checkpoint, discoveries, and every encounter
+                      outcome.
+                    </p>
+                    <button
+                      class="danger"
+                      type="button"
+                      [disabled]="store.busy() || saveStatus() === null"
+                      (click)="openResetDialog($event)"
+                    >
+                      Reset / New Adventure
+                    </button>
+                  </section>
+                }
+              } @else {
+                <section class="encounter-meta" aria-label="Encounter identity">
+                  <span>Round {{ encounter().round }}</span>
+                  <span>
+                    {{
+                      encounter().currentFaction === "party"
+                        ? encounter().currentActor?.name + " acting"
+                        : encounter().currentFaction === "opposition"
+                          ? encounter().currentActor?.name + " acting"
+                          : "Encounter resolved"
+                    }}
+                  </span>
+                  <span>State revision {{ game()?.revision }}</span>
+                  @for (
+                    defense of activePartyMember()?.loadout?.defenses ?? [];
+                    track defense.id
+                  ) {
+                    <span>{{ defense.label }} defense {{ defense.value }}</span>
+                  }
+                  <span
+                    >Engine <code>{{ game()?.engineRevisionShort }}</code></span
+                  >
+                  <span>
+                    Rules
+                    <code [title]="game()?.rulesetFingerprint">{{
+                      game()?.campaign?.title
+                    }}</code>
+                  </span>
+                </section>
+
+                <section class="characters" aria-label="Character status">
+                  @for (
+                    participant of encounter().participants;
+                    track participant.character.id
+                  ) {
+                    <article
+                      class="character-card"
+                      [class.defeated]="participant.defeated"
+                      [attr.data-faction]="participant.faction"
                     >
                       <p class="meta-label">
-                        Latest receipt · turn {{ latest.turn }}
-                      </p>
-                      <strong>{{ latest.source }}</strong>
-                      <p>{{ latest.text }}</p>
-                      <ul class="detail-list">
-                        @for (detail of latest.details; track detail) {
-                          <li>{{ detail }}</li>
+                        {{ participant.faction }} · initiative
+                        {{ participant.initiative }}
+                        @if (
+                          participant.character.id ===
+                          encounter().currentActorId
+                        ) {
+                          · acting
                         }
-                      </ul>
+                        @if (participant.defeated) {
+                          · defeated
+                        }
+                      </p>
+                      <aui-character-status
+                        [status]="characterStatus(participant.character)"
+                      />
+                      <div
+                        class="resources"
+                        [attr.aria-label]="
+                          participant.character.name + ' resources'
+                        "
+                      >
+                        @for (
+                          resource of participant.character.resources;
+                          track resource.id
+                        ) {
+                          <span class="resource-chip">
+                            {{ resource.label }} {{ resource.current }}/{{
+                              resource.maximum
+                            }}
+                          </span>
+                        }
+                      </div>
+                    </article>
+                  }
+                </section>
+
+                @if (game()?.campaign?.phase === "outcome") {
+                  @if (game()?.campaign?.latestOutcome; as outcome) {
+                    <section class="workspace">
+                      <article
+                        class="rusty-engine-panel outcome-banner"
+                        [attr.aria-label]="'Encounter ' + outcome.kind"
+                      >
+                        <p class="eyebrow">{{ outcome.kind }}</p>
+                        <h2>{{ outcome.title }}</h2>
+                        <p class="lede">{{ outcome.summary }}</p>
+                        @if (outcome.reward !== null) {
+                          <p>
+                            <strong>Reward admitted:</strong>
+                            {{ outcome.reward }} · canonical entity
+                            {{ outcome.rewardItemId }}
+                          </p>
+                        } @else if (outcome.kind === "defeat") {
+                          <p class="muted">
+                            Returning to camp applies bounded recovery without
+                            granting a reward.
+                          </p>
+                        } @else {
+                          <p class="muted">
+                            This victory advances the campaign without granting
+                            another item.
+                          </p>
+                        }
+                        <button
+                          class="primary"
+                          type="button"
+                          [disabled]="store.busy()"
+                          (click)="returnToCamp()"
+                        >
+                          {{
+                            outcome.kind === "victory" &&
+                            game()?.exploration !== null
+                              ? "Continue adventure"
+                              : "Return to " + game()?.campaign?.title + " Camp"
+                          }}
+                        </button>
+                      </article>
+                      <aside class="rusty-engine-panel outcome">
+                        <aui-combat-log [entries]="combatLog()" />
+                        @if (latestLog(); as latest) {
+                          <section
+                            class="latest"
+                            aria-label="Latest outcome explanation"
+                          >
+                            <p class="meta-label">
+                              Latest receipt · turn {{ latest.turn }}
+                            </p>
+                            <strong>{{ latest.source }}</strong>
+                            <p>{{ latest.text }}</p>
+                            <ul class="detail-list">
+                              @for (detail of latest.details; track detail) {
+                                <li>{{ detail }}</li>
+                              }
+                            </ul>
+                          </section>
+                        }
+                      </aside>
                     </section>
                   }
-                </aside>
-              </section>
+                } @else {
+                  <section class="workspace">
+                    <div class="action-workbench">
+                      <aui-tactical-board
+                        [view]="tacticalBoard()"
+                        (cellSelected)="selectTacticalCell($event)"
+                      />
+                      <section class="rusty-engine-panel">
+                        <header class="actions__header">
+                          <div>
+                            <p class="meta-label">
+                              {{
+                                encounter().currentFaction === "party"
+                                  ? "Authored party actions"
+                                  : "Rust-owned opposition"
+                              }}
+                            </p>
+                            <h2>
+                              {{
+                                encounter().currentFaction === "party"
+                                  ? "Choose an action"
+                                  : encounter().reactionPrompt === null
+                                    ? opponentName() + " is ready"
+                                    : "Respond to " + opponentName()
+                              }}
+                            </h2>
+                          </div>
+                          @if (encounter().currentFaction === "party") {
+                            <div class="target-control">
+                              <label for="target">Target</label>
+                              <select
+                                id="target"
+                                [value]="targetId()"
+                                (change)="selectTarget($event)"
+                              >
+                                @for (
+                                  target of encounter().targets;
+                                  track target.id
+                                ) {
+                                  <option [value]="target.id">
+                                    {{ target.name }}
+                                  </option>
+                                }
+                              </select>
+                            </div>
+                          }
+                        </header>
+
+                        @if (encounter().currentFaction === "party") {
+                          <aui-hotbar
+                            [slots]="hotbarSlots()"
+                            (slotSelected)="chooseAction($event)"
+                          />
+
+                          <button
+                            type="button"
+                            [disabled]="
+                              store.busy() ||
+                              encounter().reactionPrompt !== null
+                            "
+                            (click)="endActivation()"
+                          >
+                            End {{ encounter().currentActor?.name }} activation
+                          </button>
+
+                          <div class="action-catalog">
+                            @for (
+                              action of encounter().actions;
+                              track action.id
+                            ) {
+                              <div class="action-note">
+                                <strong>{{ action.label }}</strong>
+                                <span>
+                                  {{ action.ability }} vs {{ action.defense }} ·
+                                  {{ action.damage }}
+                                  · range {{ action.range }} ·
+                                  {{ action.activation.join(" + ") }} ·
+                                  {{ action.target }}
+                                  @if (action.implement !== null) {
+                                    · {{ action.implement }}
+                                  }
+                                  @if (action.effect !== null) {
+                                    · {{ action.effect }}
+                                  }
+                                  @if (action.forcedMovement > 0) {
+                                    · pushes {{ action.forcedMovement }}
+                                  }
+                                </span>
+                              </div>
+                            }
+                          </div>
+                        } @else if (encounter().reactionPrompt === null) {
+                          <p class="lede">
+                            Begin the explicit opposition phase to let Rust
+                            choose and resolve {{ opponentName() }}'s action
+                            from admitted definitions. If a reaction is
+                            available, Rust will pause for that gameplay choice
+                            before resolving the roll.
+                          </p>
+                          <button
+                            class="primary resolve"
+                            type="button"
+                            [disabled]="store.busy()"
+                            (click)="beginOppositionTurn()"
+                          >
+                            Begin {{ opponentName() }} turn
+                          </button>
+                        }
+                      </section>
+
+                      @if (encounter().reactionPrompt; as prompt) {
+                        <section
+                          class="rusty-engine-panel preview"
+                          aria-label="Available reaction"
+                        >
+                          <p class="meta-label">
+                            Reaction window ·
+                            {{ pendingActorName(prompt.actorId) }} ·
+                            {{ prompt.actionLabel }}
+                          </p>
+                          <p class="preview__math">
+                            Ability {{ prompt.abilityScore }} ({{
+                              signed(prompt.abilityModifier)
+                            }}) against defense {{ prompt.defense }}
+                          </p>
+                          <div>
+                            <h3>Defense attribution</h3>
+                            <ul class="source-list">
+                              @for (
+                                source of prompt.defenseSources;
+                                track source
+                              ) {
+                                <li>{{ source }}</li>
+                              }
+                            </ul>
+                          </div>
+
+                          @if (prompt.reactions.length > 0) {
+                            <div
+                              class="reaction-list"
+                              aria-label="Available reactions"
+                            >
+                              @for (
+                                reaction of prompt.reactions;
+                                track reaction.id
+                              ) {
+                                <button
+                                  class="reaction"
+                                  type="button"
+                                  [disabled]="store.busy()"
+                                  (click)="
+                                    applyReaction(prompt.token, reaction.id)
+                                  "
+                                >
+                                  {{ reaction.label }} · {{ reaction.cost }}
+                                  {{ reaction.resource }} ·
+                                  {{ signed(reaction.bonus) }} defense
+                                </button>
+                              }
+                            </div>
+                          }
+
+                          <button
+                            class="primary resolve"
+                            type="button"
+                            [disabled]="store.busy()"
+                            (click)="declineReaction(prompt.token)"
+                          >
+                            Do not react
+                          </button>
+                        </section>
+                      }
+                    </div>
+
+                    <aside class="rusty-engine-panel outcome">
+                      <aui-combat-log [entries]="combatLog()" />
+                      @if (latestLog(); as latest) {
+                        <section
+                          class="latest"
+                          aria-label="Latest outcome explanation"
+                        >
+                          <p class="meta-label">
+                            Latest receipt · turn {{ latest.turn }}
+                          </p>
+                          <strong>{{ latest.source }}</strong>
+                          <p>{{ latest.text }}</p>
+                          <ul class="detail-list">
+                            @for (detail of latest.details; track detail) {
+                              <li>{{ detail }}</li>
+                            }
+                          </ul>
+                        </section>
+                      }
+                    </aside>
+                  </section>
+                }
+              }
             }
           }
-        }
-      }
+        </div>
+      </div>
     </main>
   `,
 })
@@ -1720,6 +1842,62 @@ export class MainMenuScreenComponent implements OnInit {
       x: exploration.x,
       y: exploration.y,
       depths: exploration.view,
+    };
+  });
+
+  protected readonly gameViewport = computed<GameViewportView>(() => {
+    const state = this.store.session();
+    if (state.kind === "error") {
+      return {
+        mode: "error",
+        label: "Runtime failure backdrop",
+        dungeon: null,
+      };
+    }
+    if (state.kind !== "data") {
+      return {
+        mode: "loading",
+        label: "Loading the Rust-owned game session",
+        dungeon: null,
+      };
+    }
+
+    const snapshot = state.value;
+    if (snapshot.campaign === null || !this.campaignEntered()) {
+      return {
+        mode: "catalog",
+        label:
+          snapshot.campaign === null
+            ? "Choose a Rust-compiled adventure"
+            : `Continue ${snapshot.campaign.title}`,
+        dungeon: null,
+      };
+    }
+
+    if (
+      snapshot.campaign.phase === "exploration" &&
+      snapshot.exploration !== null
+    ) {
+      const dungeon = this.dungeonViewport();
+      return {
+        mode: "exploration",
+        label: `${dungeon.title}, facing ${dungeon.facing} at cell ${dungeon.x}, ${dungeon.y}`,
+        dungeon,
+      };
+    }
+
+    return {
+      mode:
+        snapshot.campaign.phase === "adventure-complete"
+          ? "complete"
+          : snapshot.campaign.phase,
+      label:
+        snapshot.campaign.phase === "camp"
+          ? `${snapshot.campaign.title} camp`
+          : snapshot.campaign.phase === "outcome"
+            ? `${snapshot.campaign.title} encounter outcome`
+            : `${snapshot.campaign.title} tactical encounter`,
+      dungeon: null,
     };
   });
 

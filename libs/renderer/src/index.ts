@@ -18,10 +18,10 @@ import type { RuntimeReadoutView } from "@rusty-d20/domain";
 import type { RendererSurface } from "@rusty-engine/renderer-host";
 
 import {
-  createDungeonRenderFrame,
-  type DungeonRenderFrame,
-  type DungeonViewportView,
-} from "./dungeon-frame";
+  createGameRenderFrame,
+  type GameRenderFrame,
+  type GameViewportView,
+} from "./game-frame";
 
 export {
   createDungeonRenderFrame,
@@ -29,6 +29,13 @@ export {
   type DungeonRenderFrame,
   type DungeonViewportView,
 } from "./dungeon-frame";
+export {
+  createGameRenderFrame,
+  type GameCameraPose,
+  type GameRenderFrame,
+  type GameSceneMode,
+  type GameViewportView,
+} from "./game-frame";
 
 @Component({
   imports: [StatusLineComponent],
@@ -49,34 +56,36 @@ export class StatusRendererComponent {
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  selector: "aui-dungeon-viewport",
+  selector: "aui-game-viewport",
   standalone: true,
   styles: [
     `
       :host {
         display: block;
+        inset: 0;
         min-width: 0;
+        position: absolute;
       }
 
       .viewport {
-        aspect-ratio: 16 / 9;
         background: #090d12;
-        border: 2px solid var(--rusty-engine-border);
-        border-radius: var(--rusty-engine-radius);
         box-shadow: inset 0 0 70px rgb(0 0 0 / 0.8);
-        min-height: 320px;
+        height: 100%;
+        inset: 0;
         min-width: 0;
         overflow: hidden;
-        position: relative;
+        position: absolute;
         width: 100%;
       }
 
       .viewport::after {
-        background: repeating-linear-gradient(
-          0deg,
-          transparent 0 3px,
-          rgb(255 255 255 / 0.018) 3px 4px
-        );
+        background:
+          linear-gradient(180deg, rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.3)),
+          repeating-linear-gradient(
+            0deg,
+            transparent 0 3px,
+            rgb(255 255 255 / 0.014) 3px 4px
+          );
         content: "";
         inset: 0;
         pointer-events: none;
@@ -105,21 +114,6 @@ export class StatusRendererComponent {
         z-index: 2;
       }
 
-      .caption {
-        align-items: center;
-        background: rgb(3 7 12 / 0.76);
-        bottom: 0;
-        display: flex;
-        font-size: 0.72rem;
-        gap: 10px;
-        justify-content: space-between;
-        left: 0;
-        padding: 8px 10px;
-        position: absolute;
-        right: 0;
-        z-index: 3;
-      }
-
       .renderer-error {
         background: rgb(62 14 16 / 0.94);
         border: 1px solid rgb(255 135 135 / 0.5);
@@ -137,20 +131,12 @@ export class StatusRendererComponent {
     <section
       class="viewport"
       role="img"
-      [attr.aria-label]="
-        view().title +
-        ', facing ' +
-        view().facing +
-        ' at cell ' +
-        view().x +
-        ', ' +
-        view().y
-      "
-      [attr.data-wall-style]="view().wallStyle"
+      [attr.aria-label]="view().label"
+      [attr.data-scene-mode]="view().mode"
       data-renderer-backend="rusty-engine-three"
     >
       <canvas
-        #dungeonCanvas
+        #gameCanvas
         class="surface"
         aria-hidden="true"
         width="960"
@@ -159,23 +145,21 @@ export class StatusRendererComponent {
       @if (rendererError(); as message) {
         <p class="renderer-error" role="alert">{{ message }}</p>
       }
-      <span class="reticle" aria-hidden="true">◇</span>
-      <div class="caption">
-        <strong>{{ view().title }}</strong>
-        <span>Cell {{ view().x }},{{ view().y }} · {{ view().facing }}</span>
-      </div>
+      @if (view().mode === "exploration") {
+        <span class="reticle" aria-hidden="true">◇</span>
+      }
     </section>
   `,
 })
-export class DungeonViewportComponent
+export class GameViewportComponent
   implements AfterViewInit, OnChanges, OnDestroy
 {
-  readonly view = input.required<DungeonViewportView>();
+  readonly view = input.required<GameViewportView>();
   protected readonly rendererError = signal<string | null>(null);
   private readonly canvas =
-    viewChild.required<ElementRef<HTMLCanvasElement>>("dungeonCanvas");
+    viewChild.required<ElementRef<HTMLCanvasElement>>("gameCanvas");
   private surface: RendererSurface | null = null;
-  private activeHandles: DungeonRenderFrame["handles"] = [];
+  private activeHandles: GameRenderFrame["handles"] = [];
   private destroyed = false;
 
   async ngAfterViewInit(): Promise<void> {
@@ -186,7 +170,7 @@ export class DungeonViewportComponent
       if (this.destroyed) {
         return;
       }
-      const scene = createDungeonRenderFrame(this.view());
+      const scene = createGameRenderFrame(this.view());
       this.surface = mountRendererSurface(this.canvas().nativeElement, {
         autoStart: true,
         clearColor: 0x070b0e,
@@ -194,11 +178,7 @@ export class DungeonViewportComponent
         pixelRatio: Math.min(globalThis.devicePixelRatio ?? 1, 2),
         projection: { fovYDegrees: 58, near: 0.1, far: 20 },
       });
-      this.surface.setCameraPose({
-        position: [0, 1.35, 0.55],
-        pitchDegrees: 0,
-        yawDegrees: 0,
-      });
+      this.surface.setCameraPose(scene.camera);
       this.surface.renderOnce();
       this.activeHandles = scene.handles;
       this.rendererError.set(null);
@@ -212,8 +192,9 @@ export class DungeonViewportComponent
       return;
     }
     try {
-      const scene = createDungeonRenderFrame(this.view(), this.activeHandles);
+      const scene = createGameRenderFrame(this.view(), this.activeHandles);
       this.surface.applyFrame(scene.frame);
+      this.surface.setCameraPose(scene.camera);
       this.surface.renderOnce();
       this.activeHandles = scene.handles;
       this.rendererError.set(null);
@@ -232,7 +213,7 @@ export class DungeonViewportComponent
 
 function rendererFailureMessage(error: unknown): string {
   const detail = error instanceof Error ? error.message : String(error);
-  return `The Rusty Engine dungeon renderer could not present this view: ${detail}`;
+  return `The Rusty Engine game renderer could not present this scene: ${detail}`;
 }
 
 export interface TacticalBoardCellView {

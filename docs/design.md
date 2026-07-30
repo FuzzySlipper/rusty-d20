@@ -77,6 +77,17 @@ camera, projection, retained replacement, resize, render loop, and disposal
 process. The browser stops frame construction at the first opaque wall and
 never reconstructs hidden topology or gameplay state.
 
+That Engine surface is the permanent visual root of the product rather than an
+exploration widget embedded in a document. One `GameViewport` canvas survives
+catalog, camp, exploration, encounter, outcome, terminal, loading, and failure
+phase changes. Exploration supplies the bounded dungeon frame above; every
+other phase currently supplies an explicit abstract backdrop whose retained
+nodes contain no entity, inventory, target, navigation, or rules facts.
+Angular composes translucent top, left, right, bottom, modal, and status
+regions over the surface and keeps pointer/focus ownership in those named
+presentation layers. Later tactical and inventory presentation can replace a
+backdrop or overlay without moving gameplay meaning out of Rust.
+
 `D20Session` stages heterogeneous action work in an `EntityState` clone and
 publishes only after every d20 and Engine service succeeds. Damage, equipment,
 effects, stats, tracks, and attributed sources remain Engine mechanisms.
@@ -136,9 +147,11 @@ required implement or changing an active actor condition likewise makes an
 existing preview stale. Unrelated entity changes do not invalidate a preview.
 
 TypeScript does not host live rules, callbacks, runtime sessions, or gameplay
-state. The authoring SDK runs ordinary functions, tables, and loops only at
-build time, produces immutable candidates, and delegates strict package
-admission and all d20 meaning to Rust.
+state. Renderer scene mode, overlay placement, focus, and animation are
+presentation facts derived from the current strict Rust projection. The
+authoring SDK runs ordinary functions, tables, and loops only at build time,
+produces immutable candidates, and delegates strict package admission and all
+d20 meaning to Rust.
 
 The candidate and compiled-definition contract is documented in
 [the d20 rules kernel](d20-rules-kernel.md).

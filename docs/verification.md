@@ -74,6 +74,14 @@ landmark, trigger-driven encounter entry, automatic Rust-owned action
 resolution, optional player reactions, one player/opposition round, save, and
 desktop/mobile presentation.
 
+The ordinary real-host smoke additionally requires exactly one
+`aui-game-viewport` canvas while the scene mode changes from catalog to camp,
+exploration, and encounter. Its artifacts include the full-window catalog,
+camp, all-facing corridor, mobile corridor, and encounter overlay states.
+Renderer frame tests separately prove that abstract phase backdrops have no
+gameplay source identities and that exploration still delegates to the
+occlusion-safe dungeon adapter.
+
 The ordinary browser gate also launches an isolated Rust host, saves through
 normal loadout controls, stops that process, starts a fresh process against the
 same save, verifies exact camp loadout and encounter continuation, and resolves
