@@ -321,6 +321,20 @@ test("dry-run is scoped non-mutating and cleans its worktree", async () => {
   assert.equal(worktreeCount(fixture), 1);
 });
 
+test("same-revision dry-run is formatting-neutral", async () => {
+  const fixture = gitFixture();
+  const result = await updateEngineRevision({
+    repoRoot: fixture,
+    commit: CURRENT,
+    dryRun: true,
+    provePublic: async () => {},
+    regenerate: fakeRegenerate,
+    validate: async (candidate) => checkEngineRevision(candidate),
+  });
+  assert.equal(result.diff, "");
+  assert.equal(worktreeCount(fixture), 1);
+});
+
 test("ordinary update and rollback preserve unrelated and historical values", async () => {
   const fixture = gitFixture();
   writeFileSync(resolve(fixture, "unrelated.txt"), "user change\n");

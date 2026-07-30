@@ -673,7 +673,8 @@ function checkDerivedConsumers(repoRoot, source, violations) {
 }
 
 function rewritePackageManifest(path, expectedNames, previousCommit, commit) {
-  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  let content = readFileSync(path, "utf8");
+  const manifest = JSON.parse(content);
   for (const name of expectedNames) {
     const packagePath = ENGINE_PACKAGES.get(name);
     const expected = packageSpecifier(previousCommit, packagePath);
@@ -682,9 +683,17 @@ function rewritePackageManifest(path, expectedNames, previousCommit, commit) {
         `${path}: ${name} changed before rewrite; expected ${expected}`,
       );
     }
-    manifest.dependencies[name] = packageSpecifier(commit, packagePath);
+    const before = `"${name}": "${expected}"`;
+    const after = `"${name}": "${packageSpecifier(commit, packagePath)}"`;
+    const occurrences = content.split(before).length - 1;
+    if (occurrences !== 1) {
+      throw new Error(
+        `${path}: expected exactly one dependency carrier ${before}; observed ${String(occurrences)}`,
+      );
+    }
+    content = content.replace(before, after);
   }
-  writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+  writeFileSync(path, content);
 }
 
 function rewriteWorkspacePolicy(path, expectedNames, previousCommit, commit) {
