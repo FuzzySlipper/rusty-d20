@@ -16,7 +16,7 @@ export interface DungeonDepthView {
 export interface DungeonViewportView {
   readonly title: string;
   readonly wallStyle: string;
-  readonly facing: string;
+  readonly facing: "north" | "east" | "south" | "west";
   readonly x: number;
   readonly y: number;
   readonly depths: readonly DungeonDepthView[];

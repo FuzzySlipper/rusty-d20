@@ -237,6 +237,14 @@ log, reaction, outcome, and failure overlays and translates a typed picked
 cell back into the pre-existing Rust command path; it does not acquire
 movement, occupancy, targeting, or outcome authority.
 
+Task 6429 also keeps the reviewed Engine and donor pins unchanged. Rusty D20
+derives a bounded step/quarter-turn presentation offset only after two
+successive Rust projections have been accepted, then delegates interpolation
+to the public Engine `sampleCameraTransition` process and submits its sampled
+pose through `RendererSurface.setCameraPose`. No dungeon topology, collision,
+discovery, trigger, save fact, input queue, private Three object, or CSS canvas
+transform participates in the tween.
+
 ## Ruleweaver foundation translation disposition
 
 The foundation translation keeps both reviewed Engine/UI pins unchanged.

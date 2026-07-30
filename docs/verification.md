@@ -80,7 +80,12 @@ exploration, and encounter. Its artifacts include the full-window catalog,
 camp, all-facing corridor, mobile corridor, and desktop/mobile rendered
 encounter HUD states. Renderer frame tests separately prove that abstract phase
 backdrops have no gameplay source identities, exploration still delegates to
-the occlusion-safe dungeon adapter, and encounter/outcome mapping preserves
+the occlusion-safe dungeon adapter, the public Engine camera sampler is bounded
+to accepted adjacent projections with latest-wins interruption, reduced motion
+settles synchronously, and resize/disposal preserve the single-frame lifecycle.
+The browser records intermediate Engine camera poses for every facing, normal
+steps, rapid interruption, narrow layout, rejected collision, and reduced
+motion without observing topology changes. Encounter/outcome mapping preserves
 stable cell/entity pick handles, route geometry, state markers, lifecycle
 replacement, and responsive overhead camera fitting. The browser smoke uses
 the public Engine surface picker plus the focusable canvas keyboard cursor to

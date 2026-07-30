@@ -5,7 +5,7 @@ liveScenario(
   async ({ page, request, collector, liveBaseUrl }) => {
     liveScenario.setTimeout(120_000);
     collector.addNonClaim(
-      "This live scenario certifies the Warden path landing, Engine-backed camp loadout, Rust-owned first-person grid traversal, an authored landmark, encounter activation at its dungeon trigger, the retained Engine overhead scene and overlay HUD, action-first keyboard grid targeting, and one complete player/opposition round. It does not certify the later camera tween task.",
+      "This bounded scenario does not claim free movement, browser topology authority, or native-window input.",
     );
 
     await page.goto(liveBaseUrl);
@@ -74,6 +74,72 @@ liveScenario(
           status: await page.getByLabel("Party status").innerText(),
         },
       });
+      const dungeonCanvas = dungeonRenderer.locator("canvas");
+      await dungeonCanvas.evaluate((element) => {
+        const target = element as HTMLCanvasElement & {
+          cameraTweenWitness?: string[];
+        };
+        target.cameraTweenWitness = [];
+        new MutationObserver(() => {
+          target.cameraTweenWitness?.push(
+            [
+              target.dataset["cameraMotion"] ?? "none",
+              target.dataset["cameraTransitionState"] ?? "unknown",
+              target.dataset["cameraPose"] ?? "unknown",
+            ].join("|"),
+          );
+        }).observe(target, {
+          attributeFilter: [
+            "data-camera-motion",
+            "data-camera-pose",
+            "data-camera-transition-state",
+          ],
+        });
+      });
+      await page.getByRole("button", { name: "↶ Left" }).click();
+      await expect(dungeonRenderer).toHaveAttribute(
+        "aria-label",
+        /facing north at cell 1, 1/,
+      );
+      await page.getByRole("button", { name: "Right ↷" }).click();
+      await expect(dungeonRenderer).toHaveAttribute(
+        "aria-label",
+        /facing east at cell 1, 1/,
+      );
+      await expect(dungeonCanvas).toHaveAttribute(
+        "data-camera-transition-state",
+        "settled",
+      );
+      const tweenWitness = await dungeonCanvas.evaluate((element) => {
+        const target = element as HTMLCanvasElement & {
+          cameraTweenWitness?: string[];
+        };
+        return target.cameraTweenWitness ?? [];
+      });
+      expect(
+        tweenWitness.some((entry) => entry.startsWith("turn-left|running|")),
+      ).toBe(true);
+      expect(
+        tweenWitness.some((entry) => entry.startsWith("turn-right|running|")),
+      ).toBe(true);
+      expect(
+        new Set(tweenWitness.map((entry) => entry.split("|").at(-1))).size,
+      ).toBeGreaterThan(2);
+      await collector.milestone(
+        "Engine camera tween remains projection-bound",
+        {
+          screenshot: true,
+          layerSnapshot: {
+            cameraMotion:
+              await dungeonCanvas.getAttribute("data-camera-motion"),
+            cameraPose: await dungeonCanvas.getAttribute("data-camera-pose"),
+            transitionState: await dungeonCanvas.getAttribute(
+              "data-camera-transition-state",
+            ),
+            witness: tweenWitness,
+          },
+        },
+      );
       for (let step = 0; step < 4; step += 1) {
         await page.getByRole("button", { name: "↑ Forward" }).click();
       }

@@ -13,12 +13,12 @@ places phase UI in named overlay regions. Encounter and outcome modes now render
 the Rust-projected tactical board, occupancy, movement routes, and combat states
 through that shared surface; exploration uses the bounded corridor frame.
 Catalog, camp, terminal, loading, and failure modes retain abstract
-presentation-only backdrops. The remaining renderer-first campaign gaps are
-recorded in Den rather than implied complete: task 6429 adds brief camera
-tweens and task 6431 certifies the combined loop. Combat actions now use
+presentation-only backdrops. Exploration steps and quarter-turns use brief
+latest-projection-wins Engine camera tweens, and combat actions use
 revision-bound action-then-grid picking against Rust-projected legal targets.
-A native window/input host remains a later downstream consumer; this browser
-composition does not claim to be that host.
+Task 6431 remains the renderer-first campaign certification boundary. A native
+window/input host remains a later downstream consumer; this browser composition
+does not claim to be that host.
 
 - The live slice has an authored four-person Warden company and four
   Ruleweaver/Asha-derived opposition roles,

@@ -15,11 +15,18 @@ import type {
 import { StatusLineComponent } from "@rusty-d20/components";
 import type { RuntimeReadoutView } from "@rusty-d20/domain";
 import {
+  browserAnimationFrame,
   browserDevicePixelRatio,
   browserElementResize,
+  browserMotionPreference,
 } from "@rusty-d20/platform";
 import type { RendererSurface } from "@rusty-engine/renderer-host";
 
+import {
+  dungeonCameraTransition,
+  DungeonCameraTween,
+  type DungeonCameraTweenStatus,
+} from "./dungeon-camera-tween";
 import {
   createGameRenderFrame,
   tacticalCameraPose,
@@ -32,6 +39,16 @@ import {
   type TacticalBoardSelection,
 } from "./tactical-frame";
 
+export {
+  DUNGEON_CAMERA_TWEEN_DURATION_MS,
+  dungeonCameraTransition,
+  DungeonCameraTween,
+  type CameraTransitionSampler,
+  type DungeonCameraMotionKind,
+  type DungeonCameraTransition,
+  type DungeonCameraTweenStart,
+  type DungeonCameraTweenStatus,
+} from "./dungeon-camera-tween";
 export {
   createDungeonRenderFrame,
   type DungeonDepthView,
@@ -247,6 +264,8 @@ export class GameViewportComponent
   private surface: RendererSurface | null = null;
   private activeHandles: GameRenderFrame["handles"] = [];
   private activeScene: GameRenderFrame | null = null;
+  private activeView: GameViewportView | null = null;
+  private cameraTween: DungeonCameraTween | null = null;
   private keyboardCell: readonly [number, number] | null = null;
   private keyboardInteractionKey: string | null = null;
   private stopResizeObservation: (() => void) | null = null;
@@ -254,13 +273,19 @@ export class GameViewportComponent
 
   async ngAfterViewInit(): Promise<void> {
     try {
-      const { mountRendererSurface } = await import(
+      const { mountRendererSurface, sampleCameraTransition } = await import(
         "@rusty-engine/renderer-host"
       );
       if (this.destroyed) {
         return;
       }
-      const scene = createGameRenderFrame(this.view());
+      const initialView = this.view();
+      const scene = createGameRenderFrame(initialView);
+      this.cameraTween = new DungeonCameraTween(
+        browserAnimationFrame,
+        browserMotionPreference,
+        sampleCameraTransition,
+      );
       this.surface = mountRendererSurface(this.canvas().nativeElement, {
         autoStart: true,
         clearColor: 0x070b0e,
@@ -269,6 +294,7 @@ export class GameViewportComponent
         projection: { fovYDegrees: 58, near: 0.1, far: 64 },
       });
       this.activeScene = scene;
+      this.activeView = initialView;
       this.syncKeyboardCell();
       this.applyCameraForSize(
         this.canvas().nativeElement.clientWidth,
@@ -291,11 +317,16 @@ export class GameViewportComponent
       return;
     }
     try {
-      const scene = createGameRenderFrame(this.view(), this.activeHandles);
+      const previousView = this.activeView;
+      const nextView = this.view();
+      const scene = createGameRenderFrame(nextView, this.activeHandles);
       this.surface.applyFrame(scene.frame);
       this.activeScene = scene;
+      this.activeView = nextView;
       this.syncKeyboardCell();
-      this.applyCameraForSize(
+      this.applyCameraForProjectionChange(
+        previousView,
+        nextView,
         this.canvas().nativeElement.clientWidth,
         this.canvas().nativeElement.clientHeight,
       );
@@ -311,10 +342,13 @@ export class GameViewportComponent
     this.destroyed = true;
     this.stopResizeObservation?.();
     this.stopResizeObservation = null;
+    this.cameraTween?.dispose();
+    this.cameraTween = null;
     this.surface?.dispose();
     this.surface = null;
     this.activeHandles = [];
     this.activeScene = null;
+    this.activeView = null;
   }
 
   protected pickScene(event: MouseEvent): void {
@@ -461,11 +495,109 @@ export class GameViewportComponent
       return;
     }
     const fit = this.activeScene.cameraFit;
-    this.surface.setCameraPose(
+    if (
+      fit === null &&
+      this.activeView?.mode === "exploration" &&
+      this.cameraTween?.reapply((pose) => this.setSurfaceCameraPose(pose))
+    ) {
+      return;
+    }
+    const pose =
       fit === null
         ? this.activeScene.camera
-        : tacticalCameraPose(fit, width > 0 && height > 0 ? width / height : 1),
+        : tacticalCameraPose(fit, width > 0 && height > 0 ? width / height : 1);
+    this.settleCamera(pose);
+  }
+
+  private applyCameraForProjectionChange(
+    previousView: GameViewportView | null,
+    nextView: GameViewportView,
+    width: number,
+    height: number,
+  ): void {
+    if (this.surface === null || this.activeScene === null) {
+      return;
+    }
+    const fit = this.activeScene.cameraFit;
+    const canonicalPose =
+      fit === null
+        ? this.activeScene.camera
+        : tacticalCameraPose(fit, width > 0 && height > 0 ? width / height : 1);
+    const previousDungeon =
+      previousView?.mode === "exploration" ? previousView.dungeon : null;
+    const nextDungeon =
+      nextView.mode === "exploration" ? nextView.dungeon : null;
+    const transition =
+      previousDungeon === null || nextDungeon === null
+        ? null
+        : dungeonCameraTransition(previousDungeon, nextDungeon, canonicalPose);
+    if (transition === null || this.cameraTween === null || fit !== null) {
+      this.settleCamera(canonicalPose);
+      return;
+    }
+    this.cameraTween.start({
+      applyPose: (pose) => this.setSurfaceCameraPose(pose),
+      onError: (error) => {
+        this.setCameraTransitionStatus(
+          transition.kind,
+          "settled",
+          browserMotionPreference.prefersReducedMotion(),
+        );
+        this.rendererError.set(rendererFailureMessage(error));
+      },
+      onStatus: (status) =>
+        this.setCameraTransitionStatus(
+          status.kind,
+          status.state,
+          status.reducedMotion,
+        ),
+      projection: this.surface.cameraProjection(),
+      transition,
+      viewport: {
+        width: Math.max(1, width),
+        height: Math.max(1, height),
+      },
+    });
+  }
+
+  private settleCamera(pose: GameRenderFrame["camera"]): void {
+    if (this.cameraTween === null) {
+      this.setSurfaceCameraPose(pose);
+    } else {
+      this.cameraTween.settle(pose, (nextPose) =>
+        this.setSurfaceCameraPose(nextPose),
+      );
+    }
+    this.setCameraTransitionStatus(
+      null,
+      "settled",
+      browserMotionPreference.prefersReducedMotion(),
     );
+  }
+
+  private setSurfaceCameraPose(pose: GameRenderFrame["camera"]): void {
+    if (this.surface === null) {
+      return;
+    }
+    this.surface.setCameraPose(pose);
+    this.canvas().nativeElement.dataset["cameraPose"] = [
+      ...pose.position,
+      pose.yawDegrees,
+      pose.pitchDegrees,
+    ]
+      .map((value) => value.toFixed(3))
+      .join(",");
+  }
+
+  private setCameraTransitionStatus(
+    kind: DungeonCameraTweenStatus["kind"],
+    state: DungeonCameraTweenStatus["state"],
+    reducedMotion: boolean,
+  ): void {
+    const dataset = this.canvas().nativeElement.dataset;
+    dataset["cameraMotion"] = kind ?? "none";
+    dataset["cameraTransitionState"] = state;
+    dataset["cameraReducedMotion"] = reducedMotion ? "true" : "false";
   }
 }
 

@@ -77,6 +77,18 @@ camera, projection, retained replacement, resize, render loop, and disposal
 process. The browser stops frame construction at the first opaque wall and
 never reconstructs hidden topology or gameplay state.
 
+After Rust accepts an adjacent step or quarter-turn, the renderer replaces the
+retained corridor with only the newly committed occlusion-safe projection and
+uses Engine's public camera-transition sampler to settle from the prior
+committed pose offset to the canonical first-person pose in 110 milliseconds.
+The frame topology itself is never interpolated. A newer accepted projection
+cancels the sole pending animation frame and starts its own transition; a
+rejected command, interaction-only update, phase change, or non-adjacent
+projection snaps without a movement tween. Resize reapplies the current sampled
+pose, disposal cancels it, and the browser motion-preference port resolves the
+transition synchronously when reduced motion is requested. Controls and Rust
+command admission remain independent of this disposable presentation state.
+
 That Engine surface is the permanent visual root of the product rather than an
 exploration widget embedded in a document. One `GameViewport` canvas survives
 catalog, camp, exploration, encounter, outcome, terminal, loading, and failure

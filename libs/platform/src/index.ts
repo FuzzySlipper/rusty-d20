@@ -9,6 +9,10 @@ export interface AnimationFramePort {
   readonly cancel: (handle: number) => void;
 }
 
+export interface MotionPreferencePort {
+  readonly prefersReducedMotion: () => boolean;
+}
+
 export interface ElementSize {
   readonly width: number;
   readonly height: number;
@@ -55,6 +59,11 @@ export const browserClock: ClockPort = {
 export const browserAnimationFrame: AnimationFramePort = {
   request: (callback) => window.requestAnimationFrame(callback),
   cancel: (handle) => window.cancelAnimationFrame(handle),
+};
+
+export const browserMotionPreference: MotionPreferencePort = {
+  prefersReducedMotion: () =>
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches,
 };
 
 export const browserElementResize: ElementResizePort = {

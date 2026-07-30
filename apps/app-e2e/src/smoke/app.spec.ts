@@ -1,4 +1,52 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+
+interface CameraTransitionWitness {
+  readonly motion: string | null;
+  readonly pose: string | null;
+  readonly reducedMotion: string | null;
+  readonly state: string | null;
+}
+
+async function installCameraTransitionWitness(canvas: Locator): Promise<void> {
+  await canvas.evaluate((element) => {
+    const target = element as HTMLCanvasElement & {
+      cameraTransitionWitness?: CameraTransitionWitness[];
+      cameraTransitionObserver?: MutationObserver;
+    };
+    target.cameraTransitionObserver?.disconnect();
+    target.cameraTransitionWitness = [];
+    const record = (): void => {
+      target.cameraTransitionWitness?.push({
+        motion: target.dataset["cameraMotion"] ?? null,
+        pose: target.dataset["cameraPose"] ?? null,
+        reducedMotion: target.dataset["cameraReducedMotion"] ?? null,
+        state: target.dataset["cameraTransitionState"] ?? null,
+      });
+    };
+    target.cameraTransitionObserver = new MutationObserver(record);
+    target.cameraTransitionObserver.observe(target, {
+      attributeFilter: [
+        "data-camera-motion",
+        "data-camera-pose",
+        "data-camera-reduced-motion",
+        "data-camera-transition-state",
+      ],
+    });
+  });
+}
+
+async function takeCameraTransitionWitness(
+  canvas: Locator,
+): Promise<readonly CameraTransitionWitness[]> {
+  return canvas.evaluate((element) => {
+    const target = element as HTMLCanvasElement & {
+      cameraTransitionWitness?: CameraTransitionWitness[];
+    };
+    const entries = [...(target.cameraTransitionWitness ?? [])];
+    target.cameraTransitionWitness = [];
+    return entries;
+  });
+}
 
 async function expectRendererCanvasAtPoint(
   page: Page,
@@ -394,16 +442,27 @@ test.describe.serial("real Rust encounter shell", () => {
         .getByRole("heading", { name: "Warden's Gate Pass" })
         .first(),
     ).toBeVisible();
-    const dungeonViewport = page.getByRole("img", {
-      name: /Warden's Gate Pass, facing east at cell 1, 1/,
-    });
+    const dungeonViewport = page.locator(
+      "aui-game-viewport [data-scene-mode='exploration']",
+    );
     await expect(dungeonViewport).toBeVisible();
+    await expect(dungeonViewport).toHaveAttribute(
+      "aria-label",
+      /Warden's Gate Pass, facing east at cell 1, 1/,
+    );
     await expect(dungeonViewport).toHaveAttribute(
       "data-renderer-backend",
       "rusty-engine-three",
     );
-    await expect(dungeonViewport.locator("canvas")).toBeVisible();
+    const dungeonCanvas = dungeonViewport.locator("canvas");
+    await expect(dungeonCanvas).toBeVisible();
     await expect(dungeonViewport.getByRole("alert")).toHaveCount(0);
+    await expect(dungeonCanvas).toHaveAttribute(
+      "data-camera-transition-state",
+      "settled",
+    );
+    await expect(dungeonCanvas).toHaveAttribute("data-camera-motion", "none");
+    await installCameraTransitionWitness(dungeonCanvas);
     await expectRendererCanvasAtPoint(page, 640, 400);
     const beforeExplorationInventory = await (
       await request.get("/api/v1/session")
@@ -450,6 +509,58 @@ test.describe.serial("real Rust encounter shell", () => {
     await page.keyboard.press("Escape");
     await expect(explorationInventory).toHaveCount(0);
     await expect(inventoryTrigger).toBeFocused();
+    await takeCameraTransitionWitness(dungeonCanvas);
+
+    const rejectedStep = await request.post(
+      "/api/v1/session/exploration/command",
+      {
+        data: {
+          expectedRevision: beforeExplorationInventory.revision,
+          command: "step-backward",
+        },
+      },
+    );
+    expect(rejectedStep.status()).toBe(422);
+    await expect(rejectedStep.json()).resolves.toMatchObject({
+      kind: "invalid",
+      message: "solid dungeon stone or a closed door blocks that step",
+    });
+    await expect(dungeonViewport).toHaveAttribute(
+      "aria-label",
+      /facing east at cell 1, 1/,
+    );
+    await expect(
+      (await request.get("/api/v1/session")).json(),
+    ).resolves.toEqual(beforeExplorationInventory);
+    expect(await takeCameraTransitionWitness(dungeonCanvas)).toEqual([]);
+
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.getByRole("button", { name: "↶ Left" }).click();
+    await expect(dungeonViewport).toHaveAttribute(
+      "aria-label",
+      /facing north at cell 1, 1/,
+    );
+    await expect(dungeonCanvas).toHaveAttribute(
+      "data-camera-transition-state",
+      "settled",
+    );
+    await expect(dungeonCanvas).toHaveAttribute(
+      "data-camera-reduced-motion",
+      "true",
+    );
+    const reducedMotionWitness =
+      await takeCameraTransitionWitness(dungeonCanvas);
+    expect(
+      reducedMotionWitness.some((entry) => entry.state === "running"),
+    ).toBe(false);
+    await page.getByRole("button", { name: "Right ↷" }).click();
+    await expect(dungeonViewport).toHaveAttribute(
+      "aria-label",
+      /facing east at cell 1, 1/,
+    );
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await takeCameraTransitionWitness(dungeonCanvas);
+
     await testInfo.attach("engine-dungeon-corridor.png", {
       body: await dungeonViewport.screenshot(),
       contentType: "image/png",
@@ -461,6 +572,12 @@ test.describe.serial("real Rust encounter shell", () => {
         () => document.documentElement.scrollWidth <= window.innerWidth,
       ),
     ).toBe(true);
+    await page.locator(".game-overlay").evaluate(async (overlay) => {
+      overlay.scrollTop = 0;
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+    });
     const narrowPanels = page.locator(
       ".exploration__main > .rusty-engine-panel",
     );
@@ -481,18 +598,84 @@ test.describe.serial("real Rust encounter shell", () => {
     const narrowForward = page.getByRole("button", { name: "↑ Forward" });
     await narrowForward.focus();
     await expect(narrowForward).toBeFocused();
+    await takeCameraTransitionWitness(dungeonCanvas);
+    await page.getByRole("button", { name: "↶ Left" }).click();
+    await expect(dungeonViewport).toHaveAttribute(
+      "aria-label",
+      /facing north at cell 1, 1/,
+    );
+    await expect(dungeonCanvas).toHaveAttribute(
+      "data-camera-transition-state",
+      "settled",
+    );
+    const mobileTweenWitness = await takeCameraTransitionWitness(dungeonCanvas);
+    expect(
+      mobileTweenWitness.some(
+        (entry) => entry.motion === "turn-left" && entry.state === "running",
+      ),
+    ).toBe(true);
+    await page.getByRole("button", { name: "Right ↷" }).click();
+    await expect(dungeonViewport).toHaveAttribute(
+      "aria-label",
+      /facing east at cell 1, 1/,
+    );
+    await expect(dungeonCanvas).toHaveAttribute(
+      "data-camera-transition-state",
+      "settled",
+    );
     await testInfo.attach("engine-dungeon-corridor-mobile.png", {
       body: await page.locator("aui-game-viewport").screenshot(),
       contentType: "image/png",
     });
     await page.setViewportSize({ width: 1280, height: 720 });
+    await takeCameraTransitionWitness(dungeonCanvas);
+
+    await page.getByRole("button", { name: "↶ Left" }).click();
+    await expect(dungeonViewport).toHaveAttribute(
+      "aria-label",
+      /facing north at cell 1, 1/,
+    );
+    await page.getByRole("button", { name: "Right ↷" }).click();
+    await expect(dungeonViewport).toHaveAttribute(
+      "aria-label",
+      /facing east at cell 1, 1/,
+    );
+    await expect(dungeonCanvas).toHaveAttribute(
+      "data-camera-transition-state",
+      "settled",
+    );
+    const interruptedWitness = await takeCameraTransitionWitness(dungeonCanvas);
+    expect(
+      interruptedWitness.some((entry) => entry.motion === "turn-left"),
+    ).toBe(true);
+    expect(
+      interruptedWitness.some((entry) => entry.motion === "turn-right"),
+    ).toBe(true);
+
     for (const facing of ["north", "west", "south", "east"]) {
+      await takeCameraTransitionWitness(dungeonCanvas);
       await page.getByRole("button", { name: "↶ Left" }).click();
       const rotatedViewport = page.getByRole("img", {
         name: new RegExp(`Warden's Gate Pass, facing ${facing} at cell 1, 1`),
       });
       await expect(rotatedViewport).toBeVisible();
-      await expect(page.locator("aui-game-viewport canvas")).toBeVisible();
+      await expect(dungeonCanvas).toHaveAttribute(
+        "data-camera-transition-state",
+        "settled",
+      );
+      const facingWitness = await takeCameraTransitionWitness(dungeonCanvas);
+      expect(
+        facingWitness.some(
+          (entry) => entry.motion === "turn-left" && entry.state === "running",
+        ),
+      ).toBe(true);
+      expect(
+        new Set(
+          facingWitness
+            .map((entry) => entry.pose)
+            .filter((pose): pose is string => pose !== null),
+        ).size,
+      ).toBeGreaterThan(2);
       if (facing === "north" || facing === "south") {
         await testInfo.attach(`engine-dungeon-facing-${facing}.png`, {
           body: await rotatedViewport.screenshot(),
@@ -501,7 +684,23 @@ test.describe.serial("real Rust encounter shell", () => {
       }
     }
     for (let step = 0; step < 4; step += 1) {
+      await takeCameraTransitionWitness(dungeonCanvas);
       await page.getByRole("button", { name: "↑ Forward" }).click();
+      await expect(dungeonViewport).toHaveAttribute(
+        "aria-label",
+        new RegExp(`facing east at cell ${String(step + 2)}, 1`),
+      );
+      await expect(dungeonCanvas).toHaveAttribute(
+        "data-camera-transition-state",
+        "settled",
+      );
+      const stepWitness = await takeCameraTransitionWitness(dungeonCanvas);
+      expect(
+        stepWitness.some(
+          (entry) =>
+            entry.motion === "step-forward" && entry.state === "running",
+        ),
+      ).toBe(true);
     }
     const movedDungeonViewport = page.locator("aui-game-viewport");
     await expect(movedDungeonViewport.locator("canvas")).toBeVisible();
