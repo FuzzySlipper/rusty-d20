@@ -73,26 +73,26 @@ pub use component::{
 };
 pub use game::{
     ActionDto, ActionTargetsDto, AdventureChoiceDto, AdventureCompletionDto, ApiErrorDto,
-    ApiErrorKindDto, ApplyActionRequestDto, ApplyReactionRequestDto, CampaignDto,
-    CampaignOutcomeDto, CampaignPhaseDto, CharacterDto, CompletedEncounterDto, DefenseReadoutDto,
-    DiscoveredCellDto, EncounterChoiceDto, EncounterDto, EncounterFactionDto,
+    ApiErrorKindDto, ApplyReactionRequestDto, CampaignDto, CampaignOutcomeDto, CampaignPhaseDto,
+    CharacterDto, ChooseActionRequestDto, CompletedEncounterDto, DeclineReactionRequestDto,
+    DefenseReadoutDto, DiscoveredCellDto, EncounterChoiceDto, EncounterDto, EncounterFactionDto,
     EncounterOutcomeKindDto, EncounterParticipantDto, EnterEncounterRequestDto,
     EquipItemRequestDto, EquipmentSlotDto, ExpectedRevisionDto, ExplorationCheckpointDto,
     ExplorationCommandKindDto, ExplorationCommandRequestDto, ExplorationDepthDto,
     ExplorationDoorDto, ExplorationDto, ExplorationFacingDto, ExplorationLandmarkDto,
     ExplorationTreasureDto, GameLogEntryDto, GameLogKindDto, GameRuntime, GameRuntimeError,
     GameSnapshotDto, LoadoutCapacityDto, LoadoutDto, LoadoutItemDto, LoadoutRarityDto,
-    MoveActorRequestDto, NewAdventureRequestDto, PartyMemberDto, PendingActionDto,
-    PreviewActionRequestDto, ReactionDto, ResetSessionRequestDto, ResourceDto, SaveStateDto,
-    SaveStatusDto, TacticalBoardDto, TacticalCellDto, TacticalMoveDto, TransferItemRequestDto,
-    UnequipItemRequestDto,
+    MoveActorRequestDto, NewAdventureRequestDto, PartyMemberDto, ReactionDto, ReactionPromptDto,
+    ResetSessionRequestDto, ResourceDto, SaveStateDto, SaveStatusDto, TacticalBoardDto,
+    TacticalCellDto, TacticalMoveDto, TransferItemRequestDto, UnequipItemRequestDto,
 };
 pub use identity::{D20Id, D20IdentityError, D20_ID_PATTERN, MAX_D20_ID_BYTES};
 pub use session::{
     ability_modifier, ActionPreview, ActionReceipt, AdvanceTurnReceipt, AffinitySeed,
     ApplyActionRequest, ArmorItemSeed, CharacterSeed, D20Session, D20SessionError, DamageAffinity,
     EncounterParticipationSeed, EquipmentItemSeed, InventorySeed, ReactionOption, ReactionReceipt,
-    SessionSaveError, StorageSeed,
+    RollSourceConfig, SessionSaveError, StaticActionRoll, StorageSeed, DEFAULT_ROLL_SEED,
+    MAX_STATIC_ACTION_ROLLS,
 };
 
 /// Exact reviewed Rusty Engine revision selected by `engine-source.json`.
@@ -148,7 +148,7 @@ pub fn generated_typescript() -> String {
         CharacterDto::decl(),
         ActionDto::decl(),
         ReactionDto::decl(),
-        PendingActionDto::decl(),
+        ReactionPromptDto::decl(),
         ActionTargetsDto::decl(),
         EncounterFactionDto::decl(),
         EncounterParticipantDto::decl(),
@@ -192,9 +192,9 @@ pub fn generated_typescript() -> String {
         UnequipItemRequestDto::decl(),
         TransferItemRequestDto::decl(),
         MoveActorRequestDto::decl(),
-        PreviewActionRequestDto::decl(),
+        ChooseActionRequestDto::decl(),
         ApplyReactionRequestDto::decl(),
-        ApplyActionRequestDto::decl(),
+        DeclineReactionRequestDto::decl(),
         ApiErrorKindDto::decl(),
         ApiErrorDto::decl(),
     ];

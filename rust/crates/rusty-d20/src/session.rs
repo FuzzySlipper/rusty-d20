@@ -29,10 +29,84 @@ use crate::{
     ActivationBudgetsComponent, ActivationCostDefinition, ConditionClauseDefinition,
     D20ComponentDataError, D20Id, D20Ruleset, DamageDefinition, EncounterFaction,
     EncounterParticipationComponent, EquipmentReferenceDefinition, ScheduledEffect,
-    ScheduledEffectsComponent, TacticalPosition, ENGINE_REVISION,
+    ScheduledEffectsComponent, TacticalPosition, ENGINE_REVISION, MAX_D20_DAMAGE_DICE,
+    MAX_D20_DAMAGE_DIE_SIDES,
 };
 
-const D20_SAVE_SCHEMA_VERSION: u32 = 4;
+const D20_SAVE_SCHEMA_VERSION: u32 = 5;
+pub const DEFAULT_ROLL_SEED: u64 = 0xD20_2026;
+pub const MAX_STATIC_ACTION_ROLLS: usize = 4_096;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct StaticActionRoll {
+    pub d20: u8,
+    pub damage: Vec<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    deny_unknown_fields,
+    rename_all = "kebab-case",
+    tag = "kind",
+    rename_all_fields = "camelCase"
+)]
+pub enum RollSourceConfig {
+    Seeded { seed: u64 },
+    Static { rolls: Vec<StaticActionRoll> },
+}
+
+impl RollSourceConfig {
+    pub const fn seeded(seed: u64) -> Self {
+        Self::Seeded { seed }
+    }
+
+    pub fn static_rolls(rolls: Vec<StaticActionRoll>) -> Result<Self, D20SessionError> {
+        let source = Self::Static { rolls };
+        source.validate()?;
+        Ok(source)
+    }
+
+    pub(crate) fn validate(&self) -> Result<(), D20SessionError> {
+        let Self::Static { rolls } = self else {
+            return Ok(());
+        };
+        if rolls.is_empty() || rolls.len() > MAX_STATIC_ACTION_ROLLS {
+            return Err(D20SessionError::InvalidRollSource(format!(
+                "static roll tape must contain 1..={MAX_STATIC_ACTION_ROLLS} action rolls"
+            )));
+        }
+        for (index, roll) in rolls.iter().enumerate() {
+            if !(1..=20).contains(&roll.d20) {
+                return Err(D20SessionError::InvalidRollSource(format!(
+                    "static action roll {index} has d20 result {}; expected 1..=20",
+                    roll.d20
+                )));
+            }
+            if roll.damage.len() > usize::from(MAX_D20_DAMAGE_DICE) {
+                return Err(D20SessionError::InvalidRollSource(format!(
+                    "static action roll {index} has too many damage dice"
+                )));
+            }
+            if let Some(result) = roll
+                .damage
+                .iter()
+                .find(|result| **result == 0 || **result > MAX_D20_DAMAGE_DIE_SIDES)
+            {
+                return Err(D20SessionError::InvalidRollSource(format!(
+                    "static action roll {index} has damage result {result}; expected 1..={MAX_D20_DAMAGE_DIE_SIDES}"
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Default for RollSourceConfig {
+    fn default() -> Self {
+        Self::seeded(DEFAULT_ROLL_SEED)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -286,7 +360,7 @@ pub struct AdvanceTurnReceipt {
 pub struct D20Session {
     rules: D20Ruleset,
     entities: EntityState,
-    seed: RngSeed,
+    roll_source: RollSourceConfig,
     next_roll: u64,
     current_turn: u64,
 }
@@ -330,6 +404,25 @@ impl D20Session {
         storage: Vec<StorageSeed>,
         equipment_items: Vec<EquipmentItemSeed>,
     ) -> Result<Self, D20SessionError> {
+        Self::new_with_roll_source(
+            rules,
+            RollSourceConfig::seeded(seed.raw()),
+            characters,
+            inventories,
+            storage,
+            equipment_items,
+        )
+    }
+
+    pub fn new_with_roll_source(
+        rules: D20Ruleset,
+        roll_source: RollSourceConfig,
+        characters: Vec<CharacterSeed>,
+        inventories: Vec<InventorySeed>,
+        storage: Vec<StorageSeed>,
+        equipment_items: Vec<EquipmentItemSeed>,
+    ) -> Result<Self, D20SessionError> {
+        roll_source.validate()?;
         let mut definitions = characters
             .iter()
             .map(|character| EntityDefinition::new(character.entity, character.name.clone()))
@@ -457,7 +550,7 @@ impl D20Session {
         Ok(Self {
             rules,
             entities,
-            seed,
+            roll_source,
             next_roll: 0,
             current_turn: 0,
         })
@@ -479,15 +572,30 @@ impl D20Session {
         self.next_roll
     }
 
-    pub fn deterministic_choice_index(&self, scope: &str, upper: u32) -> Option<u32> {
-        let mut rng = ScopedRng::new(
-            self.seed,
-            &format!(
-                "d20-choice/{scope}/turn-{}/roll-{}",
-                self.current_turn, self.next_roll
-            ),
-        );
-        rng.next_bounded_u32(upper)
+    pub const fn roll_source(&self) -> &RollSourceConfig {
+        &self.roll_source
+    }
+
+    pub fn choice_index(&self, scope: &str, upper: u32) -> Option<u32> {
+        if upper == 0 {
+            return None;
+        }
+        match self.roll_source {
+            RollSourceConfig::Seeded { seed } => {
+                let mut rng = ScopedRng::new(
+                    RngSeed::new(seed),
+                    &format!(
+                        "d20-choice/{scope}/turn-{}/roll-{}",
+                        self.current_turn, self.next_roll
+                    ),
+                );
+                rng.next_bounded_u32(upper)
+            }
+            RollSourceConfig::Static { ref rolls } => usize::try_from(self.next_roll)
+                .ok()
+                .and_then(|index| rolls.get(index))
+                .map(|roll| (u32::from(roll.d20) - 1) % upper),
+        }
     }
 
     pub fn install_encounter_participation(
@@ -1249,21 +1357,15 @@ impl D20Session {
             .rules
             .action(&request.preview.action)
             .expect("preview references a compiled action");
-        let mut rng = ScopedRng::new(self.seed, &format!("d20-action-roll/{}", self.next_roll));
-        let d20 = u8::try_from(rng.next_bounded_u32(20).expect("fixed nonzero d20 bound") + 1)
-            .expect("d20 roll fits u8");
+        let (d20, damage_rolls) = self.action_roll(&request.preview.damage)?;
         let total = i32::from(d20) + i32::from(request.preview.ability_modifier);
         let hit = i64::from(total) >= request.preview.defense.value.get();
 
         let mut rolled_damage = 0_u32;
         if hit {
-            for _ in 0..request.preview.damage.dice {
+            for result in damage_rolls {
                 rolled_damage = rolled_damage
-                    .checked_add(
-                        rng.next_bounded_u32(u32::from(request.preview.damage.sides))
-                            .expect("compiled damage die has a nonzero bound")
-                            + 1,
-                    )
+                    .checked_add(u32::from(result))
                     .ok_or(D20SessionError::DamageOverflow)?;
             }
         }
@@ -1358,6 +1460,55 @@ impl D20Session {
         })
     }
 
+    fn action_roll(&self, damage: &DamageDefinition) -> Result<(u8, Vec<u16>), D20SessionError> {
+        match &self.roll_source {
+            RollSourceConfig::Seeded { seed } => {
+                let mut rng = ScopedRng::new(
+                    RngSeed::new(*seed),
+                    &format!("d20-action-roll/{}", self.next_roll),
+                );
+                let d20 =
+                    u8::try_from(rng.next_bounded_u32(20).expect("fixed nonzero d20 bound") + 1)
+                        .expect("d20 roll fits u8");
+                let damage = (0..damage.dice)
+                    .map(|_| {
+                        u16::try_from(
+                            rng.next_bounded_u32(u32::from(damage.sides))
+                                .expect("compiled damage die has a nonzero bound")
+                                + 1,
+                        )
+                        .expect("compiled damage die result fits u16")
+                    })
+                    .collect();
+                Ok((d20, damage))
+            }
+            RollSourceConfig::Static { rolls } => {
+                let index = usize::try_from(self.next_roll).map_err(|_| {
+                    D20SessionError::StaticRollsExhausted {
+                        index: self.next_roll,
+                        available: rolls.len(),
+                    }
+                })?;
+                let roll = rolls
+                    .get(index)
+                    .ok_or(D20SessionError::StaticRollsExhausted {
+                        index: self.next_roll,
+                        available: rolls.len(),
+                    })?;
+                if roll.damage.len() != usize::from(damage.dice)
+                    || roll.damage.iter().any(|result| *result > damage.sides)
+                {
+                    return Err(D20SessionError::StaticRollMismatch {
+                        index: self.next_roll,
+                        expected_dice: damage.dice,
+                        expected_sides: damage.sides,
+                    });
+                }
+                Ok((roll.d20, roll.damage.clone()))
+            }
+        }
+    }
+
     pub fn advance_turn(
         &mut self,
         next_turn: u64,
@@ -1422,7 +1573,7 @@ impl D20Session {
             schema_version: D20_SAVE_SCHEMA_VERSION,
             engine_revision: ENGINE_REVISION.to_owned(),
             ruleset_fingerprint: self.rules.fingerprint().to_owned(),
-            seed: self.seed.raw(),
+            roll_source: self.roll_source.clone(),
             next_roll: self.next_roll,
             current_turn: self.current_turn,
             entity_state,
@@ -1453,10 +1604,24 @@ impl D20Session {
         let entities =
             decode_snapshot_with_catalog_and_registry(&entity_state, registry, rules.mechanics())?;
         validate_restored_d20_state(&entities, &rules)?;
+        save.roll_source
+            .validate()
+            .map_err(SessionSaveError::InvalidState)?;
+        if let RollSourceConfig::Static { rolls } = &save.roll_source {
+            let available = u64::try_from(rolls.len()).expect("static roll bound fits u64");
+            if save.next_roll > available {
+                return Err(SessionSaveError::InvalidState(
+                    D20SessionError::InvalidRollSource(format!(
+                        "static roll position {} exceeds tape length {available}",
+                        save.next_roll
+                    )),
+                ));
+            }
+        }
         Ok(Self {
             rules,
             entities,
-            seed: RngSeed::new(save.seed),
+            roll_source: save.roll_source,
             next_roll: save.next_roll,
             current_turn: save.current_turn,
         })
@@ -1465,7 +1630,7 @@ impl D20Session {
     fn ensure_fresh(&self, preview: &ActionPreview) -> Result<(), D20SessionError> {
         if preview.turn != self.current_turn || preview.roll_index != self.next_roll {
             return Err(D20SessionError::StalePreview {
-                reason: "turn or deterministic roll position changed",
+                reason: "turn or roll-source position changed",
             });
         }
         ensure_component_revision(
@@ -1610,6 +1775,16 @@ pub enum D20SessionError {
     },
     TurnOverflow,
     RollIndexOverflow,
+    InvalidRollSource(String),
+    StaticRollsExhausted {
+        index: u64,
+        available: usize,
+    },
+    StaticRollMismatch {
+        index: u64,
+        expected_dice: u8,
+        expected_sides: u16,
+    },
     DamageOverflow,
     EntityDefinition(EntityDefinitionError),
     ComponentRegistration(ComponentRegistrationError),
@@ -1720,7 +1895,7 @@ struct D20SessionSave {
     schema_version: u32,
     engine_revision: String,
     ruleset_fingerprint: String,
-    seed: u64,
+    roll_source: RollSourceConfig,
     next_roll: u64,
     current_turn: u64,
     entity_state: serde_json::Value,

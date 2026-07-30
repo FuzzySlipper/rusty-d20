@@ -386,7 +386,6 @@ describe("decodeGameSnapshot", () => {
     };
     const encounterWithAction = {
       round: 0,
-      nextRoll: 0,
       currentActorId: 101,
       board,
       participants,
@@ -397,7 +396,7 @@ describe("decodeGameSnapshot", () => {
           targetIds: [102],
         },
       ],
-      pendingAction: null,
+      reactionPrompt: null,
       log: [],
     };
     const activeCampaign = {
@@ -412,6 +411,55 @@ describe("decodeGameSnapshot", () => {
         encounter: encounterWithAction,
       }),
     ).toMatchObject({ ok: true });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: activeCampaign,
+        encounter: {
+          ...encounterWithAction,
+          currentActorId: 102,
+          board: { ...board, legalMoves: [] },
+          actions: [],
+          legalTargets: [],
+          reactionPrompt: {
+            token: "prompt-1",
+            actorId: 102,
+            targetId: 101,
+            actionId: "longsword-strike",
+            actionLabel: "Longsword Strike",
+            abilityScore: 16,
+            abilityModifier: 3,
+            defense: 14,
+            defenseSources: ["Base Armor: +14"],
+            reactions: [
+              {
+                id: "parry",
+                label: "Parry",
+                resource: "Guard",
+                cost: 1,
+                available: 2,
+                bonus: 2,
+                effect: "Parry Stance",
+              },
+            ],
+          },
+        },
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: activeCampaign,
+        encounter: { ...encounterWithAction, nextRoll: 0 },
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: activeCampaign,
+        encounter: { ...encounterWithAction, pendingAction: null },
+      }),
+    ).toMatchObject({ ok: false });
     expect(
       decodeGameSnapshot({
         ...empty,
@@ -539,7 +587,6 @@ describe("decodeGameSnapshot", () => {
     const outcomeEncounter = {
       ...encounterWithAction,
       round: 4,
-      nextRoll: 8,
       currentActorId: null,
       participants: [
         participants[0],

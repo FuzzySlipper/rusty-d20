@@ -119,10 +119,12 @@ receive read-only getters and cannot rewrite the action, roll modifier,
 resolved damage, defense evaluation, or reaction list before apply.
 
 A reaction spends its resource and applies/schedules its effect in one staged
-transaction. The original preview becomes stale; the caller must preview
-again. A fresh apply derives a deterministic scoped stream from the saved seed
-and roll index, resolves the d20 check, asks `DamageService` to apply typed
-damage, and applies/schedules any action effect. The staged `EntityState`
+transaction. The original preview becomes stale, so Rust acquires a fresh
+preview and resolves the action in the same product command. Apply obtains the
+d20 and damage dice from the configured roll source: either a scoped PRNG
+derived from the saved seed and position or the exact next entry in a bounded
+static action-roll tape. It then asks `DamageService` to apply typed damage and
+applies/schedules any action effect. The staged `EntityState`
 publishes only if every late step succeeds. Because authored temporary effects
 compile with Engine Refresh stacking, a repeated effect-bearing action refreshes
 the existing Engine instance and atomically reschedules its caller-owned expiry
@@ -138,19 +140,20 @@ The semantic session save records:
 
 - save schema and exact Engine revision;
 - compiled ruleset fingerprint;
-- deterministic seed and next roll index;
+- tagged seeded/static roll-source configuration and next position;
 - caller-owned current turn;
 - the canonical entity snapshot containing Engine and d20 durable components.
 
 Reopen requires the matching ruleset, validates the Engine catalog and d20
 component references, verifies active effects have matching schedules, and
-reacquires live component revisions. Roll-index scoping makes continuation
-constant-time rather than replaying every prior random draw.
+reacquires live component revisions. Position-based continuation is constant
+time and does not replay prior random draws or static tape entries.
 
 The product runtime wraps that session with its strict schema, authored
 adventure and exact composition fingerprint, active/resolved encounter
 identities, ordered completed prefix, optimistic revision, next operation/log
 identities, and bounded receipt-explanation log.
 Pending preview authority is process-local and deliberately excluded. The
-browser never receives the `ActionPreview`; it receives a token plus immutable
+browser never receives the `ActionPreview`; only an opposition action with a
+real player reaction choice produces a token plus immutable reaction
 projection, while Rust retains and applies the actual preview.

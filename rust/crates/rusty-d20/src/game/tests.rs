@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use super::*;
+use crate::StaticActionRoll;
 use gameplay_rules::decode_canonical_rule_package;
 
 const PLAYER: EntityId = EntityId::new(101);
@@ -132,7 +133,7 @@ fn subset_party_runtime() -> GameRuntime {
     let catalog = subset_party_catalog();
     let adventure = id("wardens-gate").unwrap();
     let rules = catalog.rules_for(&adventure).unwrap();
-    GameRuntime::empty_with_rules(catalog, rules, adventure).unwrap()
+    GameRuntime::empty_with_rules(catalog, rules, adventure, RollSourceConfig::default()).unwrap()
 }
 
 fn saved_activation_budgets(
@@ -205,29 +206,20 @@ fn multi_party_roster_initiative_and_activation_budgets_are_canonical() {
         Some(1)
     );
 
-    let previewed = runtime
-        .preview_action(PreviewActionRequestDto {
+    let applied = runtime
+        .choose_action(ChooseActionRequestDto {
             expected_revision: started.revision,
             actor_id: PLAYER.raw(),
             target_id: OPPONENT.raw(),
             action_id: "longsword-strike".to_owned(),
         })
         .unwrap();
-    let token = previewed
+    assert!(applied
         .encounter
         .as_ref()
         .unwrap()
-        .pending_action
-        .as_ref()
-        .unwrap()
-        .token
-        .clone();
-    let applied = runtime
-        .apply_action(ApplyActionRequestDto {
-            expected_revision: previewed.revision,
-            preview_token: token,
-        })
-        .unwrap();
+        .reaction_prompt
+        .is_none());
     assert_eq!(
         runtime
             .session()
@@ -359,7 +351,13 @@ fn restore_rejects_a_forged_position_outside_the_authored_component() {
     let catalog = disconnected_floor_catalog();
     let adventure = id("wardens-gate").unwrap();
     let rules = catalog.rules_for(&adventure).unwrap();
-    let mut runtime = GameRuntime::empty_with_rules(catalog.clone(), rules, adventure).unwrap();
+    let mut runtime = GameRuntime::empty_with_rules(
+        catalog.clone(),
+        rules,
+        adventure,
+        RollSourceConfig::default(),
+    )
+    .unwrap();
     let camp = runtime.new_adventure(0).unwrap();
     runtime
         .enter_encounter(EnterEncounterRequestDto {
@@ -1251,27 +1249,12 @@ fn opposition_filters_condition_forbidden_actions_without_retry_deadlock() {
 
         if participant.faction == EncounterFactionDto::Party {
             if current_actor == PLAYER.raw() {
-                let previewed = runtime
-                    .preview_action(PreviewActionRequestDto {
+                runtime
+                    .choose_action(ChooseActionRequestDto {
                         expected_revision: current.revision,
                         actor_id: PLAYER.raw(),
                         target_id: OPPONENT.raw(),
                         action_id: "disrupt".to_owned(),
-                    })
-                    .unwrap();
-                let token = previewed
-                    .encounter
-                    .as_ref()
-                    .unwrap()
-                    .pending_action
-                    .as_ref()
-                    .unwrap()
-                    .token
-                    .clone();
-                runtime
-                    .apply_action(ApplyActionRequestDto {
-                        expected_revision: previewed.revision,
-                        preview_token: token,
                     })
                     .unwrap();
             } else {
@@ -1287,7 +1270,7 @@ fn opposition_filters_condition_forbidden_actions_without_retry_deadlock() {
             .encounter
             .as_ref()
             .unwrap()
-            .pending_action
+            .reaction_prompt
             .as_ref()
         else {
             continue;
@@ -1303,9 +1286,9 @@ fn opposition_filters_condition_forbidden_actions_without_retry_deadlock() {
             return;
         }
         runtime
-            .apply_action(ApplyActionRequestDto {
+            .decline_reaction(DeclineReactionRequestDto {
                 expected_revision: opposition.revision,
-                preview_token: pending.token.clone(),
+                prompt_token: pending.token.clone(),
             })
             .unwrap();
     }
@@ -1346,27 +1329,12 @@ fn disrupt_forces_the_target_without_spending_its_movement_budget() {
                 .activation_budgets(OPPONENT)
                 .unwrap()
                 .current(&movement);
-            let previewed = runtime
-                .preview_action(PreviewActionRequestDto {
+            let resolved = runtime
+                .choose_action(ChooseActionRequestDto {
                     expected_revision: current.revision,
                     actor_id: PLAYER.raw(),
                     target_id: OPPONENT.raw(),
                     action_id: "disrupt".to_owned(),
-                })
-                .unwrap();
-            let token = previewed
-                .encounter
-                .as_ref()
-                .unwrap()
-                .pending_action
-                .as_ref()
-                .unwrap()
-                .token
-                .clone();
-            let resolved = runtime
-                .apply_action(ApplyActionRequestDto {
-                    expected_revision: previewed.revision,
-                    preview_token: token,
                 })
                 .unwrap();
             let after_position = resolved
@@ -1408,13 +1376,13 @@ fn disrupt_forces_the_target_without_spending_its_movement_budget() {
             .encounter
             .as_ref()
             .unwrap()
-            .pending_action
+            .reaction_prompt
             .as_ref()
         {
             runtime
-                .apply_action(ApplyActionRequestDto {
+                .decline_reaction(DeclineReactionRequestDto {
                     expected_revision: opposition.revision,
-                    preview_token: pending.token.clone(),
+                    prompt_token: pending.token.clone(),
                 })
                 .unwrap();
         }
@@ -1449,27 +1417,12 @@ fn opposition_with_no_legal_action_explicitly_advances_the_activation() {
 
         if participant.faction == EncounterFactionDto::Party {
             if current_actor == PLAYER.raw() {
-                let previewed = runtime
-                    .preview_action(PreviewActionRequestDto {
+                runtime
+                    .choose_action(ChooseActionRequestDto {
                         expected_revision: current.revision,
                         actor_id: PLAYER.raw(),
                         target_id: OPPONENT.raw(),
                         action_id: "disrupt".to_owned(),
-                    })
-                    .unwrap();
-                let token = previewed
-                    .encounter
-                    .as_ref()
-                    .unwrap()
-                    .pending_action
-                    .as_ref()
-                    .unwrap()
-                    .token
-                    .clone();
-                runtime
-                    .apply_action(ApplyActionRequestDto {
-                        expected_revision: previewed.revision,
-                        preview_token: token,
                     })
                     .unwrap();
             } else {
@@ -1501,7 +1454,7 @@ fn opposition_with_no_legal_action_explicitly_advances_the_activation() {
             let progressed = runtime.begin_opposition_turn(current.revision).unwrap();
             let encounter = progressed.encounter.as_ref().unwrap();
             assert_ne!(encounter.current_actor_id, Some(OPPONENT.raw()));
-            assert!(encounter.pending_action.is_none());
+            assert!(encounter.reaction_prompt.is_none());
             assert!(
                 encounter.log.last().unwrap().details.iter().any(|detail| {
                     detail.contains("no legal authored action")
@@ -1518,15 +1471,15 @@ fn opposition_with_no_legal_action_explicitly_advances_the_activation() {
             .encounter
             .as_ref()
             .unwrap()
-            .pending_action
+            .reaction_prompt
             .as_ref()
         else {
             continue;
         };
         runtime
-            .apply_action(ApplyActionRequestDto {
+            .decline_reaction(DeclineReactionRequestDto {
                 expected_revision: opposition.revision,
-                preview_token: pending.token.clone(),
+                prompt_token: pending.token.clone(),
             })
             .unwrap();
     }
@@ -1545,7 +1498,7 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
 
     let before_stale = runtime.encode_save().unwrap();
     assert!(matches!(
-        runtime.preview_action(PreviewActionRequestDto {
+        runtime.choose_action(ChooseActionRequestDto {
             expected_revision: 0,
             actor_id: PLAYER.raw(),
             target_id: OPPONENT.raw(),
@@ -1555,47 +1508,20 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
     ));
     assert_eq!(runtime.encode_save().unwrap(), before_stale);
 
-    let previewed = runtime
-        .preview_action(PreviewActionRequestDto {
+    let applied = runtime
+        .choose_action(ChooseActionRequestDto {
             expected_revision: started.revision,
             actor_id: PLAYER.raw(),
             target_id: OPPONENT.raw(),
             action_id: "longsword-strike".to_owned(),
         })
         .unwrap();
-    let pending = previewed
+    assert!(applied
         .encounter
         .as_ref()
         .unwrap()
-        .pending_action
-        .as_ref()
-        .unwrap();
-    assert_eq!(pending.reactions[0].id, "parry");
-    assert!(pending
-        .defense_sources
-        .iter()
-        .any(|source| source.contains("Equipped item")));
-    let reacted = runtime
-        .apply_reaction(ApplyReactionRequestDto {
-            expected_revision: previewed.revision,
-            preview_token: pending.token.clone(),
-            reaction_id: "parry".to_owned(),
-        })
-        .unwrap();
-    let pending = reacted
-        .encounter
-        .as_ref()
-        .unwrap()
-        .pending_action
-        .as_ref()
-        .unwrap();
-    assert_eq!(pending.defense, 18);
-    let applied = runtime
-        .apply_action(ApplyActionRequestDto {
-            expected_revision: reacted.revision,
-            preview_token: pending.token.clone(),
-        })
-        .unwrap();
+        .reaction_prompt
+        .is_none());
     assert!(applied
         .encounter
         .as_ref()
@@ -1613,7 +1539,7 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
         .encounter
         .as_ref()
         .unwrap()
-        .pending_action
+        .reaction_prompt
         .is_none());
     assert_eq!(
         reopened_snapshot
@@ -1630,26 +1556,28 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
         .begin_opposition_turn(reopened_snapshot.revision)
         .unwrap();
     assert_eq!(
-        opposition.encounter.as_ref().unwrap().pending_action,
-        same_opposition.encounter.as_ref().unwrap().pending_action,
+        opposition.encounter.as_ref().unwrap().reaction_prompt,
+        same_opposition.encounter.as_ref().unwrap().reaction_prompt,
         "the exact save and Rust-owned RNG position select the same opposition action"
     );
-    let pending = opposition
+    let advanced = if let Some(prompt) = opposition
         .encounter
         .as_ref()
         .unwrap()
-        .pending_action
+        .reaction_prompt
         .as_ref()
-        .unwrap();
-    assert_eq!(pending.actor_id, 107);
-    assert!(matches!(pending.target_id, 101 | 104 | 105 | 106));
-    let token = pending.token.clone();
-    let advanced = reopened
-        .apply_action(ApplyActionRequestDto {
-            expected_revision: opposition.revision,
-            preview_token: token,
-        })
-        .unwrap();
+    {
+        assert_eq!(prompt.actor_id, 107);
+        assert!(matches!(prompt.target_id, 101 | 104 | 105 | 106));
+        reopened
+            .decline_reaction(DeclineReactionRequestDto {
+                expected_revision: opposition.revision,
+                prompt_token: prompt.token.clone(),
+            })
+            .unwrap()
+    } else {
+        opposition
+    };
     let advanced_encounter = advanced.encounter.as_ref().unwrap();
     assert_eq!(advanced_encounter.round, 0);
     assert_eq!(advanced_encounter.current_actor_id, Some(104));
@@ -1657,6 +1585,44 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
         .log
         .last()
         .is_some_and(|entry| entry.source == "Initiative" && entry.text.contains("Ilyra Fen")));
+}
+
+#[test]
+fn product_static_roll_source_resolves_without_a_roll_prompt_and_reopens_exactly() {
+    let roll_source = RollSourceConfig::static_rolls(vec![StaticActionRoll {
+        d20: 20,
+        damage: vec![8],
+    }])
+    .unwrap();
+    let mut runtime = GameRuntime::empty_with_roll_source(roll_source.clone()).unwrap();
+    let started = start_test_encounter(&mut runtime);
+    let resolved = runtime
+        .choose_action(ChooseActionRequestDto {
+            expected_revision: started.revision,
+            actor_id: PLAYER.raw(),
+            target_id: OPPONENT.raw(),
+            action_id: "longsword-strike".to_owned(),
+        })
+        .unwrap();
+    let encounter = resolved.encounter.as_ref().unwrap();
+    assert!(encounter.reaction_prompt.is_none());
+    assert!(encounter.log.iter().any(|entry| {
+        entry
+            .details
+            .iter()
+            .any(|detail| detail.starts_with("d20 20 +"))
+    }));
+    assert!(encounter.log.iter().any(|entry| {
+        entry
+            .details
+            .iter()
+            .any(|detail| detail == "Roll-source position 0.")
+    }));
+
+    let encoded = runtime.encode_save().unwrap();
+    let reopened = GameRuntime::decode_save(&encoded).unwrap();
+    assert_eq!(reopened.roll_source(), &roll_source);
+    assert_eq!(reopened.encode_save().unwrap(), encoded);
 }
 
 #[test]
@@ -2042,7 +2008,7 @@ fn complete_encounter_defeat_has_no_reward_and_applies_bounded_recovery() {
 fn play_to_outcome(
     runtime: &mut GameRuntime,
     player_action: &str,
-    opponent_reacts: bool,
+    _opponent_reacts: bool,
     player_reacts: bool,
 ) -> GameSnapshotDto {
     for _ in 0..512 {
@@ -2057,7 +2023,7 @@ fn play_to_outcome(
                     .find(|participant| participant.character.id == actor)
             })
             .is_some_and(|participant| participant.faction == EncounterFactionDto::Party);
-        let mut current = if party_activation {
+        if party_activation {
             if player_action == "pass" {
                 let skipped = runtime.end_activation(before.revision).unwrap();
                 if skipped.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
@@ -2084,126 +2050,123 @@ fn play_to_outcome(
                 .and_then(|entry| entry.target_ids.first())
                 .copied()
                 .unwrap();
-            runtime
-                .preview_action(PreviewActionRequestDto {
+            let resolved = runtime
+                .choose_action(ChooseActionRequestDto {
                     expected_revision: before.revision,
                     actor_id: encounter.current_actor_id.unwrap(),
                     target_id: target,
                     action_id: action.id.clone(),
                 })
-                .unwrap()
-        } else {
-            let selected = runtime.begin_opposition_turn(before.revision).unwrap();
-            if selected
-                .encounter
-                .as_ref()
-                .unwrap()
-                .pending_action
-                .is_none()
-            {
-                continue;
+                .unwrap();
+            if resolved.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
+                return resolved;
             }
-            selected
-        };
-        let react = if party_activation {
-            opponent_reacts
-        } else {
-            player_reacts
-        };
-        let mut pending = current
-            .encounter
-            .as_ref()
-            .unwrap()
-            .pending_action
-            .clone()
-            .unwrap();
-        if react && !pending.reactions.is_empty() {
-            current = runtime
-                .apply_reaction(ApplyReactionRequestDto {
-                    expected_revision: current.revision,
-                    preview_token: pending.token.clone(),
-                    reaction_id: pending.reactions[0].id.clone(),
-                })
-                .unwrap();
-            pending = current
-                .encounter
-                .as_ref()
-                .unwrap()
-                .pending_action
-                .clone()
-                .unwrap();
+            continue;
         }
-        let result = runtime
-            .apply_action(ApplyActionRequestDto {
-                expected_revision: current.revision,
-                preview_token: pending.token,
-            })
-            .unwrap();
-        if result.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
-            return result;
+
+        let selected = runtime.begin_opposition_turn(before.revision).unwrap();
+        if selected.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
+            return selected;
+        }
+        let Some(prompt) = selected.encounter.as_ref().unwrap().reaction_prompt.clone() else {
+            continue;
+        };
+        let resolved = if player_reacts && !prompt.reactions.is_empty() {
+            runtime
+                .apply_reaction(ApplyReactionRequestDto {
+                    expected_revision: selected.revision,
+                    prompt_token: prompt.token.clone(),
+                    reaction_id: prompt.reactions[0].id.clone(),
+                })
+                .unwrap()
+        } else {
+            runtime
+                .decline_reaction(DeclineReactionRequestDto {
+                    expected_revision: selected.revision,
+                    prompt_token: prompt.token,
+                })
+                .unwrap()
+        };
+        if resolved.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
+            return resolved;
         }
     }
     panic!("deterministic encounter did not reach an outcome within 512 activations");
 }
 
 #[test]
-fn preview_only_and_reacted_pending_saves_reject_without_mutation() {
+fn reaction_prompt_save_rejects_without_mutation_and_reaction_resolves_the_roll() {
     let mut runtime = GameRuntime::empty().unwrap();
     let started = start_test_encounter(&mut runtime);
-    let previewed = runtime
-        .preview_action(PreviewActionRequestDto {
+    let party_resolved = runtime
+        .choose_action(ChooseActionRequestDto {
             expected_revision: started.revision,
             actor_id: PLAYER.raw(),
             target_id: OPPONENT.raw(),
             action_id: "longsword-strike".to_owned(),
         })
         .unwrap();
+    let mut prompted = party_resolved;
+    for _ in 0..32 {
+        let encounter = prompted.encounter.as_ref().unwrap();
+        if encounter.reaction_prompt.is_some() {
+            break;
+        }
+        let current_actor = encounter.current_actor_id.unwrap();
+        let faction = encounter
+            .participants
+            .iter()
+            .find(|participant| participant.character.id == current_actor)
+            .unwrap()
+            .faction;
+        prompted = if faction == EncounterFactionDto::Party {
+            runtime.end_activation(prompted.revision).unwrap()
+        } else {
+            runtime.begin_opposition_turn(prompted.revision).unwrap()
+        };
+    }
+    assert!(
+        prompted
+            .encounter
+            .as_ref()
+            .unwrap()
+            .reaction_prompt
+            .is_some(),
+        "the authored encounter must expose a player reaction window"
+    );
 
-    assert_pending_save_is_unchanged(&runtime, &previewed);
+    assert_reaction_prompt_save_is_unchanged(&runtime, &prompted);
 
-    let pending_token = previewed
+    let prompt = prompted
         .encounter
         .as_ref()
         .unwrap()
-        .pending_action
+        .reaction_prompt
         .as_ref()
-        .unwrap()
-        .token
-        .clone();
-    let reacted = runtime
+        .unwrap();
+    let resolved = runtime
         .apply_reaction(ApplyReactionRequestDto {
-            expected_revision: previewed.revision,
-            preview_token: pending_token,
-            reaction_id: "parry".to_owned(),
+            expected_revision: prompted.revision,
+            prompt_token: prompt.token.clone(),
+            reaction_id: prompt.reactions[0].id.clone(),
         })
         .unwrap();
-    let opponent = reacted
+    assert!(resolved
         .encounter
         .as_ref()
         .unwrap()
-        .participants
-        .iter()
-        .find(|participant| participant.character.id == OPPONENT.raw())
-        .map(|participant| &participant.character)
-        .unwrap();
-    assert!(opponent
-        .resources
-        .iter()
-        .any(|resource| resource.id == "guard" && resource.current == 1));
-    assert!(opponent
-        .effects
-        .iter()
-        .any(|effect| effect.starts_with("Parry Stance")));
-
-    assert_pending_save_is_unchanged(&runtime, &reacted);
+        .reaction_prompt
+        .is_none());
+    assert!(runtime.encode_save_at(resolved.revision).is_ok());
 }
 
-fn assert_pending_save_is_unchanged(runtime: &GameRuntime, before: &GameSnapshotDto) {
+fn assert_reaction_prompt_save_is_unchanged(runtime: &GameRuntime, before: &GameSnapshotDto) {
     let session_before = runtime.session.as_ref().unwrap().encode_save().unwrap();
-    assert!(matches!(
-        runtime.encode_save_at(before.revision),
-        Err(GameRuntimeError::PendingActionCannotBeSaved)
-    ));
+    let result = runtime.encode_save_at(before.revision);
+    assert!(
+        matches!(result, Err(GameRuntimeError::ReactionPromptCannotBeSaved)),
+        "{result:?}"
+    );
     assert_eq!(runtime.snapshot().unwrap(), *before);
     assert_eq!(
         runtime.session.as_ref().unwrap().encode_save().unwrap(),
@@ -2221,7 +2184,7 @@ fn saturated_product_counters_and_oversized_saves_fail_before_mutation() {
     let mut saturated = GameRuntime::decode_save(&serde_json::to_string(&save).unwrap()).unwrap();
     let before = saturated.encode_save().unwrap();
     assert!(matches!(
-        saturated.preview_action(PreviewActionRequestDto {
+        saturated.choose_action(ChooseActionRequestDto {
             expected_revision: u64::MAX,
             actor_id: PLAYER.raw(),
             target_id: OPPONENT.raw(),

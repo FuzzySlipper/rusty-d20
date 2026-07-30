@@ -210,32 +210,21 @@ test.describe.serial("real Rust encounter shell", () => {
 
     await page.getByLabel("Target").selectOption({ label: "Iron Warden" });
     await page.getByRole("button", { name: "Longsword Strike" }).click();
-    const preview = page.getByLabel("Authoritative action preview");
-    await expect(preview).toContainText("against defense 16");
-    await expect(preview).toContainText("Equipped item 201");
-
-    await page.getByRole("button", { name: /Parry · 1 Guard/ }).click();
-    await expect(preview).toContainText("against defense 18");
-    await expect(page.getByLabel("Combat log")).toContainText(
-      "raised a reaction",
-    );
-
-    await page
-      .getByRole("button", { name: "Resolve deterministic roll" })
-      .click();
+    await expect(page.getByLabel("Available reaction")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Resolve deterministic roll" }),
+    ).toHaveCount(0);
     const afterPartyAction = (await (
       await request.get("/api/v1/session")
     ).json()) as {
       encounter: {
-        nextRoll: number;
         log: Array<{ details: string[] }>;
       };
     };
-    expect(afterPartyAction.encounter.nextRoll).toBe(1);
     expect(
       afterPartyAction.encounter.log.some((entry) =>
         entry.details.some((detail) =>
-          detail.includes("Deterministic roll index 0"),
+          detail.includes("Roll-source position 0"),
         ),
       ),
     ).toBe(true);
@@ -244,10 +233,13 @@ test.describe.serial("real Rust encounter shell", () => {
       .getByRole("button", { name: "Begin Gate Skirmisher turn" })
       .first()
       .click();
-    await expect(preview).toContainText("Gate Skirmisher");
-    await page
-      .getByRole("button", { name: "Resolve deterministic roll" })
-      .click();
+    const reaction = page.getByRole("region", {
+      name: "Available reaction",
+      exact: true,
+    });
+    if (await reaction.isVisible()) {
+      await page.getByRole("button", { name: "Do not react" }).click();
+    }
     await expect(page.getByLabel("Encounter identity")).toContainText(
       "Round 0",
     );

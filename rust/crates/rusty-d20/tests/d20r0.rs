@@ -22,8 +22,9 @@ use rusty_d20::{
     DungeonFacingCandidate, DungeonTreasureCandidate, EffectCandidate, EncounterCandidate,
     EncounterFactionCandidate, EncounterOutcomeCandidate, EncounterParticipantCandidate,
     EquipmentItemSeed, EquipmentReferenceCandidate, ImplementCandidate, ItemInstanceCandidate,
-    ItemRarityCandidate, ReactionCandidate, ResourceCandidate, SessionSaveError, StorageCandidate,
-    TacticalBoardCandidate, TacticalPlacementCandidate, D20_CANDIDATE_SCHEMA_VERSION,
+    ItemRarityCandidate, ReactionCandidate, ResourceCandidate, RollSourceConfig, SessionSaveError,
+    StaticActionRoll, StorageCandidate, TacticalBoardCandidate, TacticalPlacementCandidate,
+    D20_CANDIDATE_SCHEMA_VERSION,
 };
 use serde_json::json;
 use svc_rng::RngSeed;
@@ -331,6 +332,40 @@ fn configured_session() -> D20Session {
             name: "chain armor".to_owned(),
             armor: id("chain"),
         }],
+    )
+    .unwrap();
+    session
+        .equip_armor(TARGET, ARMOR_ITEM, &id("chain"), operation("equip-chain"))
+        .unwrap();
+    session
+}
+
+fn configured_static_session(rolls: Vec<StaticActionRoll>) -> D20Session {
+    let mut session = D20Session::new_with_roll_source(
+        ruleset(),
+        RollSourceConfig::static_rolls(rolls).unwrap(),
+        vec![
+            character(ATTACKER, "attacker", 30, 10, vec![]),
+            character(
+                TARGET,
+                "target",
+                10,
+                10,
+                vec![AffinitySeed {
+                    damage_type: id("slashing"),
+                    affinity: DamageAffinity::Resistant,
+                }],
+            ),
+        ],
+        vec![],
+        vec![],
+        vec![ArmorItemSeed {
+            entity: ARMOR_ITEM,
+            owner: TARGET,
+            name: "chain armor".to_owned(),
+            armor: id("chain"),
+        }
+        .into()],
     )
     .unwrap();
     session
@@ -1377,6 +1412,141 @@ fn deterministic_rng_and_complete_save_reopen_continue_identically() {
     assert!(matches!(
         D20Session::decode_save(ruleset(), &serde_json::to_string(&wrong).unwrap()),
         Err(SessionSaveError::RulesetMismatch { .. })
+    ));
+}
+
+#[test]
+fn static_roll_source_is_exact_persistent_strict_and_failure_atomic() {
+    assert!(RollSourceConfig::static_rolls(vec![]).is_err());
+    assert!(RollSourceConfig::static_rolls(vec![StaticActionRoll {
+        d20: 0,
+        damage: vec![1],
+    }])
+    .is_err());
+
+    let tape = vec![
+        StaticActionRoll {
+            d20: 2,
+            damage: vec![3],
+        },
+        StaticActionRoll {
+            d20: 20,
+            damage: vec![8],
+        },
+    ];
+    let mut session = configured_static_session(tape.clone());
+    assert_eq!(session.choice_index("static-choice", 3), Some(1));
+    let preview = session
+        .preview_action(ATTACKER, TARGET, &id("strike"), operation("static-first"))
+        .unwrap();
+    let reaction = session
+        .apply_reaction(
+            &preview,
+            &id("parry"),
+            effect_instance("static-parry-effect"),
+        )
+        .unwrap();
+    assert_eq!((reaction.before, reaction.after), (2, 1));
+    let first = session
+        .preview_action(ATTACKER, TARGET, &id("strike"), operation("static-first"))
+        .unwrap();
+    let first = session
+        .apply_action(ApplyActionRequest {
+            preview: first,
+            effect_instance: Some(effect_instance("static-first-effect")),
+        })
+        .unwrap();
+    assert_eq!(
+        (first.roll_index, first.d20, first.rolled_damage),
+        (0, 2, 3)
+    );
+    session.reset_activation_budgets(ATTACKER).unwrap();
+
+    let encoded = session.encode_save().unwrap();
+    let mut reopened = D20Session::decode_save(ruleset(), &encoded).unwrap();
+    assert_eq!(
+        reopened.roll_source(),
+        &RollSourceConfig::Static {
+            rolls: tape.clone()
+        }
+    );
+    let continued = reopened
+        .preview_action(
+            ATTACKER,
+            TARGET,
+            &id("strike"),
+            operation("static-continued"),
+        )
+        .unwrap();
+    let continued = reopened
+        .apply_action(ApplyActionRequest {
+            preview: continued,
+            effect_instance: Some(effect_instance("static-continued-effect")),
+        })
+        .unwrap();
+    assert_eq!(
+        (continued.roll_index, continued.d20, continued.rolled_damage),
+        (1, 20, 8)
+    );
+
+    reopened.reset_activation_budgets(ATTACKER).unwrap();
+    let exhausted = reopened
+        .preview_action(
+            ATTACKER,
+            TARGET,
+            &id("strike"),
+            operation("static-exhausted"),
+        )
+        .unwrap();
+    let before_exhausted = reopened.encode_save().unwrap();
+    assert!(matches!(
+        reopened.apply_action(ApplyActionRequest {
+            preview: exhausted,
+            effect_instance: Some(effect_instance("static-exhausted-effect")),
+        }),
+        Err(D20SessionError::StaticRollsExhausted {
+            index: 2,
+            available: 2
+        })
+    ));
+    assert_eq!(reopened.encode_save().unwrap(), before_exhausted);
+
+    let mut mismatched = configured_static_session(vec![StaticActionRoll {
+        d20: 10,
+        damage: vec![9],
+    }]);
+    let mismatch = mismatched
+        .preview_action(
+            ATTACKER,
+            TARGET,
+            &id("strike"),
+            operation("static-mismatch"),
+        )
+        .unwrap();
+    let before_mismatch = mismatched.encode_save().unwrap();
+    assert!(matches!(
+        mismatched.apply_action(ApplyActionRequest {
+            preview: mismatch,
+            effect_instance: Some(effect_instance("static-mismatch-effect")),
+        }),
+        Err(D20SessionError::StaticRollMismatch {
+            index: 0,
+            expected_dice: 1,
+            expected_sides: 8
+        })
+    ));
+    assert_eq!(mismatched.encode_save().unwrap(), before_mismatch);
+
+    let mut unknown: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    unknown["rollSource"]["unknown"] = json!(true);
+    assert!(D20Session::decode_save(ruleset(), &serde_json::to_string(&unknown).unwrap()).is_err());
+    let mut out_of_bounds: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    out_of_bounds["nextRoll"] = json!(3);
+    assert!(matches!(
+        D20Session::decode_save(ruleset(), &serde_json::to_string(&out_of_bounds).unwrap()),
+        Err(SessionSaveError::InvalidState(
+            D20SessionError::InvalidRollSource(_)
+        ))
     ));
 }
 

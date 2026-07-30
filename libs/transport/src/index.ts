@@ -4,15 +4,15 @@ import {
   decodeGameSnapshot,
   decodeRuntimeReadout,
   decodeSaveStatus,
-  type ApplyActionRequestDto,
   type ApplyReactionRequestDto,
+  type ChooseActionRequestDto,
   type ClassifiedError,
+  type DeclineReactionRequestDto,
   type EquipItemRequestDto,
   type ExplorationCommandRequestDto,
   type GameSnapshotDto,
   type MoveActorRequestDto,
   type NewAdventureRequestDto,
-  type PreviewActionRequestDto,
   type Result,
   type ResetSessionRequestDto,
   type RuntimeReadoutDto,
@@ -46,8 +46,8 @@ export interface RustyD20Transport {
   readonly transferItem: (
     request: TransferItemRequestDto,
   ) => Promise<Result<GameSnapshotDto>>;
-  readonly previewAction: (
-    request: PreviewActionRequestDto,
+  readonly chooseAction: (
+    request: ChooseActionRequestDto,
   ) => Promise<Result<GameSnapshotDto>>;
   readonly moveActor: (
     request: MoveActorRequestDto,
@@ -55,8 +55,8 @@ export interface RustyD20Transport {
   readonly applyReaction: (
     request: ApplyReactionRequestDto,
   ) => Promise<Result<GameSnapshotDto>>;
-  readonly applyAction: (
-    request: ApplyActionRequestDto,
+  readonly declineReaction: (
+    request: DeclineReactionRequestDto,
   ) => Promise<Result<GameSnapshotDto>>;
   readonly beginOppositionTurn: (
     expectedRevision: number,
@@ -103,13 +103,13 @@ export function createHttpRustyD20Transport(http: HttpPort): RustyD20Transport {
       post("/api/v1/session/loadout/unequip", body, decodeGameSnapshot),
     transferItem: (body) =>
       post("/api/v1/session/loadout/transfer", body, decodeGameSnapshot),
-    previewAction: (body) =>
-      post("/api/v1/session/preview", body, decodeGameSnapshot),
+    chooseAction: (body) =>
+      post("/api/v1/session/action", body, decodeGameSnapshot),
     moveActor: (body) => post("/api/v1/session/move", body, decodeGameSnapshot),
     applyReaction: (body) =>
       post("/api/v1/session/reaction", body, decodeGameSnapshot),
-    applyAction: (body) =>
-      post("/api/v1/session/action", body, decodeGameSnapshot),
+    declineReaction: (body) =>
+      post("/api/v1/session/reaction/decline", body, decodeGameSnapshot),
     beginOppositionTurn: (expectedRevision) =>
       post(
         "/api/v1/session/opposition",

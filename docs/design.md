@@ -34,11 +34,12 @@ campaign cannot switch compositions.
 ## Runtime state
 
 Rust owns authoritative state. `D20Session` contains canonical Engine
-`EntityState`, one immutable `D20Ruleset`, explicit turn and deterministic roll
-positions, and no ambient scheduler or registry. `GameRuntime` owns the
-downstream campaign and encounter lifecycle, optimistic product revision,
-opaque pending preview, bounded explanatory log, operation identities, and
-complete save wrapper. The durable campaign has explicit `camp`, `exploration`,
+`EntityState`, one immutable `D20Ruleset`, an explicit turn and roll-source
+position, and no ambient scheduler or registry. Its configured roll source is
+either a seeded scoped PRNG or a bounded authored static action-roll tape.
+`GameRuntime` owns the downstream campaign and encounter lifecycle, optimistic
+product revision, opaque reaction prompt, bounded explanatory log, operation
+identities, and complete save wrapper. The durable campaign has explicit `camp`, `exploration`,
 `encounter`, `outcome`, and `adventure-complete` phases, with an exact dungeon
 position and facing, discovered-cell, inspected-landmark, opened-door,
 collected-treasure, and active-checkpoint facts, encounter turn owner, and typed
@@ -98,9 +99,12 @@ participant coordinates, legal routes, targets, and receipts needed to render
 the overhead view and issue typed commands.
 
 The bounded opposition policy selects from the active encounter participant's
-admitted authored actions with the Rust-owned deterministic session seed, then
-uses the same opaque preview/reaction/apply path as a player action. After the
-opposition resolves, Rusty D20 advances the caller-owned round and expires due
+legal admitted actions using the configured Rust-owned roll source. Party
+actions and opposition actions without player reactions resolve atomically in
+the command that selected them. When an opposition action offers a player
+reaction, Rust exposes only that gameplay decision; choosing or declining it
+immediately resolves the action and roll. After the opposition resolves, Rusty
+D20 advances the caller-owned round and expires due
 Engine effect instances before publishing the next player turn. Authoritative
 vitality selects victory or defeat exactly once. Victory unequips and
 transfers the active encounter's authored reward through Engine equipment and
@@ -158,8 +162,9 @@ dependencies. See
 
 `rusty-d20-host` serves the Angular build plus read-only session projection and
 typed adventure selection, loadout equip/unequip/transfer, begin-exploration,
-exploration-command, tactical-move, preview, reaction, action, begin-opposition,
-continue-after-outcome, and save commands from one origin. There is no
+exploration-command, tactical-move, action, reaction/decline-reaction,
+begin-opposition, continue-after-outcome, and save commands from one origin.
+There is no
 browser-facing command that names an encounter; reaching an authored dungeon
 trigger is the only product transport path into combat. The host also exposes
 a Rust-generated save-status contract and an
@@ -187,9 +192,9 @@ in `boundaries.json`; production code cannot import testing fixtures.
 
 ## Persistence and execution
 
-`D20Session` saves the exact Engine revision, ruleset fingerprint, explicit RNG
-seed/roll position, caller-owned turn, and canonical entity snapshot. Session
-save schema 4 includes the catalog-v2 inventory/equipment state together with
+`D20Session` saves the exact Engine revision, ruleset fingerprint, complete
+tagged roll-source configuration and position, caller-owned turn, and canonical
+entity snapshot. Session save schema 5 includes the catalog-v2 inventory/equipment state together with
 the registered party roster, encounter participation facts, and per-character
 activation budgets and canonical tactical positions. Product save schema 10
 wraps it with the authored adventure identity, exact composition fingerprint,
@@ -199,7 +204,7 @@ identities, ordered completed-encounter history, encounter turn owner, terminal
 adventure result, product revision, next operation/log identities, and the
 bounded explanatory log.
 
-Product schemas 1 through 9 and session schemas before 4 are rejected rather
+Product schemas 1 through 9 and session schemas before 5 are rejected rather
 than migrated. Unknown schemas, partial loadouts, missing or extra registered
 party/participation/budget facts, unknown budget identities, above-initial
 budgets, inconsistent phase/turn/outcome pairs, unreachable discoveries,
@@ -207,10 +212,10 @@ unknown event IDs, unmet door prerequisites, and treasure ownership that
 contradicts the collected-event set also reject rather than defaulting or
 discarding state. New saves never infer a missing adventure, composition,
 roster, action economy, or exploration event.
-Opaque previews are intentionally not durable, so save rejects before file
-mutation while an action is pending; the user must resolve it first. This
-includes a pending action whose reaction has already committed resource and
-effect changes. Compiled definitions are not copied into live saves. Reopen
+Opaque reaction prompts are intentionally not durable, so save rejects before
+file mutation while a player reaction decision is pending. Choosing or
+declining the reaction resolves the roll atomically, leaving no reacted-pending
+state. Compiled definitions are not copied into live saves. Reopen
 resolves the saved adventure from the embedded catalog, requires its matching
 immutable package closure and fingerprint, reconstructs registered components,
 validates mechanics, d20 references, product loadout and reward identities,
@@ -220,13 +225,15 @@ encounter's party and opposition participants, and separately requires at
 least one living whole-party member in camp or exploration. It reacquires
 non-durable component revisions and continues the exact camp, exploration,
 encounter, outcome, or terminal adventure phase, exact dungeon progress, turn
-owner, loadout, and deterministic rolls without replay.
+owner, loadout, roll-source configuration, and position without replay.
 
 File layout and storage policy remain host-owned. The browser observes the
 configured save identity but never chooses an arbitrary path. Reset validates
 that identity together with the current campaign and revision before deleting
 the file or replacing live state; stale requests and file failures leave both
-unchanged.
+unchanged. The host accepts an optional `--roll-source` JSON file. Its tagged
+configuration must match an existing save, and guarded reset retains the
+configured source for the next adventure.
 
 Round advancement is an explicit downstream consequence of resolving the
 opposition action and expires recorded effect instances atomically before the

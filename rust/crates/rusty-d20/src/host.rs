@@ -13,16 +13,17 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 use crate::{
-    ApiErrorDto, ApiErrorKindDto, ApplyActionRequestDto, ApplyReactionRequestDto,
-    EquipItemRequestDto, ExpectedRevisionDto, ExplorationCommandRequestDto, GameRuntime,
-    GameRuntimeError, GameSnapshotDto, HealthDto, MoveActorRequestDto, NewAdventureRequestDto,
-    PreviewActionRequestDto, ResetSessionRequestDto, RuntimeReadoutDto, SaveStateDto,
-    SaveStatusDto, TransferItemRequestDto, UnequipItemRequestDto,
+    ApiErrorDto, ApiErrorKindDto, ApplyReactionRequestDto, ChooseActionRequestDto,
+    DeclineReactionRequestDto, EquipItemRequestDto, ExpectedRevisionDto,
+    ExplorationCommandRequestDto, GameRuntime, GameRuntimeError, GameSnapshotDto, HealthDto,
+    MoveActorRequestDto, NewAdventureRequestDto, ResetSessionRequestDto, RollSourceConfig,
+    RuntimeReadoutDto, SaveStateDto, SaveStatusDto, TransferItemRequestDto, UnequipItemRequestDto,
 };
 
 #[derive(Clone)]
 struct HostState {
     runtime: Arc<Mutex<GameRuntime>>,
+    roll_source: Arc<RollSourceConfig>,
     save_path: Arc<PathBuf>,
     persistence_error: Arc<Mutex<Option<String>>>,
 }
@@ -32,6 +33,7 @@ type SaveStatusResult = Result<Json<SaveStatusDto>, (StatusCode, Json<ApiErrorDt
 
 pub struct HostRuntime {
     runtime: GameRuntime,
+    roll_source: RollSourceConfig,
     persistence_error: Option<String>,
 }
 
@@ -40,11 +42,17 @@ pub fn router(
     save_path: PathBuf,
     web_root: Option<&Path>,
 ) -> Router {
-    router_with_recovery(runtime, save_path, None, web_root)
+    let roll_source = runtime
+        .lock()
+        .expect("poisoned runtime lock is an unrecoverable host defect")
+        .roll_source()
+        .clone();
+    router_with_recovery(runtime, roll_source, save_path, None, web_root)
 }
 
 fn router_with_recovery(
     runtime: Arc<Mutex<GameRuntime>>,
+    roll_source: RollSourceConfig,
     save_path: PathBuf,
     persistence_error: Option<String>,
     web_root: Option<&Path>,
@@ -65,15 +73,16 @@ fn router_with_recovery(
         .route("/api/v1/session/loadout/unequip", post(unequip_item))
         .route("/api/v1/session/loadout/transfer", post(transfer_item))
         .route("/api/v1/session/move", post(move_actor))
-        .route("/api/v1/session/preview", post(preview))
+        .route("/api/v1/session/action", post(choose_action))
         .route("/api/v1/session/reaction", post(reaction))
-        .route("/api/v1/session/action", post(action))
+        .route("/api/v1/session/reaction/decline", post(decline_reaction))
         .route("/api/v1/session/opposition", post(begin_opposition_turn))
         .route("/api/v1/session/activation/end", post(end_activation))
         .route("/api/v1/session/camp", post(return_to_camp))
         .route("/api/v1/session/save", post(save))
         .with_state(HostState {
             runtime,
+            roll_source: Arc::new(roll_source),
             save_path: Arc::new(save_path),
             persistence_error: Arc::new(Mutex::new(persistence_error)),
         });
@@ -99,6 +108,7 @@ pub async fn serve(
         web_root,
         save_path,
         HostRuntime {
+            roll_source: runtime.roll_source().clone(),
             runtime,
             persistence_error: None,
         },
@@ -127,6 +137,7 @@ pub async fn serve_host(
         listener,
         router_with_recovery(
             Arc::new(Mutex::new(host_runtime.runtime)),
+            host_runtime.roll_source,
             save_path,
             host_runtime.persistence_error,
             Some(web_root.as_path()),
@@ -138,22 +149,55 @@ pub async fn serve_host(
 }
 
 pub fn load_runtime(save_path: &Path) -> Result<GameRuntime, Box<dyn std::error::Error>> {
+    load_runtime_with_roll_source(save_path, RollSourceConfig::default())
+}
+
+pub fn load_runtime_with_roll_source(
+    save_path: &Path,
+    roll_source: RollSourceConfig,
+) -> Result<GameRuntime, Box<dyn std::error::Error>> {
     match fs::read_to_string(save_path) {
-        Ok(encoded) => Ok(GameRuntime::decode_save(&encoded)?),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(GameRuntime::empty()?),
+        Ok(encoded) => {
+            let runtime = GameRuntime::decode_save(&encoded)?;
+            if runtime.roll_source() != &roll_source {
+                return Err("saved roll source does not match the configured roll source".into());
+            }
+            Ok(runtime)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(GameRuntime::empty_with_roll_source(roll_source)?)
+        }
         Err(error) => Err(error.into()),
     }
 }
 
 pub fn load_host_runtime(save_path: &Path) -> Result<HostRuntime, Box<dyn std::error::Error>> {
+    load_host_runtime_with_roll_source(save_path, RollSourceConfig::default())
+}
+
+pub fn load_host_runtime_with_roll_source(
+    save_path: &Path,
+    roll_source: RollSourceConfig,
+) -> Result<HostRuntime, Box<dyn std::error::Error>> {
+    let empty = || GameRuntime::empty_with_roll_source(roll_source.clone());
     match fs::read_to_string(save_path) {
         Ok(encoded) => match GameRuntime::decode_save(&encoded) {
-            Ok(runtime) => Ok(HostRuntime {
+            Ok(runtime) if runtime.roll_source() == &roll_source => Ok(HostRuntime {
                 runtime,
+                roll_source,
                 persistence_error: None,
             }),
+            Ok(_) => Ok(HostRuntime {
+                runtime: empty()?,
+                roll_source,
+                persistence_error: Some(format!(
+                    "could not restore {}: saved roll source does not match the configured roll source",
+                    save_path.display()
+                )),
+            }),
             Err(error) => Ok(HostRuntime {
-                runtime: GameRuntime::empty()?,
+                runtime: empty()?,
+                roll_source,
                 persistence_error: Some(format!(
                     "could not restore {}: {error}",
                     save_path.display()
@@ -161,7 +205,8 @@ pub fn load_host_runtime(save_path: &Path) -> Result<HostRuntime, Box<dyn std::e
             }),
         },
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(HostRuntime {
-            runtime: GameRuntime::empty()?,
+            runtime: empty()?,
+            roll_source,
             persistence_error: None,
         }),
         Err(error) => Err(error.into()),
@@ -217,7 +262,8 @@ async fn reset_session(
         )));
     }
 
-    let empty = GameRuntime::empty().map_err(api_error)?;
+    let empty =
+        GameRuntime::empty_with_roll_source((*state.roll_source).clone()).map_err(api_error)?;
     match fs::remove_file(state.save_path.as_path()) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -277,11 +323,11 @@ async fn transfer_item(
     mutate(&state, |runtime| runtime.transfer_item(request))
 }
 
-async fn preview(
+async fn choose_action(
     State(state): State<HostState>,
-    Json(request): Json<PreviewActionRequestDto>,
+    Json(request): Json<ChooseActionRequestDto>,
 ) -> ApiResult {
-    mutate(&state, |runtime| runtime.preview_action(request))
+    mutate(&state, |runtime| runtime.choose_action(request))
 }
 
 async fn move_actor(
@@ -298,11 +344,11 @@ async fn reaction(
     mutate(&state, |runtime| runtime.apply_reaction(request))
 }
 
-async fn action(
+async fn decline_reaction(
     State(state): State<HostState>,
-    Json(request): Json<ApplyActionRequestDto>,
+    Json(request): Json<DeclineReactionRequestDto>,
 ) -> ApiResult {
-    mutate(&state, |runtime| runtime.apply_action(request))
+    mutate(&state, |runtime| runtime.decline_reaction(request))
 }
 
 async fn begin_opposition_turn(
@@ -625,9 +671,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pending_preview_and_reaction_saves_reject_before_runtime_or_file_mutation() {
-        assert_pending_save_rejection(false).await;
-        assert_pending_save_rejection(true).await;
+    async fn reaction_prompt_save_rejects_before_runtime_or_file_mutation() {
+        assert_reaction_prompt_save_rejection().await;
     }
 
     #[tokio::test]
@@ -704,6 +749,7 @@ mod tests {
         assert!(loaded.persistence_error.is_some());
         let app = router_with_recovery(
             Arc::new(Mutex::new(loaded.runtime)),
+            loaded.roll_source,
             save_path.clone(),
             loaded.persistence_error,
             None,
@@ -740,7 +786,38 @@ mod tests {
         assert_eq!(get_json(&app, "/api/v1/session").await.0, StatusCode::OK);
     }
 
-    async fn assert_pending_save_rejection(apply_reaction: bool) {
+    #[test]
+    fn configured_roll_source_must_match_a_durable_campaign() {
+        let (_, save_path) = test_state();
+        let roll_source = RollSourceConfig::static_rolls(vec![crate::StaticActionRoll {
+            d20: 11,
+            damage: vec![4],
+        }])
+        .unwrap();
+        let mut runtime = GameRuntime::empty_with_roll_source(roll_source.clone()).unwrap();
+        runtime
+            .new_adventure(runtime.snapshot().unwrap().revision)
+            .unwrap();
+        fs::write(&save_path, runtime.encode_save().unwrap()).unwrap();
+
+        let matching = load_host_runtime_with_roll_source(&save_path, roll_source.clone()).unwrap();
+        assert!(matching.persistence_error.is_none());
+        assert_eq!(matching.runtime.roll_source(), &roll_source);
+
+        let mismatched =
+            load_host_runtime_with_roll_source(&save_path, RollSourceConfig::default()).unwrap();
+        assert!(mismatched
+            .persistence_error
+            .as_deref()
+            .is_some_and(|error| error.contains("saved roll source does not match")));
+        assert_eq!(
+            mismatched.runtime.roll_source(),
+            &RollSourceConfig::default()
+        );
+        fs::remove_file(save_path).unwrap();
+    }
+
+    async fn assert_reaction_prompt_save_rejection() {
         let (app, save_path) = test_state();
         let (_, camp_body) = post_json(
             &app,
@@ -769,36 +846,55 @@ mod tests {
             .and_then(|entry| entry.target_ids.first())
             .unwrap()
             .to_owned();
-        let (_, preview_body) = post_json(
+        let (_, action_body) = post_json(
             &app,
-            "/api/v1/session/preview",
+            "/api/v1/session/action",
             &format!(
                 r#"{{"expectedRevision":{},"actorId":{},"targetId":{},"actionId":"longsword-strike"}}"#,
                 start.revision, actor, target
             ),
         )
         .await;
-        let mut before: GameSnapshotDto = serde_json::from_slice(&preview_body).unwrap();
-
-        if apply_reaction {
-            let pending = before
-                .encounter
-                .as_ref()
+        let resolved_action: GameSnapshotDto = serde_json::from_slice(&action_body).unwrap();
+        assert!(resolved_action
+            .encounter
+            .as_ref()
+            .unwrap()
+            .reaction_prompt
+            .is_none());
+        let mut before = resolved_action;
+        for _ in 0..32 {
+            let encounter = before.encounter.as_ref().unwrap();
+            if encounter.reaction_prompt.is_some() {
+                break;
+            }
+            let current_actor = encounter.current_actor_id.unwrap();
+            let faction = encounter
+                .participants
+                .iter()
+                .find(|participant| participant.character.id == current_actor)
                 .unwrap()
-                .pending_action
-                .as_ref()
-                .unwrap();
-            let (_, reaction_body) = post_json(
+                .faction;
+            let path = if faction == crate::EncounterFactionDto::Party {
+                "/api/v1/session/activation/end"
+            } else {
+                "/api/v1/session/opposition"
+            };
+            let (_, body) = post_json(
                 &app,
-                "/api/v1/session/reaction",
-                &format!(
-                    r#"{{"expectedRevision":{},"previewToken":"{}","reactionId":"parry"}}"#,
-                    before.revision, pending.token
-                ),
+                path,
+                &format!(r#"{{"expectedRevision":{}}}"#, before.revision),
             )
             .await;
-            before = serde_json::from_slice(&reaction_body).unwrap();
+            before = serde_json::from_slice(&body).unwrap();
         }
+        let prompt = before
+            .encounter
+            .as_ref()
+            .unwrap()
+            .reaction_prompt
+            .as_ref()
+            .unwrap();
 
         let (rejected_status, rejected_body) = post_json(
             &app,
@@ -811,7 +907,7 @@ mod tests {
         assert_eq!(rejection.kind, ApiErrorKindDto::Invalid);
         assert_eq!(
             rejection.message,
-            "resolve the pending action before saving"
+            "choose or decline the reaction before saving"
         );
 
         let (_, after_body) = get_json(&app, "/api/v1/session").await;
@@ -825,7 +921,25 @@ mod tests {
             .encounter
             .as_ref()
             .unwrap()
-            .pending_action
+            .reaction_prompt
+            .is_none());
+
+        let (reaction_status, reaction_body) = post_json(
+            &app,
+            "/api/v1/session/reaction",
+            &format!(
+                r#"{{"expectedRevision":{},"promptToken":"{}","reactionId":"{}"}}"#,
+                before.revision, prompt.token, prompt.reactions[0].id
+            ),
+        )
+        .await;
+        assert_eq!(reaction_status, StatusCode::OK);
+        let resolved: GameSnapshotDto = serde_json::from_slice(&reaction_body).unwrap();
+        assert!(resolved
+            .encounter
+            .as_ref()
+            .unwrap()
+            .reaction_prompt
             .is_none());
         fs::remove_file(save_path).unwrap();
     }

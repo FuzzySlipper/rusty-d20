@@ -15,8 +15,9 @@ inspect landmarks, reveal only visited cells on the automap, and enter combat
 only by reaching a hidden authored trigger. Combat shifts to the existing modal
 screen, where the player manages Engine-backed inventory/equipment and camp
 storage, inspects attributed defenses, chooses authored actions and targets,
-applies optional reactions, resolves deterministic source-attributed
-damage/effects, faces an explicit opposition turn, and plays through victory or
+receives optional player reaction choices, and sees Rust automatically resolve
+source-attributed rolls, damage, and effects under a configured seeded or
+static roll source. It faces an explicit opposition turn and plays through victory or
 defeat. Warden's Gate is a complete bounded three-encounter expedition with a
 four-character party, inspectable landmarks, a claimed sigil treasure, a
 treasure-gated door, a durable safe-return checkpoint, and an authored terminal
@@ -47,10 +48,17 @@ the movement pad or arrow/WASD keys to find its encounters. The browser cannot
 name or start an encounter directly. The host writes an explicit save to
 `target/rusty-d20/save.json`; after restart, **Continue Adventure** resumes the
 exact selected path, camp, dungeon cell and facing, encounter/outcome phase,
-and canonical loadout. Resolve any pending action before saving; the Rust host
-rejects pending saves before changing the existing save file. **Reset / New
+and canonical loadout. Choose or decline any pending reaction before saving;
+the Rust host rejects that non-durable reaction prompt before changing the
+existing save file. **Reset / New
 Adventure** names the exact save and live revision before deleting it. A
 malformed save starts a typed recovery screen rather than terminating the host.
+
+The default roll source is a seeded scoped PRNG. For exact authored results,
+pass `--roll-source path/to/roll-source.json` to `rusty-d20-host`; the JSON is
+either `{"kind":"seeded","seed":220209190}` or
+`{"kind":"static","rolls":[{"d20":13,"damage":[8]}]}`. The selected source and
+position persist in the save and must match when reopening it.
 
 For a managed LAN-visible instance, use:
 

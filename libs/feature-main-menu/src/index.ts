@@ -619,12 +619,12 @@ import {
                 [disabled]="
                   store.busy() ||
                   (snapshot.encounter !== null &&
-                    snapshot.encounter.pendingAction !== null)
+                    snapshot.encounter.reactionPrompt !== null)
                 "
                 [attr.title]="
                   snapshot.encounter !== null &&
-                  snapshot.encounter.pendingAction !== null
-                    ? 'Resolve the pending action before saving'
+                  snapshot.encounter.reactionPrompt !== null
+                    ? 'Choose or decline the reaction before saving'
                     : null
                 "
                 (click)="save()"
@@ -641,16 +641,16 @@ import {
               </button>
               @if (
                 snapshot.encounter !== null &&
-                snapshot.encounter.pendingAction !== null
+                snapshot.encounter.reactionPrompt !== null
               ) {
                 <span class="save-hint" role="status">
-                  Resolve the pending action before saving.
+                  Choose or decline the reaction before saving.
                 </span>
               }
               @if (
                 snapshot.campaign.phase === "encounter" &&
                 snapshot.encounter?.currentFaction === "opposition" &&
-                snapshot.encounter.pendingAction === null
+                snapshot.encounter.reactionPrompt === null
               ) {
                 <button
                   class="primary"
@@ -686,7 +686,7 @@ import {
           } @else {
             and discards the unreadable persisted session
           }
-          . Unsaved changes and any pending action cannot be recovered.
+          . Unsaved changes and any pending reaction cannot be recovered.
         </p>
         <div class="reset-dialog__actions">
           <button
@@ -1348,7 +1348,6 @@ import {
                       : "Encounter resolved"
                 }}
               </span>
-              <span>Next deterministic roll {{ encounter().nextRoll }}</span>
               <span>State revision {{ game()?.revision }}</span>
               @for (
                 defense of activePartyMember()?.loadout?.defenses ?? [];
@@ -1490,14 +1489,14 @@ import {
                           {{
                             encounter().currentFaction === "party"
                               ? "Authored party actions"
-                              : "Deterministic opposition"
+                              : "Rust-owned opposition"
                           }}
                         </p>
                         <h2>
                           {{
                             encounter().currentFaction === "party"
                               ? "Choose an action"
-                              : encounter().pendingAction === null
+                              : encounter().reactionPrompt === null
                                 ? opponentName() + " is ready"
                                 : "Respond to " + opponentName()
                           }}
@@ -1533,7 +1532,7 @@ import {
                       <button
                         type="button"
                         [disabled]="
-                          store.busy() || encounter().pendingAction !== null
+                          store.busy() || encounter().reactionPrompt !== null
                         "
                         (click)="endActivation()"
                       >
@@ -1563,11 +1562,12 @@ import {
                           </div>
                         }
                       </div>
-                    } @else if (encounter().pendingAction === null) {
+                    } @else if (encounter().reactionPrompt === null) {
                       <p class="lede">
                         Begin the explicit opposition phase to let Rust choose
-                        {{ opponentName() }}'s action from admitted definitions.
-                        You can inspect and answer its preview before the roll.
+                        and resolve {{ opponentName() }}'s action from admitted
+                        definitions. If a reaction is available, Rust will pause
+                        for that gameplay choice before resolving the roll.
                       </p>
                       <button
                         class="primary resolve"
@@ -1580,48 +1580,44 @@ import {
                     }
                   </section>
 
-                  @if (encounter().pendingAction; as pending) {
+                  @if (encounter().reactionPrompt; as prompt) {
                     <section
                       class="rusty-engine-panel preview"
-                      aria-label="Authoritative action preview"
+                      aria-label="Available reaction"
                     >
                       <p class="meta-label">
-                        Rust preview · {{ pendingActorName(pending.actorId) }} ·
-                        {{ pending.actionLabel }}
+                        Reaction window ·
+                        {{ pendingActorName(prompt.actorId) }} ·
+                        {{ prompt.actionLabel }}
                       </p>
                       <p class="preview__math">
-                        Ability {{ pending.abilityScore }} ({{
-                          signed(pending.abilityModifier)
-                        }}) against defense {{ pending.defense }}
+                        Ability {{ prompt.abilityScore }} ({{
+                          signed(prompt.abilityModifier)
+                        }}) against defense {{ prompt.defense }}
                       </p>
                       <div>
                         <h3>Defense attribution</h3>
                         <ul class="source-list">
-                          @for (
-                            source of pending.defenseSources;
-                            track source
-                          ) {
+                          @for (source of prompt.defenseSources; track source) {
                             <li>{{ source }}</li>
                           }
                         </ul>
                       </div>
 
-                      @if (pending.reactions.length > 0) {
+                      @if (prompt.reactions.length > 0) {
                         <div
                           class="reaction-list"
                           aria-label="Available reactions"
                         >
                           @for (
-                            reaction of pending.reactions;
+                            reaction of prompt.reactions;
                             track reaction.id
                           ) {
                             <button
                               class="reaction"
                               type="button"
                               [disabled]="store.busy()"
-                              (click)="
-                                applyReaction(pending.token, reaction.id)
-                              "
+                              (click)="applyReaction(prompt.token, reaction.id)"
                             >
                               {{ reaction.label }} · {{ reaction.cost }}
                               {{ reaction.resource }} ·
@@ -1635,9 +1631,9 @@ import {
                         class="primary resolve"
                         type="button"
                         [disabled]="store.busy()"
-                        (click)="resolveAction(pending.token)"
+                        (click)="declineReaction(prompt.token)"
                       >
-                        Resolve deterministic roll
+                        Do not react
                       </button>
                     </section>
                   }
@@ -1979,7 +1975,7 @@ export class MainMenuScreenComponent implements OnInit {
       const actor = this.encounter().currentActorId;
       if (actor !== null && target !== 0) {
         this.selectedTarget.set(target);
-        void this.store.previewAction(action.id, actor, target);
+        void this.store.chooseAction(action.id, actor, target);
       }
     }
   }
@@ -2089,8 +2085,8 @@ export class MainMenuScreenComponent implements OnInit {
     void this.store.applyReaction(token, reactionId);
   }
 
-  protected resolveAction(token: string): void {
-    void this.store.applyAction(token);
+  protected declineReaction(token: string): void {
+    void this.store.declineReaction(token);
   }
 
   protected beginOppositionTurn(): void {

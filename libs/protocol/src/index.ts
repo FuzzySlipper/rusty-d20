@@ -32,9 +32,9 @@ import type {
   LoadoutDto,
   LoadoutItemDto,
   LoadoutRarityDto,
-  PendingActionDto,
   PartyMemberDto,
   ReactionDto,
+  ReactionPromptDto,
   ResourceDto,
   RuntimeReadoutDto,
   SaveStatusDto,
@@ -928,9 +928,8 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
       "currentActorId",
       "legalTargets",
       "log",
-      "nextRoll",
       "participants",
-      "pendingAction",
+      "reactionPrompt",
       "round",
     ])
   ) {
@@ -949,20 +948,19 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
     decodeActionTargets,
   );
   const log = decodeArray(value["log"], 64, decodeLogEntry);
-  const pendingValue = value["pendingAction"];
-  const pendingAction =
-    pendingValue === null ? null : decodePending(pendingValue);
+  const promptValue = value["reactionPrompt"];
+  const reactionPrompt =
+    promptValue === null ? null : decodeReactionPrompt(promptValue);
   const currentActorId = value["currentActorId"];
   if (
     !isSafeNonNegativeInteger(value["round"]) ||
-    !isSafeNonNegativeInteger(value["nextRoll"]) ||
     (currentActorId !== null && !isSafePositiveInteger(currentActorId)) ||
     participants === undefined ||
     participants.length === 0 ||
     board === undefined ||
     actions === undefined ||
     legalTargets === undefined ||
-    pendingAction === undefined ||
+    reactionPrompt === undefined ||
     log === undefined
   ) {
     return undefined;
@@ -1008,16 +1006,16 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
     (currentActorId !== null &&
       (currentActor === undefined || currentActor.defeated)) ||
     (actions.length > 0 && currentActor?.faction !== "party") ||
-    (pendingAction !== null &&
-      (!participantById.has(pendingAction.actorId) ||
-        !participantById.has(pendingAction.targetId) ||
-        pendingAction.actorId === pendingAction.targetId ||
+    (reactionPrompt !== null &&
+      (!participantById.has(reactionPrompt.actorId) ||
+        !participantById.has(reactionPrompt.targetId) ||
+        reactionPrompt.actorId === reactionPrompt.targetId ||
         currentActorId === null ||
-        pendingAction.actorId !== currentActorId)) ||
-    (currentActorId === null && pendingAction !== null) ||
+        reactionPrompt.actorId !== currentActorId)) ||
+    (currentActorId === null && reactionPrompt !== null) ||
     (board.legalMoves.length > 0 &&
       (currentActor?.faction !== "party" ||
-        pendingAction !== null ||
+        reactionPrompt !== null ||
         board.legalMoves.some((move) => {
           const start = move.route[0];
           return (
@@ -1033,13 +1031,12 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
   }
   return {
     round: value["round"],
-    nextRoll: value["nextRoll"],
     currentActorId,
     board,
     participants,
     actions,
     legalTargets,
-    pendingAction,
+    reactionPrompt,
     log,
   };
 }
@@ -1349,7 +1346,7 @@ function decodeReaction(value: unknown): ReactionDto | undefined {
     : undefined;
 }
 
-function decodePending(value: unknown): PendingActionDto | undefined {
+function decodeReactionPrompt(value: unknown): ReactionPromptDto | undefined {
   if (
     !hasExactKeys(value, [
       "abilityModifier",

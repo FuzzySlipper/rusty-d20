@@ -6,7 +6,7 @@ import type {
   EncounterParticipantDto,
   GameLogEntryDto,
   GameSnapshotDto,
-  PendingActionDto,
+  ReactionPromptDto,
   RuntimeReadoutDto,
 } from "@rusty-d20/protocol";
 
@@ -48,7 +48,6 @@ export interface CampaignView {
 
 export interface EncounterView {
   readonly round: number;
-  readonly nextRoll: number;
   readonly currentActorId: number | null;
   readonly currentActor: CharacterDto | null;
   readonly currentFaction: EncounterParticipantDto["faction"] | null;
@@ -58,7 +57,7 @@ export interface EncounterView {
   readonly participants: readonly EncounterParticipantDto[];
   readonly actions: readonly ActionDto[];
   readonly legalTargets: EncounterDto["legalTargets"];
-  readonly pendingAction: PendingActionDto | null;
+  readonly reactionPrompt: ReactionPromptDto | null;
   readonly log: readonly GameLogEntryDto[];
 }
 
@@ -117,7 +116,6 @@ function projectEncounter(encounter: EncounterDto): EncounterView {
   );
   return {
     round: encounter.round,
-    nextRoll: encounter.nextRoll,
     currentActorId: encounter.currentActorId,
     currentActor: current?.character ?? null,
     currentFaction: current?.faction ?? null,
@@ -134,7 +132,7 @@ function projectEncounter(encounter: EncounterDto): EncounterView {
     participants: encounter.participants,
     actions: encounter.actions,
     legalTargets: encounter.legalTargets,
-    pendingAction: encounter.pendingAction,
+    reactionPrompt: encounter.reactionPrompt,
     log: encounter.log,
   };
 }

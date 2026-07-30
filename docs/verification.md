@@ -70,16 +70,16 @@ BASE_URL=http://127.0.0.1:PORT LIVE_RUN=1 pnpm run e2e:live
 Inspect milestone screenshots, visible text, console output, page errors, and
 the evidence packet under `test-results/`. The opt-in live scenario covers
 empty/new adventure, the durable camp, first-person grid movement, an authored
-landmark, trigger-driven encounter entry, authored preview attribution,
-optional reactions, one deterministic player/opposition round, save, and
+landmark, trigger-driven encounter entry, automatic Rust-owned action
+resolution, optional player reactions, one player/opposition round, save, and
 desktop/mobile presentation.
 
 The ordinary browser gate also launches an isolated Rust host, saves through
 normal loadout controls, stops that process, starts a fresh process against the
 same save, verifies exact camp loadout and encounter continuation, and resolves
-the next deterministic roll. The desktop/mobile smoke covers keyboard and
+the next configured roll automatically. The desktop/mobile smoke covers keyboard and
 click activation plus visible capacity rejection without mutation. The
-fresh-process case also proves preview-only and reacted-pending saves reject
+fresh-process case also proves a non-durable reaction prompt rejects saving
 without changing either authoritative in-memory state or the last durable save.
 A two-page scenario proves a stale optimistic revision is rejected through a
 normal action control. Dedicated real-host scenarios complete Warden victory

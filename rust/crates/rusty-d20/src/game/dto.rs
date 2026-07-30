@@ -87,7 +87,7 @@ pub struct ReactionDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
-pub struct PendingActionDto {
+pub struct ReactionPromptDto {
     pub token: String,
     #[ts(type = "number")]
     pub actor_id: u64,
@@ -109,15 +109,13 @@ pub struct PendingActionDto {
 pub struct EncounterDto {
     #[ts(type = "number")]
     pub round: u64,
-    #[ts(type = "number")]
-    pub next_roll: u64,
     #[ts(type = "number | null")]
     pub current_actor_id: Option<u64>,
     pub board: TacticalBoardDto,
     pub participants: Vec<EncounterParticipantDto>,
     pub actions: Vec<ActionDto>,
     pub legal_targets: Vec<ActionTargetsDto>,
-    pub pending_action: Option<PendingActionDto>,
+    pub reaction_prompt: Option<ReactionPromptDto>,
     pub log: Vec<GameLogEntryDto>,
 }
 
@@ -567,7 +565,7 @@ pub struct TransferItemRequestDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
-pub struct PreviewActionRequestDto {
+pub struct ChooseActionRequestDto {
     #[ts(type = "number")]
     pub expected_revision: u64,
     #[ts(type = "number")]
@@ -595,17 +593,17 @@ pub struct MoveActorRequestDto {
 pub struct ApplyReactionRequestDto {
     #[ts(type = "number")]
     pub expected_revision: u64,
-    pub preview_token: String,
+    pub prompt_token: String,
     pub reaction_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
-pub struct ApplyActionRequestDto {
+pub struct DeclineReactionRequestDto {
     #[ts(type = "number")]
     pub expected_revision: u64,
-    pub preview_token: String,
+    pub prompt_token: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

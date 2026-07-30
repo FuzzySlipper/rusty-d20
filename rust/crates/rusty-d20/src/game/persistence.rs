@@ -73,10 +73,12 @@ impl GameRuntime {
             .clone();
         validate_product_state(&rules, &adventure, &session, &campaign)?;
         validate_log_state(&data)?;
+        let roll_source = session.roll_source().clone();
         let runtime = Self {
             catalog,
             rules,
             adventure_id,
+            roll_source,
             campaign: Some(campaign),
             session: Some(session),
             revision: data.revision,
@@ -92,7 +94,7 @@ impl GameRuntime {
 
     pub fn encode_save(&self) -> Result<String, GameRuntimeError> {
         if self.pending.is_some() {
-            return Err(GameRuntimeError::PendingActionCannotBeSaved);
+            return Err(GameRuntimeError::ReactionPromptCannotBeSaved);
         }
         let campaign = self
             .campaign

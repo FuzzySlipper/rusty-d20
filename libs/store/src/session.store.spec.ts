@@ -69,9 +69,9 @@ function transport(
     unequipItem: async () => sessionResult,
     transferItem: async () => sessionResult,
     moveActor: async () => sessionResult,
-    previewAction: async () => sessionResult,
+    chooseAction: async () => sessionResult,
     applyReaction: async () => sessionResult,
-    applyAction: async () => sessionResult,
+    declineReaction: async () => sessionResult,
     beginOppositionTurn: async () => sessionResult,
     endActivation: async () => sessionResult,
     returnToCamp: async () => sessionResult,
@@ -140,7 +140,6 @@ describe("SessionStore", () => {
       },
       encounter: {
         round: 0,
-        nextRoll: 0,
         currentActorId: 101,
         board: {
           width: 5,
@@ -183,7 +182,7 @@ describe("SessionStore", () => {
         ],
         actions: [],
         legalTargets: [],
-        pendingAction: null,
+        reactionPrompt: null,
         log: [],
       },
     };
@@ -243,6 +242,45 @@ describe("SessionStore", () => {
           )
         : undefined,
     ).toMatchObject({ character: { id: 101 }, x: 1, y: 2 });
+  });
+
+  it("routes one-step actions and reaction decisions without a resolve command", async () => {
+    const calls: string[] = [];
+    const store = new SessionStore(
+      transport({
+        chooseAction: async (request) => {
+          calls.push(
+            `action:${request.actionId}:${request.actorId}:${request.targetId}:${request.expectedRevision}`,
+          );
+          return { ok: true, value: { ...snapshot, revision: 2 } };
+        },
+        applyReaction: async (request) => {
+          calls.push(
+            `react:${request.promptToken}:${request.reactionId}:${request.expectedRevision}`,
+          );
+          return { ok: true, value: { ...snapshot, revision: 3 } };
+        },
+        declineReaction: async (request) => {
+          calls.push(
+            `decline:${request.promptToken}:${request.expectedRevision}`,
+          );
+          return { ok: true, value: { ...snapshot, revision: 4 } };
+        },
+      }),
+    );
+    await store.load();
+    await store.chooseAction("longsword-strike", 101, 102);
+    await store.applyReaction("prompt-1", "parry");
+    await store.declineReaction("prompt-2");
+    expect(calls).toEqual([
+      "action:longsword-strike:101:102:1",
+      "react:prompt-1:parry:2",
+      "decline:prompt-2:3",
+    ]);
+    expect(store.session()).toMatchObject({
+      kind: "data",
+      value: { revision: 4 },
+    });
   });
 
   it("routes loadout commands and preserves typed atomic rejection", async () => {

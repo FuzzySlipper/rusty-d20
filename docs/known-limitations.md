@@ -44,16 +44,17 @@ checkpoint, and a terminal ending; Ember's Wake has one encounter.
   `target/rusty-d20/save.json`. There is no save-slot UI, cloud/storage policy,
   authentication, TLS, multi-user coordination, or general migration between
   Engine or ruleset revisions. Product schemas 1 through 9 and session schemas
-  before 4 are rejected; this is not a general migration framework. Schema 10
+  before 5 are rejected; this is not a general migration framework. Schema 10
   binds saves to the exact authored adventure package composition, dungeon
   events/progress, tactical positions, completed encounter prefix, and terminal
   ending. The host can
   discard one malformed or obsolete save through a guarded visible reset, but
   it cannot repair arbitrary content.
-- Opaque action previews are process-local and intentionally not saved. Save is
-  unavailable until the pending action is resolved, including after a reaction
-  commits its cost and effect. Completed entity state, turn, RNG position,
-  operation/log identities, and bounded receipt explanations persist.
+- Opaque reaction prompts are process-local and intentionally not saved. Save
+  is unavailable until the player chooses or declines that reaction; either
+  command then resolves the roll atomically. Completed entity state, turn,
+  seeded/static roll-source configuration and position, operation/log
+  identities, and bounded receipt explanations persist.
 - The default camp inventory/equipment path proves four carried items
   (two armor pieces and two implements), one stash spare, one opponent reward,
   one dungeon treasure, capacity rejection, equipment attribution/binding, and

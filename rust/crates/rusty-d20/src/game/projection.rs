@@ -511,7 +511,6 @@ impl GameRuntime {
         };
         Ok(EncounterDto {
             round: session.current_turn(),
-            next_roll: session.next_roll_index(),
             current_actor_id: campaign.current_actor_id,
             board: TacticalBoardDto {
                 width: encounter.board.width,
@@ -522,7 +521,7 @@ impl GameRuntime {
             participants,
             actions,
             legal_targets,
-            pending_action: self
+            reaction_prompt: self
                 .pending
                 .as_ref()
                 .map(|pending| self.project_pending(pending)),
@@ -616,8 +615,8 @@ impl GameRuntime {
         })
     }
 
-    pub(super) fn project_pending(&self, pending: &PendingAction) -> PendingActionDto {
-        PendingActionDto {
+    pub(super) fn project_pending(&self, pending: &PendingAction) -> ReactionPromptDto {
+        ReactionPromptDto {
             token: pending.token.clone(),
             actor_id: pending.preview.actor().raw(),
             target_id: pending.preview.target().raw(),

@@ -57,30 +57,15 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
 
         if (actor.faction === "party") {
           if (actor.character.id === 101) {
-            const previewed = await postSnapshot(
-              request,
-              host.baseUrl,
-              "/api/v1/session/preview",
-              {
-                expectedRevision: current.revision,
-                actorId: 101,
-                targetId: 102,
-                actionId: "disrupt",
-              },
-            );
-            const token = previewed.encounter?.pendingAction?.token;
-            if (token === undefined) {
-              throw new Error(
-                "Disrupt did not produce an authoritative preview.",
-              );
-            }
             await postSnapshot(
               request,
               host.baseUrl,
               "/api/v1/session/action",
               {
-                expectedRevision: previewed.revision,
-                previewToken: token,
+                expectedRevision: current.revision,
+                actorId: 101,
+                targetId: 102,
+                actionId: "disrupt",
               },
             );
           } else {
@@ -102,19 +87,20 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
           "/api/v1/session/opposition",
           { expectedRevision: current.revision },
         );
-        const pending = selected.encounter?.pendingAction;
+        const prompt = selected.encounter?.reactionPrompt;
         if (actor.character.id === 102 && wardenUnsettled) {
-          expect(pending?.actionId).toMatch(
-            /^(longsword-strike|precise-shot)$/,
-          );
+          expect(prompt?.actionId).toMatch(/^(longsword-strike|precise-shot)$/);
           await page.reload();
           await page
             .getByRole("button", { name: "Continue Adventure" })
             .click();
-          const preview = page.getByLabel("Authoritative action preview");
-          await expect(preview).toContainText("Iron Warden");
-          await expect(preview).toContainText(/Longsword Strike|Precise Shot/);
-          await expect(preview).not.toContainText(/Pin In Place|Disrupt/);
+          const reaction = page.getByRole("region", {
+            name: "Available reaction",
+            exact: true,
+          });
+          await expect(reaction).toContainText("Iron Warden");
+          await expect(reaction).toContainText(/Longsword Strike|Precise Shot/);
+          await expect(reaction).not.toContainText(/Pin In Place|Disrupt/);
           await expect(
             page
               .getByRole("region", {
@@ -140,11 +126,16 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
           expect(browserErrors).toEqual([]);
           return;
         }
-        if (pending !== null && pending !== undefined) {
-          await postSnapshot(request, host.baseUrl, "/api/v1/session/action", {
-            expectedRevision: selected.revision,
-            previewToken: pending.token,
-          });
+        if (prompt !== null && prompt !== undefined) {
+          await postSnapshot(
+            request,
+            host.baseUrl,
+            "/api/v1/session/reaction/decline",
+            {
+              expectedRevision: selected.revision,
+              promptToken: prompt.token,
+            },
+          );
         }
       }
 
@@ -592,7 +583,7 @@ async function playToOutcome(
   baseUrl: string,
   playerAction: string,
   oppositionName: string,
-  oppositionReacts: boolean,
+  _oppositionReacts: boolean,
   playerReacts: boolean,
   expectedPlayerReceipt?: RegExp,
   passParty = false,
@@ -645,35 +636,15 @@ async function playToOutcome(
       if (targetId === undefined) {
         throw new Error(`Action ${action.id} has no legal target.`);
       }
-      let previewed = await postSnapshot(
-        request,
-        baseUrl,
-        "/api/v1/session/preview",
-        {
-          expectedRevision: current.revision,
-          actorId: actor.character.id,
-          targetId,
-          actionId: action.id,
-        },
-      );
-      if (oppositionReacts) {
-        previewed = await applyFirstApiReactionIfAvailable(
-          request,
-          baseUrl,
-          previewed,
-        );
-      }
-      const pending = previewed.encounter?.pendingAction;
-      if (pending === null || pending === undefined) {
-        throw new Error("Party action lost its authoritative preview.");
-      }
       const resolved = await postSnapshot(
         request,
         baseUrl,
         "/api/v1/session/action",
         {
-          expectedRevision: previewed.revision,
-          previewToken: pending.token,
+          expectedRevision: current.revision,
+          actorId: actor.character.id,
+          targetId,
+          actionId: action.id,
         },
       );
       if (!inspectedFirstPartyReceipt && expectedPlayerReceipt !== undefined) {
@@ -685,47 +656,37 @@ async function playToOutcome(
       continue;
     }
 
-    let selected = await postSnapshot(
+    const selected = await postSnapshot(
       request,
       baseUrl,
       "/api/v1/session/opposition",
       { expectedRevision: current.revision },
     );
-    if (playerReacts) {
-      selected = await applyFirstApiReactionIfAvailable(
+    const prompt = selected.encounter?.reactionPrompt;
+    if (prompt !== null && prompt !== undefined) {
+      const reaction = prompt.reactions[0];
+      await postSnapshot(
         request,
         baseUrl,
-        selected,
+        playerReacts && reaction !== undefined
+          ? "/api/v1/session/reaction"
+          : "/api/v1/session/reaction/decline",
+        playerReacts && reaction !== undefined
+          ? {
+              expectedRevision: selected.revision,
+              promptToken: prompt.token,
+              reactionId: reaction.id,
+            }
+          : {
+              expectedRevision: selected.revision,
+              promptToken: prompt.token,
+            },
       );
-    }
-    const pending = selected.encounter?.pendingAction;
-    if (pending !== null && pending !== undefined) {
-      await postSnapshot(request, baseUrl, "/api/v1/session/action", {
-        expectedRevision: selected.revision,
-        previewToken: pending.token,
-      });
     }
   }
   throw new Error(
     `Deterministic encounter against ${oppositionName} did not reach an outcome within 512 activations.`,
   );
-}
-
-async function applyFirstApiReactionIfAvailable(
-  request: APIRequestContext,
-  baseUrl: string,
-  snapshot: SessionSnapshot,
-): Promise<SessionSnapshot> {
-  const pending = snapshot.encounter?.pendingAction;
-  const reaction = pending?.reactions[0];
-  if (pending === null || pending === undefined || reaction === undefined) {
-    return snapshot;
-  }
-  return postSnapshot(request, baseUrl, "/api/v1/session/reaction", {
-    expectedRevision: snapshot.revision,
-    previewToken: pending.token,
-    reactionId: reaction.id,
-  });
 }
 
 async function startAdventure(page: Page, title: string): Promise<void> {
@@ -816,7 +777,7 @@ interface SessionSnapshot {
     actions: Array<{ id: string; label: string }>;
     legalTargets: Array<{ actionId: string; targetIds: number[] }>;
     log: Array<{ details: string[] }>;
-    pendingAction: {
+    reactionPrompt: {
       token: string;
       actionId: string;
       reactions: Array<{ id: string }>;

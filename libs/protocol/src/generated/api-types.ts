@@ -31,7 +31,7 @@ export type ActionDto = { id: string, label: string, ability: string, defense: s
 
 export type ReactionDto = { id: string, label: string, resource: string, cost: number, available: number, bonus: number, effect: string, };
 
-export type PendingActionDto = { token: string, actorId: number, targetId: number, actionId: string, actionLabel: string, abilityScore: number, abilityModifier: number, defense: number, defenseSources: Array<string>, reactions: Array<ReactionDto>, };
+export type ReactionPromptDto = { token: string, actorId: number, targetId: number, actionId: string, actionLabel: string, abilityScore: number, abilityModifier: number, defense: number, defenseSources: Array<string>, reactions: Array<ReactionDto>, };
 
 export type ActionTargetsDto = { actionId: string, targetIds: number[], };
 
@@ -45,7 +45,7 @@ export type TacticalMoveDto = { x: number, y: number, cost: number, route: Array
 
 export type TacticalBoardDto = { width: number, height: number, rows: Array<string>, legalMoves: Array<TacticalMoveDto>, };
 
-export type EncounterDto = { round: number, nextRoll: number, currentActorId: number | null, board: TacticalBoardDto, participants: Array<EncounterParticipantDto>, actions: Array<ActionDto>, legalTargets: Array<ActionTargetsDto>, pendingAction: PendingActionDto | null, log: Array<GameLogEntryDto>, };
+export type EncounterDto = { round: number, currentActorId: number | null, board: TacticalBoardDto, participants: Array<EncounterParticipantDto>, actions: Array<ActionDto>, legalTargets: Array<ActionTargetsDto>, reactionPrompt: ReactionPromptDto | null, log: Array<GameLogEntryDto>, };
 
 export type CampaignPhaseDto = "camp" | "exploration" | "encounter" | "outcome" | "adventure-complete";
 
@@ -119,11 +119,11 @@ export type TransferItemRequestDto = { expectedRevision: number, itemId: number,
 
 export type MoveActorRequestDto = { expectedRevision: number, actorId: number, x: number, y: number, };
 
-export type PreviewActionRequestDto = { expectedRevision: number, actorId: number, targetId: number, actionId: string, };
+export type ChooseActionRequestDto = { expectedRevision: number, actorId: number, targetId: number, actionId: string, };
 
-export type ApplyReactionRequestDto = { expectedRevision: number, previewToken: string, reactionId: string, };
+export type ApplyReactionRequestDto = { expectedRevision: number, promptToken: string, reactionId: string, };
 
-export type ApplyActionRequestDto = { expectedRevision: number, previewToken: string, };
+export type DeclineReactionRequestDto = { expectedRevision: number, promptToken: string, };
 
 export type ApiErrorKindDto = "stale" | "invalid" | "invalid-slot" | "capacity" | "containment" | "track-bound" | "phase" | "not-found" | "persistence" | "internal";
 

@@ -8,7 +8,6 @@ use gameplay_mechanics::{
     SourceInstanceIdentity, StatContribution, StatService, TracksComponent,
 };
 use serde::{Deserialize, Serialize};
-use svc_rng::RngSeed;
 
 use crate::adventure::AuthoredAdventureCatalog;
 use crate::compiler::defense_stat_id;
@@ -19,7 +18,7 @@ use crate::{
     D20Id, D20Ruleset, D20Session, D20SessionError, DamageAffinity, DungeonFacingDefinition,
     EncounterDefinition, EncounterFaction, EncounterFactionDefinition, EncounterParticipationSeed,
     EquipmentItemSeed, InventorySeed, ItemInstanceDefinition, ItemRarityDefinition,
-    ReactionReceipt, ScheduledEffectsComponent, SessionSaveError, StorageSeed,
+    ReactionReceipt, RollSourceConfig, ScheduledEffectsComponent, SessionSaveError, StorageSeed,
     TacticalBoardDefinition, TacticalPosition, ENGINE_REVISION,
 };
 
@@ -119,6 +118,7 @@ pub struct GameRuntime {
     catalog: AuthoredAdventureCatalog,
     rules: D20Ruleset,
     adventure_id: D20Id,
+    roll_source: RollSourceConfig,
     campaign: Option<CampaignState>,
     session: Option<D20Session>,
     revision: u64,
@@ -131,12 +131,16 @@ pub struct GameRuntime {
 
 impl GameRuntime {
     pub fn empty() -> Result<Self, GameRuntimeError> {
+        Self::empty_with_roll_source(RollSourceConfig::default())
+    }
+
+    pub fn empty_with_roll_source(roll_source: RollSourceConfig) -> Result<Self, GameRuntimeError> {
         let catalog = AuthoredAdventureCatalog::builtin().map_err(GameRuntimeError::Catalog)?;
         let adventure = catalog.default_adventure().clone();
         let rules = catalog
             .rules_for(&adventure)
             .map_err(GameRuntimeError::Catalog)?;
-        Self::empty_with_rules(catalog, rules, adventure)
+        Self::empty_with_rules(catalog, rules, adventure, roll_source)
     }
 
     pub fn empty_for(adventure: &str) -> Result<Self, GameRuntimeError> {
@@ -145,14 +149,16 @@ impl GameRuntime {
         let rules = catalog
             .rules_for(&adventure)
             .map_err(GameRuntimeError::Catalog)?;
-        Self::empty_with_rules(catalog, rules, adventure)
+        Self::empty_with_rules(catalog, rules, adventure, RollSourceConfig::default())
     }
 
     fn empty_with_rules(
         catalog: AuthoredAdventureCatalog,
         rules: D20Ruleset,
         adventure_id: D20Id,
+        roll_source: RollSourceConfig,
     ) -> Result<Self, GameRuntimeError> {
+        roll_source.validate()?;
         if rules.adventure(&adventure_id).is_none() {
             return Err(GameRuntimeError::Catalog(format!(
                 "compiled rules do not define adventure {adventure_id}"
@@ -162,6 +168,7 @@ impl GameRuntime {
             catalog,
             rules,
             adventure_id,
+            roll_source,
             campaign: None,
             session: None,
             revision: 0,
@@ -177,6 +184,10 @@ impl GameRuntime {
         self.session
             .as_ref()
             .map_or(0, |session| session.entities().total_count())
+    }
+
+    pub const fn roll_source(&self) -> &RollSourceConfig {
+        &self.roll_source
     }
 
     pub fn snapshot(&self) -> Result<GameSnapshotDto, GameRuntimeError> {
@@ -272,7 +283,12 @@ impl GameRuntime {
             .catalog
             .rules_for(&adventure_id)
             .map_err(GameRuntimeError::InvalidCommand)?;
-        let mut staged = Self::empty_with_rules(self.catalog.clone(), rules, adventure_id)?;
+        let mut staged = Self::empty_with_rules(
+            self.catalog.clone(),
+            rules,
+            adventure_id,
+            self.roll_source.clone(),
+        )?;
         let snapshot = staged.new_adventure(0)?;
         *self = staged;
         Ok(snapshot)
@@ -333,9 +349,9 @@ impl GameRuntime {
                 }
             })
             .collect();
-        let mut session = D20Session::new_with_equipment_loadout(
+        let mut session = D20Session::new_with_roll_source(
             self.rules.clone(),
-            RngSeed::new(0xD20_2026),
+            self.roll_source.clone(),
             characters,
             inventories,
             storage,
@@ -732,9 +748,19 @@ impl GameRuntime {
         self.snapshot()
     }
 
-    pub fn preview_action(
+    pub fn choose_action(
         &mut self,
-        request: PreviewActionRequestDto,
+        request: ChooseActionRequestDto,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        let mut staged = self.clone();
+        let snapshot = staged.choose_action_inner(request)?;
+        *self = staged;
+        Ok(snapshot)
+    }
+
+    fn choose_action_inner(
+        &mut self,
+        request: ChooseActionRequestDto,
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
         self.ensure_revision(request.expected_revision)?;
         self.ensure_encounter_phase()?;
@@ -805,14 +831,11 @@ impl GameRuntime {
             .next_operation
             .checked_add(1)
             .ok_or(GameRuntimeError::CounterOverflow)?;
-        self.pending = Some(PendingAction {
+        self.resolve_pending_action(PendingAction {
             serial,
             token: format!("preview-{serial}"),
             preview,
-        });
-        self.bump_revision()?;
-        self.saved_revision = None;
-        self.snapshot()
+        })
     }
 
     pub fn move_actor(
@@ -904,7 +927,7 @@ impl GameRuntime {
         self.ensure_revision(request.expected_revision)?;
         self.ensure_encounter_phase()?;
         self.ensure_mutation_capacity(false, true)?;
-        let pending = self.require_pending(&request.preview_token)?.clone();
+        let pending = self.require_pending(&request.prompt_token)?.clone();
         let reaction = id(&request.reaction_id)?;
         let receipt = self.session_mut()?.apply_reaction(
             &pending.preview,
@@ -917,34 +940,39 @@ impl GameRuntime {
             pending.preview.action(),
             pending.preview.operation().clone(),
         )?;
-        self.pending = Some(PendingAction {
+        let pending = PendingAction {
             preview: fresh,
             ..pending
-        });
-        self.bump_revision()?;
-        self.saved_revision = None;
+        };
         self.log_reaction(&receipt)?;
-        self.snapshot()
+        self.resolve_pending_action(pending)
     }
 
-    pub fn apply_action(
+    pub fn decline_reaction(
         &mut self,
-        request: ApplyActionRequestDto,
+        request: DeclineReactionRequestDto,
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
         let mut staged = self.clone();
-        let snapshot = staged.apply_action_inner(request)?;
+        let snapshot = staged.decline_reaction_inner(request)?;
         *self = staged;
         Ok(snapshot)
     }
 
-    fn apply_action_inner(
+    fn decline_reaction_inner(
         &mut self,
-        request: ApplyActionRequestDto,
+        request: DeclineReactionRequestDto,
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
         self.ensure_revision(request.expected_revision)?;
         self.ensure_encounter_phase()?;
         self.ensure_mutation_capacity(false, true)?;
-        let pending = self.require_pending(&request.preview_token)?.clone();
+        let pending = self.require_pending(&request.prompt_token)?.clone();
+        self.resolve_pending_action(pending)
+    }
+
+    fn resolve_pending_action(
+        &mut self,
+        pending: PendingAction,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
         let (expected_actor, _) = self.current_actor()?;
         if pending.preview.actor() != expected_actor {
             return Err(GameRuntimeError::InvalidCommand(
@@ -972,7 +1000,7 @@ impl GameRuntime {
                 "d20 {} + modifier {} = {} against defense {}.",
                 receipt.d20, receipt.ability_modifier, receipt.total, receipt.defense
             ),
-            format!("Deterministic roll index {}.", receipt.roll_index),
+            format!("Roll-source position {}.", receipt.roll_index),
         ];
         if receipt.hit && action_definition.forced_movement > 0 {
             let actor_position = self.participant_position(receipt.actor)?;
@@ -1162,12 +1190,12 @@ impl GameRuntime {
         }
         let upper = u32::try_from(legal_actions.len()).map_err(|_| {
             GameRuntimeError::InvalidState(
-                "the opposition action catalog does not fit deterministic choice".to_owned(),
+                "the opposition action catalog does not fit the choice policy".to_owned(),
             )
         })?;
         let index = self
             .session()?
-            .deterministic_choice_index(&format!("{}-{}-action", encounter.id, actor.raw()), upper)
+            .choice_index(&format!("{}-{}-action", encounter.id, actor.raw()), upper)
             .ok_or_else(|| {
                 GameRuntimeError::InvalidState(
                     "the opposition has no admitted action choices".to_owned(),
@@ -1179,13 +1207,11 @@ impl GameRuntime {
             .next_operation
             .checked_add(1)
             .ok_or(GameRuntimeError::CounterOverflow)?;
-        self.pending = Some(PendingAction {
+        let pending = PendingAction {
             serial,
             token: format!("preview-{serial}"),
             preview,
-        });
-        self.bump_revision()?;
-        self.saved_revision = None;
+        };
         self.push_log(
             GameLogKindDto::Turn,
             "Opposition",
@@ -1196,13 +1222,20 @@ impl GameRuntime {
                 self.character_name(target)?
             ),
             movement_detail.into_iter().chain([format!(
-                "Deterministic enemy policy selected legal choice {} of {}; {} unavailable authored choice(s) were excluded.",
+                "Opposition policy selected legal choice {} of {}; {} unavailable authored choice(s) were excluded.",
                 index + 1,
                 legal_actions.len(),
                 unavailable
             )]).collect(),
         )?;
-        self.snapshot()
+        if pending.preview.reactions().is_empty() {
+            self.resolve_pending_action(pending)
+        } else {
+            self.pending = Some(pending);
+            self.bump_revision()?;
+            self.saved_revision = None;
+            self.snapshot()
+        }
     }
 
     pub fn end_activation(
@@ -1983,7 +2016,7 @@ impl GameRuntime {
 #[derive(Debug)]
 pub enum GameRuntimeError {
     NoEncounter,
-    PendingActionCannotBeSaved,
+    ReactionPromptCannotBeSaved,
     StaleCommand(String),
     InvalidCommand(String),
     InvalidEquipmentSlot { requested: String, required: String },
@@ -2021,7 +2054,7 @@ impl GameRuntimeError {
                 | D20SessionError::ActionForbidden { .. }
                 | D20SessionError::MovementForbidden { .. },
             ) => (ApiErrorKindDto::Invalid, false),
-            Self::PendingActionCannotBeSaved | Self::InvalidCommand(_) | Self::D20Identity(_) => {
+            Self::ReactionPromptCannotBeSaved | Self::InvalidCommand(_) | Self::D20Identity(_) => {
                 (ApiErrorKindDto::Invalid, false)
             }
             Self::InvalidSave(_)
@@ -2042,8 +2075,8 @@ impl std::fmt::Display for GameRuntimeError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoEncounter => write!(formatter, "no encounter is active"),
-            Self::PendingActionCannotBeSaved => {
-                write!(formatter, "resolve the pending action before saving")
+            Self::ReactionPromptCannotBeSaved => {
+                write!(formatter, "choose or decline the reaction before saving")
             }
             Self::StaleCommand(message)
             | Self::InvalidCommand(message)

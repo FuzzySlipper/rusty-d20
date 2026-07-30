@@ -152,13 +152,13 @@ export class SessionStore {
     );
   }
 
-  async previewAction(
+  async chooseAction(
     actionId: string,
     actorId: number,
     targetId: number,
   ): Promise<void> {
     await this.mutate((expectedRevision) =>
-      this.transport.previewAction({
+      this.transport.chooseAction({
         expectedRevision,
         actorId,
         targetId,
@@ -173,19 +173,19 @@ export class SessionStore {
     );
   }
 
-  async applyReaction(previewToken: string, reactionId: string): Promise<void> {
+  async applyReaction(promptToken: string, reactionId: string): Promise<void> {
     await this.mutate((expectedRevision) =>
       this.transport.applyReaction({
         expectedRevision,
-        previewToken,
+        promptToken,
         reactionId,
       }),
     );
   }
 
-  async applyAction(previewToken: string): Promise<void> {
+  async declineReaction(promptToken: string): Promise<void> {
     await this.mutate((expectedRevision) =>
-      this.transport.applyAction({ expectedRevision, previewToken }),
+      this.transport.declineReaction({ expectedRevision, promptToken }),
     );
   }
 

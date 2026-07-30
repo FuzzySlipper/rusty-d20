@@ -11,7 +11,7 @@ import {
 } from "@playwright/test";
 import { workspaceRoot } from "@nx/devkit";
 
-test("pending saves reject atomically and completed state survives a fresh Rust host", async ({
+test("reaction prompts reject saves and automatically resolved rolls survive a fresh Rust host", async ({
   page,
   request,
 }) => {
@@ -67,16 +67,37 @@ test("pending saves reject atomically and completed state survives a fresh Rust 
 
     await enterWardenEncounter(page);
     await page.getByRole("button", { name: "Precise Shot" }).click();
+    const automatic = await sessionSnapshot(request, baseUrl);
+    expect(automatic.encounter.reactionPrompt).toBeNull();
+    expect(
+      automatic.encounter.log.some((entry) =>
+        entry.details.some((detail) =>
+          detail.includes("Roll-source position 0"),
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      await page
+        .getByRole("button", { name: "Resolve deterministic roll" })
+        .count(),
+    ).toBe(0);
+
+    const prompted = await advanceToReactionPrompt(request, baseUrl);
+    await page.reload();
+    await page.getByRole("button", { name: "Continue Adventure" }).click();
     await expect(
       page.getByRole("button", { name: "Save", exact: true }),
     ).toBeDisabled();
     await expect(
-      page.getByText("Resolve the pending action before saving."),
+      page.getByText("Choose or decline the reaction before saving."),
     ).toBeVisible();
-    const previewOnly = await sessionSnapshot(request, baseUrl);
-    expect(previewOnly.encounter.pendingAction).not.toBeNull();
-    await expectPendingSaveRejection(request, baseUrl, previewOnly.revision);
-    expect(await sessionSnapshot(request, baseUrl)).toEqual(previewOnly);
+    expect(prompted.encounter.reactionPrompt).not.toBeNull();
+    await expectReactionPromptSaveRejection(
+      request,
+      baseUrl,
+      prompted.revision,
+    );
+    expect(await sessionSnapshot(request, baseUrl)).toEqual(prompted);
     expect(await readFile(savePath)).toEqual(baselineFile);
     await stopHost(host);
     host = undefined;
@@ -95,47 +116,11 @@ test("pending saves reject atomically and completed state survives a fresh Rust 
     await expect(page.getByLabel("Encounter identity")).toContainText(
       "Armor defense 18",
     );
-    await page.getByRole("button", { name: "Longsword Strike" }).click();
-    await page.getByRole("button", { name: /Parry · 1 Guard/ }).click();
-    await expect(
-      page.getByRole("button", { name: "Save", exact: true }),
-    ).toBeDisabled();
-    const reacted = await sessionSnapshot(request, baseUrl);
-    expect(reacted.encounter.pendingAction).not.toBeNull();
-    const reactedOpponent = reacted.encounter.participants.find(
-      (participant) =>
-        participant.character.id ===
-        reacted.encounter.pendingAction?.targetId,
-    )?.character;
-    expect(reactedOpponent?.resources).toContainEqual({
-      current: 1,
-      id: "guard",
-      label: "Guard",
-      maximum: 2,
-    });
-    expect(
-      reactedOpponent?.effects.some((effect) =>
-        effect.startsWith("Parry Stance"),
-      ),
-    ).toBe(true);
-    await expectPendingSaveRejection(request, baseUrl, reacted.revision);
-    expect(await sessionSnapshot(request, baseUrl)).toEqual(reacted);
-    expect(await readFile(savePath)).toEqual(baselineFile);
-    await stopHost(host);
-    host = undefined;
-
-    host = startHost(port, savePath);
-    await waitForHealth(baseUrl, host);
-    expect(await sessionSnapshot(request, baseUrl)).toEqual(baseline);
-    await page.goto(baseUrl);
-    await page.getByRole("button", { name: "Continue Adventure" }).click();
-    await enterWardenEncounter(page);
     await page.getByRole("button", { name: "Precise Shot" }).click();
-    await page
-      .getByRole("button", { name: "Resolve deterministic roll" })
-      .click();
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+    const saved = await sessionSnapshot(request, baseUrl);
+    expect(saved.encounter.reactionPrompt).toBeNull();
     const before = (await page.getByLabel("Encounter identity").innerText())
       .split("\n")
       .map((line) => line.trim())
@@ -151,20 +136,27 @@ test("pending saves reject atomically and completed state survives a fresh Rust 
     for (const line of before) {
       await expect(page.getByLabel("Encounter identity")).toContainText(line);
     }
-    expect((await sessionSnapshot(request, baseUrl)).encounter.nextRoll).toBe(
-      1,
-    );
+    expect(await sessionSnapshot(request, baseUrl)).toEqual(saved);
 
     await advanceOneActivation(page, request, baseUrl);
     await advanceOneActivation(page, request, baseUrl);
+    const advanced = await sessionSnapshot(request, baseUrl);
     expect(
-      (await sessionSnapshot(request, baseUrl)).encounter.nextRoll,
-    ).toBeGreaterThanOrEqual(2);
+      advanced.encounter.log.filter((entry) =>
+        entry.details.some((detail) =>
+          detail.startsWith("Roll-source position "),
+        ),
+      ).length,
+    ).toBeGreaterThan(
+      saved.encounter.log.filter((entry) =>
+        entry.details.some((detail) =>
+          detail.startsWith("Roll-source position "),
+        ),
+      ).length,
+    );
     await page.reload();
     await page.getByRole("button", { name: "Continue Adventure" }).click();
-    await expect(page.getByLabel("Encounter identity")).toContainText(
-      "Iron Warden acting",
-    );
+    await expect(page.getByLabel("Encounter identity")).toBeVisible();
   } finally {
     if (host !== undefined) {
       await stopHost(host);
@@ -219,14 +211,18 @@ interface GameSnapshot {
   };
   encounter: {
     currentActorId: number;
-    nextRoll: number;
     participants: Array<{
       character: GameCharacter;
       faction: "party" | "opposition";
     }>;
     actions: Array<{ id: string; label: string }>;
     legalTargets: Array<{ actionId: string; targetIds: number[] }>;
-    pendingAction: { token: string; targetId: number } | null;
+    reactionPrompt: {
+      token: string;
+      targetId: number;
+      reactions: Array<{ id: string }>;
+    } | null;
+    log: Array<{ details: string[] }>;
   };
 }
 
@@ -236,6 +232,13 @@ async function advanceOneActivation(
   baseUrl: string,
 ): Promise<void> {
   const snapshot = await sessionSnapshot(request, baseUrl);
+  if (snapshot.encounter.reactionPrompt !== null) {
+    await postSnapshot(request, baseUrl, "/api/v1/session/reaction/decline", {
+      expectedRevision: snapshot.revision,
+      promptToken: snapshot.encounter.reactionPrompt.token,
+    });
+    return;
+  }
   const current = snapshot.encounter.participants.find(
     (participant) =>
       participant.character.id === snapshot.encounter.currentActorId,
@@ -248,11 +251,11 @@ async function advanceOneActivation(
       "/api/v1/session/opposition",
       { expectedRevision: snapshot.revision },
     );
-    const pending = selected.encounter.pendingAction;
-    if (pending !== null) {
-      await postSnapshot(request, baseUrl, "/api/v1/session/action", {
+    const prompt = selected.encounter.reactionPrompt;
+    if (prompt !== null) {
+      await postSnapshot(request, baseUrl, "/api/v1/session/reaction/decline", {
         expectedRevision: selected.revision,
-        previewToken: pending.token,
+        promptToken: prompt.token,
       });
     }
   } else {
@@ -272,26 +275,44 @@ async function advanceOneActivation(
       });
       return;
     }
-    const previewed = await postSnapshot(
-      request,
-      baseUrl,
-      "/api/v1/session/preview",
-      {
-        expectedRevision: snapshot.revision,
-        actorId: snapshot.encounter.currentActorId,
-        targetId: target,
-        actionId: action.id,
-      },
-    );
-    const pending = previewed.encounter.pendingAction;
-    if (pending === null) {
-      throw new Error("Party action did not produce an authoritative preview.");
-    }
     await postSnapshot(request, baseUrl, "/api/v1/session/action", {
-      expectedRevision: previewed.revision,
-      previewToken: pending.token,
+      expectedRevision: snapshot.revision,
+      actorId: snapshot.encounter.currentActorId,
+      targetId: target,
+      actionId: action.id,
     });
   }
+}
+
+async function advanceToReactionPrompt(
+  request: APIRequestContext,
+  baseUrl: string,
+): Promise<GameSnapshot> {
+  for (let activation = 0; activation < 32; activation += 1) {
+    const snapshot = await sessionSnapshot(request, baseUrl);
+    if (snapshot.encounter.reactionPrompt !== null) {
+      return snapshot;
+    }
+    const current = snapshot.encounter.participants.find(
+      (participant) =>
+        participant.character.id === snapshot.encounter.currentActorId,
+    );
+    if (current === undefined) {
+      throw new Error("Current actor is absent from the encounter roster.");
+    }
+    const next = await postSnapshot(
+      request,
+      baseUrl,
+      current.faction === "party"
+        ? "/api/v1/session/activation/end"
+        : "/api/v1/session/opposition",
+      { expectedRevision: snapshot.revision },
+    );
+    if (next.encounter.reactionPrompt !== null) {
+      return next;
+    }
+  }
+  throw new Error("The authored encounter did not expose a reaction prompt.");
 }
 
 async function postSnapshot(
@@ -314,7 +335,7 @@ async function sessionSnapshot(
   return response.json() as Promise<GameSnapshot>;
 }
 
-async function expectPendingSaveRejection(
+async function expectReactionPromptSaveRejection(
   request: APIRequestContext,
   baseUrl: string,
   revision: number,
@@ -325,7 +346,7 @@ async function expectPendingSaveRejection(
   expect(response.status()).toBe(422);
   await expect(response.json()).resolves.toEqual({
     kind: "invalid",
-    message: "resolve the pending action before saving",
+    message: "choose or decline the reaction before saving",
     retryable: false,
   });
 }
