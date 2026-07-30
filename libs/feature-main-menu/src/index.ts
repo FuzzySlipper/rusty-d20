@@ -1071,6 +1071,7 @@ interface LoadoutItemLocation {
                           ) {
                             <button
                               type="button"
+                              [disabled]="store.busy()"
                               [class.primary]="
                                 activePartyMember()?.character?.id ===
                                 member.character.id
@@ -1129,6 +1130,7 @@ interface LoadoutItemLocation {
                               activePartyMember()?.character?.name + ' pack'
                             "
                             instructions="Drag carried gear to a highlighted slot, or select it and activate the slot."
+                            [readOnly]="store.busy()"
                             [selectedItemId]="selectedInventoryItemId()"
                             [slots]="inventorySlots()"
                             (itemActivated)="selectInventoryItem($event)"
@@ -1141,6 +1143,7 @@ interface LoadoutItemLocation {
                               ' equipment'
                             "
                             instructions="Compatible destinations highlight when an item is selected or dragged."
+                            [readOnly]="store.busy()"
                             [selectedItemSlotId]="selectedCompatibleSlotId()"
                             [slots]="equipmentSlots()"
                             (itemDropped)="equipDroppedItem($event)"
@@ -1152,6 +1155,7 @@ interface LoadoutItemLocation {
                         <section
                           class="rusty-engine-panel loadout-actions"
                           aria-label="Selected loadout item"
+                          [attr.aria-busy]="store.busy()"
                         >
                           <p class="meta-label">Touch and keyboard alternative</p>
                           @if (selectedLoadoutLocation(); as selection) {
@@ -1203,7 +1207,11 @@ interface LoadoutItemLocation {
                                 >
                                   Store
                                 </button>
-                                <button type="button" (click)="clearLoadoutSelection()">
+                                <button
+                                  type="button"
+                                  [disabled]="store.busy()"
+                                  (click)="clearLoadoutSelection()"
+                                >
                                   Clear
                                 </button>
                               </div>
@@ -1241,6 +1249,7 @@ interface LoadoutItemLocation {
                           [columns]="4"
                           label="Shared camp inventory"
                           instructions="Drag a canonical item directly to its highlighted character slot."
+                          [readOnly]="store.busy()"
                           [selectedItemId]="selectedInventoryItemId()"
                           [slots]="stashSlots()"
                           (itemActivated)="selectInventoryItem($event)"
@@ -2349,6 +2358,9 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected selectPartyMember(memberId: number): void {
+    if (this.store.busy()) {
+      return;
+    }
     this.selectedPartyMember.set(memberId);
     this.selectedLoadoutItem.set(null);
   }
@@ -2466,6 +2478,9 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected selectInventoryItem(item: InventoryItemView): void {
+    if (this.store.busy()) {
+      return;
+    }
     const location = this.findLoadoutItem(item.id);
     if (location === undefined) {
       return;
@@ -2477,6 +2492,9 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected selectEquipmentItem(item: EquippedItemView): void {
+    if (this.store.busy()) {
+      return;
+    }
     const location = this.findLoadoutItem(item.id);
     if (location !== undefined) {
       this.selectedLoadoutItem.set(location.item.entityId);
@@ -2487,6 +2505,9 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected activateEquipmentSlot(slot: EquipmentSlotView): void {
+    if (this.store.busy()) {
+      return;
+    }
     if (slot.equipped !== null) {
       this.selectEquipmentItem(slot.equipped);
       return;
@@ -2508,6 +2529,9 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected equipDroppedItem(event: EquipmentDropEvent): void {
+    if (this.store.busy()) {
+      return;
+    }
     const location = this.findLoadoutItem(event.itemId);
     if (location !== undefined) {
       this.selectedLoadoutItem.set(location.item.entityId);
@@ -2516,6 +2540,9 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected dropIntoActivePack(event: InventoryDropEvent): void {
+    if (this.store.busy()) {
+      return;
+    }
     const location = this.findLoadoutItem(event.itemId);
     if (location !== undefined) {
       this.selectedLoadoutItem.set(location.item.entityId);
@@ -2524,6 +2551,9 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected dropIntoCampInventory(event: InventoryDropEvent): void {
+    if (this.store.busy()) {
+      return;
+    }
     const location = this.findLoadoutItem(event.itemId);
     if (location !== undefined) {
       this.selectedLoadoutItem.set(location.item.entityId);
@@ -2532,6 +2562,9 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected equipSelectedItem(): void {
+    if (this.store.busy()) {
+      return;
+    }
     const selection = this.selectedLoadoutLocation();
     if (selection !== null) {
       void this.moveLoadoutItem(selection, selection.item.equipmentSlotId);
@@ -2539,6 +2572,9 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected moveSelectedToPack(): void {
+    if (this.store.busy()) {
+      return;
+    }
     const selection = this.selectedLoadoutLocation();
     if (selection !== null) {
       void this.moveLoadoutItem(selection, null, "pack");
@@ -2546,6 +2582,9 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected moveSelectedToCampInventory(): void {
+    if (this.store.busy()) {
+      return;
+    }
     const selection = this.selectedLoadoutLocation();
     if (selection !== null) {
       void this.moveLoadoutItem(selection, null, "camp");
@@ -2553,6 +2592,9 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected clearLoadoutSelection(): void {
+    if (this.store.busy()) {
+      return;
+    }
     this.selectedLoadoutItem.set(null);
     this.loadoutAnnouncement.set(
       "Choose an item, then choose its highlighted equipment slot.",
@@ -2761,12 +2803,18 @@ export class MainMenuScreenComponent implements OnInit {
     }
 
     this.loadoutAnnouncement.set(`Moving ${selection.item.name}…`);
-    await this.store.moveLoadoutItem(
+    const admitted = await this.store.moveLoadoutItem(
       selection.item.entityId,
       selection.ownerId,
       toOwnerId,
       destinationSlotId,
     );
+    if (!admitted) {
+      this.loadoutAnnouncement.set(
+        "The loadout move was not admitted; no success was published.",
+      );
+      return;
+    }
     const error = this.store.commandError();
     if (error !== null) {
       this.loadoutAnnouncement.set(

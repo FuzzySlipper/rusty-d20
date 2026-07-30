@@ -157,8 +157,8 @@ export class SessionStore {
     fromOwnerId: number,
     toOwnerId: number,
     destinationSlotId: string | null,
-  ): Promise<void> {
-    await this.mutate((expectedRevision) =>
+  ): Promise<boolean> {
+    return this.mutate((expectedRevision) =>
       this.transport.moveLoadoutItem({
         expectedRevision,
         itemId,
@@ -283,19 +283,21 @@ export class SessionStore {
 
   private async mutate(
     request: (revision: number) => Promise<Result<GameSnapshotDto>>,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (this._busy()) {
-      return;
+      return false;
     }
     const state = this._session();
     if (state.kind !== "data") {
-      return;
+      return false;
     }
     const generation = ++this.generation;
     this._busy.set(true);
     this._commandError.set(null);
     const result = await request(state.value.revision);
+    const isCurrent = generation === this.generation;
     this.publish(generation, result, false);
+    return isCurrent;
   }
 
   private publish(

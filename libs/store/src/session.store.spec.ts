@@ -344,6 +344,55 @@ describe("SessionStore", () => {
     ]);
   });
 
+  it("reports a busy loadout command as ignored and admits a later move after settlement", async () => {
+    let releaseFirst:
+      | ((result: Result<GameSnapshotDto>) => void)
+      | undefined;
+    const firstResult = new Promise<Result<GameSnapshotDto>>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let markFirstStarted: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    const calls: string[] = [];
+    const store = new SessionStore(
+      transport({
+        moveLoadoutItem: async (request) => {
+          calls.push(
+            `${request.itemId}:${request.destinationSlotId}:${request.expectedRevision}`,
+          );
+          if (calls.length === 1) {
+            markFirstStarted?.();
+            return firstResult;
+          }
+          return { ok: true, value: { ...snapshot, revision: 3 } };
+        },
+      }),
+    );
+    await store.load();
+
+    const firstMove = store.moveLoadoutItem(201, 101, 103, null);
+    await firstStarted;
+    expect(store.busy()).toBe(true);
+    await expect(store.moveLoadoutItem(204, 103, 101, "off-hand")).resolves.toBe(
+      false,
+    );
+    expect(calls).toEqual(["201:null:1"]);
+
+    releaseFirst?.({ ok: true, value: { ...snapshot, revision: 2 } });
+    await expect(firstMove).resolves.toBe(true);
+    expect(store.busy()).toBe(false);
+    await expect(
+      store.moveLoadoutItem(204, 103, 101, "off-hand"),
+    ).resolves.toBe(true);
+    expect(calls).toEqual(["201:null:1", "204:off-hand:2"]);
+    expect(store.session()).toMatchObject({
+      kind: "data",
+      value: { revision: 3 },
+    });
+  });
+
   it("projects the authoritative session and preserves typed command rejection", async () => {
     const store = new SessionStore(
       transport({

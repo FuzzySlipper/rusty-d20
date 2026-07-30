@@ -151,6 +151,67 @@ test.describe.serial("real Rust encounter shell", () => {
       "Shared slots 4/24",
     );
 
+    let releasePendingMove: (() => void) | undefined;
+    const pendingMoveRelease = new Promise<void>((resolve) => {
+      releasePendingMove = resolve;
+    });
+    let markPendingMoveStarted: (() => void) | undefined;
+    const pendingMoveStarted = new Promise<void>((resolve) => {
+      markPendingMoveStarted = resolve;
+    });
+    let delayedMoveRequests = 0;
+    await page.route("**/api/v1/session/loadout/move", async (route) => {
+      delayedMoveRequests += 1;
+      if (delayedMoveRequests === 1) {
+        markPendingMoveStarted?.();
+        await pendingMoveRelease;
+      }
+      await route.continue();
+    });
+    await maraEquipment
+      .getByRole("button", { name: /Off Hand: Spare buckler/ })
+      .click();
+    await page.getByRole("button", { name: "Store" }).click();
+    await pendingMoveStarted;
+    const spareChain = page
+      .getByLabel("Shared camp inventory")
+      .getByRole("button", { name: /Spare chain armor/ });
+    const occupiedBody = maraEquipment.getByRole("button", {
+      name: /Body: Mara's chain armor/,
+    });
+    await expect(spareChain).toHaveAttribute("aria-disabled", "true");
+    await expect(spareChain).not.toHaveAttribute("draggable", "true");
+    await expect(occupiedBody).toHaveAttribute("aria-disabled", "true");
+    await spareChain.dragTo(occupiedBody);
+    expect(delayedMoveRequests).toBe(1);
+    await expect(page.getByRole("status")).toContainText(
+      "Moving Spare buckler",
+    );
+    await expect(page.getByRole("status")).not.toContainText(
+      "Spare chain armor moved",
+    );
+
+    releasePendingMove?.();
+    await expect(
+      maraEquipment.getByRole("button", { name: /Off Hand: empty/ }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Camp stash")).toContainText(
+      "Shared slots 5/24",
+    );
+    await page.unroute("**/api/v1/session/loadout/move");
+    await page
+      .getByLabel("Shared camp inventory")
+      .getByRole("button", { name: /Spare buckler/ })
+      .dragTo(
+        maraEquipment.getByRole("button", {
+          name: /Off Hand: empty. Compatible destination/,
+        }),
+      );
+    await expect(maraEquipment).toContainText("Spare buckler");
+    await expect(page.getByLabel("Camp stash")).toContainText(
+      "Shared slots 4/24",
+    );
+
     const chainInventory = page.getByRole("button", {
       name: /Mara's chain armor · equipped body/,
     });
