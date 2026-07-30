@@ -177,6 +177,15 @@ test("check rejects stale missing and sibling lock sources", () => {
     ),
   );
   assert.throws(() => checkEngineRevision(pathFixture), /pnpm-lock\.yaml/u);
+
+  const missingCrateFixture = copyFixture();
+  mutateFile(missingCrateFixture, "Cargo.lock", (content) =>
+    removeCargoPackage(content, "core-ids"),
+  );
+  assert.throws(
+    () => checkEngineRevision(missingCrateFixture),
+    /Cargo\.lock: expected exactly one locked package core-ids; observed 0/u,
+  );
 });
 
 test("check requires derived runtime and boundary consumers without copied commits", () => {
@@ -437,6 +446,16 @@ function writeText(root, relativePath, value, createParent = true) {
 function mutateFile(root, relativePath, mutate) {
   const path = resolve(root, relativePath);
   writeFileSync(path, mutate(readFileSync(path, "utf8")));
+}
+
+function removeCargoPackage(content, packageName) {
+  const marker = `[[package]]\nname = "${packageName}"\n`;
+  const start = content.indexOf(marker);
+  assert.notEqual(start, -1, `fixture contains ${packageName}`);
+  const next = content.indexOf("\n[[package]]\n", start + marker.length);
+  return next === -1
+    ? content.slice(0, start)
+    : `${content.slice(0, start)}${content.slice(next + 1)}`;
 }
 
 function worktreeCount(root) {

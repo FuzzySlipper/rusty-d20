@@ -355,6 +355,27 @@ function checkCargoLock(repoRoot, source, violations) {
   const relativePath = "Cargo.lock";
   const content = readFile(repoRoot, relativePath, violations);
   if (content === null) return;
+  const packageBlocks = content
+    .split(/\n(?=\[\[package\]\]\n)/u)
+    .filter((block) => block.startsWith("[[package]]\n"));
+  const expected = `git+${ENGINE_REPOSITORY}?rev=${source.commit}#${source.commit}`;
+  for (const crate of ENGINE_CRATES) {
+    const matches = packageBlocks.filter(
+      (block) => block.match(/^name = "([^"]+)"$/mu)?.[1] === crate,
+    );
+    if (matches.length !== 1) {
+      violations.push(
+        `${relativePath}: expected exactly one locked package ${crate}; observed ${String(matches.length)}`,
+      );
+      continue;
+    }
+    const observed = matches[0].match(/^source = "([^"]+)"$/mu)?.[1];
+    if (observed !== expected) {
+      violations.push(
+        `${relativePath}: ${crate} source expected ${expected}; observed ${String(observed)}`,
+      );
+    }
+  }
   const sources = [
     ...content.matchAll(/^source = "(git\+[^"]*rusty-engine[^"]*)"$/gimu),
   ].map((match) => match[1]);
@@ -362,7 +383,6 @@ function checkCargoLock(repoRoot, source, violations) {
     violations.push(`${relativePath}: missing locked Engine sources`);
     return;
   }
-  const expected = `git+${ENGINE_REPOSITORY}?rev=${source.commit}#${source.commit}`;
   for (const observed of new Set(sources)) {
     if (observed !== expected) {
       violations.push(
