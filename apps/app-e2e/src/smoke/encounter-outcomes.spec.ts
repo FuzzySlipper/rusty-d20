@@ -559,6 +559,7 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
         page.getByLabel("Adventure complete: victory"),
       ).toContainText("Ember's Wake complete");
       await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 
       await host.restart();
       const reopened = await sessionSnapshot(request, host.baseUrl);

@@ -2,9 +2,10 @@
 
 `engine-source.json` is the only hand-edited Rusty Engine source declaration.
 It selects one exact lowercase public commit for every Engine Rust crate and
-rules package in this repository. Cargo manifests, package manifests, build
-policy, and both lockfiles are active carriers of that same value; runtime
-provenance and boundary checks derive it from the canonical manifest.
+TypeScript package in this repository. Cargo manifests, product and rules
+package manifests, both pnpm build policies, and all three lockfiles are active
+carriers of that same value; runtime provenance and boundary checks derive it
+from the canonical manifest.
 
 Check the current revision and every carrier:
 
@@ -27,7 +28,7 @@ Apply an update:
 The updater proves the exact commit is publicly fetchable, rejects dirty
 carrier files and undeclared adjacent Engine sources, creates a detached
 candidate worktree at the caller's exact head, rewrites only registered
-carriers, regenerates both lockfiles with pinned tools, and validates the
+carriers, regenerates all three lockfiles with pinned tools, and validates the
 candidate before applying its scoped diff. It rechecks the caller head and
 carrier cleanliness immediately before applying. Failure and dry-run paths
 remove the temporary worktree and leave the caller carriers unchanged.
@@ -38,6 +39,7 @@ commit all registered carrier and lockfile changes together:
 ```bash
 ./scripts/verify.sh
 git diff -- engine-source.json rust/crates/rusty-d20/Cargo.toml Cargo.lock \
+  package.json pnpm-workspace.yaml pnpm-lock.yaml \
   rules/packages/d20-authoring/package.json rules/pnpm-workspace.yaml \
   rules/pnpm-lock.yaml
 ```

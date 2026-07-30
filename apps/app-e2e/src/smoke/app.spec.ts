@@ -123,14 +123,35 @@ test.describe.serial("real Rust encounter shell", () => {
         .getByRole("heading", { name: "Warden's Gate Pass" })
         .first(),
     ).toBeVisible();
-    await expect(
-      page.getByRole("img", {
-        name: /Warden's Gate Pass, facing east at cell 1, 1/,
-      }),
-    ).toBeVisible();
+    const dungeonViewport = page.getByRole("img", {
+      name: /Warden's Gate Pass, facing east at cell 1, 1/,
+    });
+    await expect(dungeonViewport).toBeVisible();
+    await expect(dungeonViewport).toHaveAttribute(
+      "data-renderer-backend",
+      "rusty-engine-three",
+    );
+    await expect(dungeonViewport.locator("canvas")).toBeVisible();
+    await expect(dungeonViewport.getByRole("alert")).toHaveCount(0);
+    await testInfo.attach("engine-dungeon-corridor.png", {
+      body: await dungeonViewport.screenshot(),
+      contentType: "image/png",
+    });
+    for (const facing of ["north", "west", "south", "east"]) {
+      await page.getByRole("button", { name: "↶ Left" }).click();
+      await expect(
+        page.getByRole("img", {
+          name: new RegExp(`Warden's Gate Pass, facing ${facing} at cell 1, 1`),
+        }),
+      ).toBeVisible();
+      await expect(page.locator("aui-dungeon-viewport canvas")).toBeVisible();
+    }
     for (let step = 0; step < 4; step += 1) {
       await page.getByRole("button", { name: "↑ Forward" }).click();
     }
+    const movedDungeonViewport = page.locator("aui-dungeon-viewport");
+    await expect(movedDungeonViewport.locator("canvas")).toBeVisible();
+    await expect(movedDungeonViewport.getByRole("alert")).toHaveCount(0);
     await expect(
       page.getByRole("heading", { name: "Silent murder holes" }),
     ).toBeVisible();
@@ -332,7 +353,6 @@ test.describe.serial("real Rust encounter shell", () => {
 
 async function continueIfNeeded(page: Page): Promise<void> {
   const button = page.getByRole("button", { name: "Continue Adventure" });
-  if (await button.isVisible()) {
-    await button.click();
-  }
+  await expect(button).toBeVisible();
+  await button.click();
 }

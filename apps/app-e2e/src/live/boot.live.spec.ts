@@ -57,6 +57,13 @@ liveScenario(
         screenshot: true,
         layerSnapshot: {
           viewport: await page.getByRole("img").getAttribute("aria-label"),
+          renderer: await page
+            .getByRole("img")
+            .getAttribute("data-renderer-backend"),
+          rendererErrors: await page
+            .getByRole("img")
+            .getByRole("alert")
+            .count(),
           status: await page.getByLabel("Party status").innerText(),
         },
       });

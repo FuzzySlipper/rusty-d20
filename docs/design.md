@@ -70,6 +70,12 @@ authored trigger cells, so later traversal can cross them while the next
 unconsumed trigger still follows ordered admission. The fixed three-depth view
 emits neutral all-wall records after the first opaque front wall; the strict
 browser decoder rejects any non-neutral topology behind that occluder.
+The renderer library adapts only those relative records into Rusty Engine's
+retained-frame contract and mounts the exact-pinned Engine Three/WebGL surface.
+Floor, ceiling, side-wall, and front-wall cuboids therefore use the shared
+camera, projection, retained replacement, resize, render loop, and disposal
+process. The browser stops frame construction at the first opaque wall and
+never reconstructs hidden topology or gameplay state.
 
 `D20Session` stages heterogeneous action work in an `EntityState` clone and
 publishes only after every d20 and Engine service succeeds. Damage, equipment,

@@ -23,10 +23,15 @@ checkpoint, and a terminal ending; Ember's Wake has one encounter.
   rewards, or broader Ruleweaver content.
 - Each path has one bounded floor with step-forward/backward and turn-left/right
   movement, collision, hidden triggers, landmarks, a three-depth corridor
-  projection, compass, and discovered-cell map. Warden's Gate adds one claimed
-  treasure, one treasure-gated door, and a safe-return checkpoint. There are no
-  stairs, multiple floors, traps, roaming encounters, lighting, navigation
-  audio, or exploration-time party selection yet.
+  projection rendered as a retained Rusty Engine Three/WebGL scene, compass,
+  and discovered-cell map. Warden's Gate adds one claimed treasure, one
+  treasure-gated door, and a safe-return checkpoint. The current visual scene
+  uses untextured floor, ceiling, and wall cuboids. Although the pinned Engine
+  renderer supports sprites and billboard hosts, Rust does not yet project an
+  exploration-visible actor or prop appearance, so the game does not invent a
+  browser-only sprite to exercise them. There are no stairs, multiple floors,
+  traps, roaming encounters, authored lighting, navigation audio, or
+  exploration-time party selection yet.
 - The selected Ruleweaver foundation is translated: six attributes, four
   defenses, Standard/Bonus/Reaction/Movement budget definitions, shaped
   actions, Held/Unsettled condition clauses, and explicit armor/implement

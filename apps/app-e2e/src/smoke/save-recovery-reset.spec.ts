@@ -44,6 +44,8 @@ test('visible save identity guards reset and malformed persistence has a usable 
     await page.getByRole('button', { name: 'Save', exact: true }).click();
 
     const resetButton = page.getByRole('button', { name: 'Reset / New Adventure' });
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+    await expect(resetButton).toBeEnabled();
     await resetButton.focus();
     await page.keyboard.press('Enter');
     const dialog = page.getByRole('alertdialog', { name: 'Discard this adventure?' });

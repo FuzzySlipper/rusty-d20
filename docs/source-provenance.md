@@ -31,6 +31,20 @@ to the same revision and exact repository subpaths:
 Only those exact git package prepare scripts are allowed by
 `rules/pnpm-workspace.yaml`.
 
+The product browser workspace independently consumes the public Engine
+rendering boundary from the same canonical revision:
+
+- `@rusty-engine/render-contracts`
+- `@rusty-engine/render-projection`
+- `@rusty-engine/renderer-host`
+- `@rusty-engine/renderer-three`
+
+`pnpm-lock.yaml` records each exact codeload revision and renderer package
+subpath. `pnpm-workspace.yaml` permits prepare scripts only for those exact
+package identities. The browser imports package-root APIs; it has no sibling
+link, deep import, private Three scene, camera, render loop, or copied Engine
+implementation.
+
 ## Rusty Engine UI donor
 
 - Repository: `FuzzySlipper/rusty-engine-ui`
@@ -189,15 +203,22 @@ consumers.
 
 ## Gold Box exploration disposition
 
-The exploration foundation keeps the Engine and UI donor pins unchanged.
+The exploration foundation initially kept the Engine and UI donor pins
+unchanged.
 Warden's Gate and Ember's Wake now include original bounded dungeon topology,
 encounter placements, and landmarks in their existing authored packages. Rust
 owns semantic admission, navigation state, collision, discovery, interaction,
 trigger activation, persistence, and projection. The retained compass and
-minimap are now connected only to those Rust-projected facts, while the new
-renderer corridor remains product-neutral presentation. No Engine mechanism,
-Ruleweaver bulk import, Asha runtime, fixture transport, browser rules
-evaluator, or direct browser encounter command was introduced.
+minimap are connected only to those Rust-projected facts.
+
+Task 6418 replaces the original CSS corridor illusion with the public Engine
+renderer packages already present at the reviewed Engine revision. Rusty D20
+maps its bounded relative view to retained floor, ceiling, side-wall, and
+front-wall cuboids; Engine owns neutral projection, Three/WebGL realization,
+camera, resize, render scheduling, fail-atomic frame application, and disposal.
+No Engine pin change, new Engine mechanism, Ruleweaver bulk import, Asha
+runtime, fixture transport, browser rules evaluator, or direct browser
+encounter command was introduced.
 
 ## Ruleweaver foundation translation disposition
 

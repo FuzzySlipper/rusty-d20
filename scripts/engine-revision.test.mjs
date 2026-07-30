@@ -118,6 +118,27 @@ test("check rejects rules package and allow-build drift", () => {
     () => checkEngineRevision(unexpectedFixture),
     /unexpected Engine package @rusty-engine\/unexpected/u,
   );
+
+  const rendererFixture = copyFixture();
+  mutateFile(rendererFixture, "package.json", (content) =>
+    content.replace(
+      "@rusty-engine/renderer-host",
+      "@rusty-engine/renamed-renderer-host",
+    ),
+  );
+  assert.throws(() => checkEngineRevision(rendererFixture), /package\.json/u);
+
+  const rootWorkspaceFixture = copyFixture();
+  mutateFile(rootWorkspaceFixture, "pnpm-workspace.yaml", (content) =>
+    content.replace(
+      '"@rusty-engine/renderer-three@',
+      '"@rusty-engine/renamed-renderer-three@',
+    ),
+  );
+  assert.throws(
+    () => checkEngineRevision(rootWorkspaceFixture),
+    /pnpm-workspace\.yaml/u,
+  );
 });
 
 test("check rejects adjacent and case-variant Engine sources", () => {
@@ -157,7 +178,11 @@ unexpected = { git = "https://github.com/FuzzySlipper/Rusty-Engine", rev = "${NE
 });
 
 test("check rejects stale missing and sibling lock sources", () => {
-  for (const relativePath of ["Cargo.lock", "rules/pnpm-lock.yaml"]) {
+  for (const relativePath of [
+    "Cargo.lock",
+    "pnpm-lock.yaml",
+    "rules/pnpm-lock.yaml",
+  ]) {
     const staleFixture = copyFixture();
     mutateFile(staleFixture, relativePath, (content) =>
       content.replace(CURRENT, NEXT),
@@ -185,6 +210,21 @@ test("check rejects stale missing and sibling lock sources", () => {
   assert.throws(
     () => checkEngineRevision(missingCrateFixture),
     /Cargo\.lock: expected exactly one locked package core-ids; observed 0/u,
+  );
+
+  const missingRendererImporterFixture = copyFixture();
+  mutateFile(missingRendererImporterFixture, "pnpm-lock.yaml", (content) =>
+    content.replace(
+      new RegExp(
+        `^      '@rusty-engine/render-contracts':\\n        specifier: [^\\n]+\\n        version: [^\\n]+\\n`,
+        "mu",
+      ),
+      "",
+    ),
+  );
+  assert.throws(
+    () => checkEngineRevision(missingRendererImporterFixture),
+    /missing exact importer for @rusty-engine\/render-contracts/u,
   );
 });
 
@@ -412,7 +452,11 @@ async function applySyntheticUpdate(fixture, commit) {
 }
 
 async function fakeRegenerate(candidate, previousCommit, commit) {
-  for (const relativePath of ["Cargo.lock", "rules/pnpm-lock.yaml"]) {
+  for (const relativePath of [
+    "Cargo.lock",
+    "pnpm-lock.yaml",
+    "rules/pnpm-lock.yaml",
+  ]) {
     mutateFile(candidate, relativePath, (content) =>
       content.replaceAll(previousCommit, commit),
     );

@@ -13,6 +13,10 @@ export const ENGINE_REPOSITORY = "https://github.com/FuzzySlipper/rusty-engine";
 export const COMMIT_PATTERN = /^[0-9a-f]{40}$/u;
 
 export const ENGINE_PACKAGES = new Map([
+  ["@rusty-engine/render-contracts", "render/packages/render-contracts"],
+  ["@rusty-engine/render-projection", "render/packages/render-projection"],
+  ["@rusty-engine/renderer-host", "render/packages/renderer-host"],
+  ["@rusty-engine/renderer-three", "render/packages/renderer-three"],
   [
     "@rusty-engine/gameplay-rules-authoring",
     "rules/packages/gameplay-rules-authoring",
@@ -21,6 +25,29 @@ export const ENGINE_PACKAGES = new Map([
     "@rusty-engine/gameplay-rules-contracts",
     "rules/packages/gameplay-rules-contracts",
   ],
+]);
+
+const RENDER_ENGINE_PACKAGES = new Set([
+  "@rusty-engine/render-contracts",
+  "@rusty-engine/render-projection",
+  "@rusty-engine/renderer-host",
+  "@rusty-engine/renderer-three",
+]);
+const RULES_ENGINE_PACKAGES = new Set([
+  "@rusty-engine/gameplay-rules-authoring",
+  "@rusty-engine/gameplay-rules-contracts",
+]);
+const ENGINE_PACKAGE_MANIFESTS = new Map([
+  ["package.json", RENDER_ENGINE_PACKAGES],
+  ["rules/packages/d20-authoring/package.json", RULES_ENGINE_PACKAGES],
+]);
+const ENGINE_PNPM_WORKSPACES = new Map([
+  ["pnpm-workspace.yaml", RENDER_ENGINE_PACKAGES],
+  ["rules/pnpm-workspace.yaml", RULES_ENGINE_PACKAGES],
+]);
+const ENGINE_PNPM_LOCKS = new Map([
+  ["pnpm-lock.yaml", RENDER_ENGINE_PACKAGES],
+  ["rules/pnpm-lock.yaml", RULES_ENGINE_PACKAGES],
 ]);
 
 export const ENGINE_CRATES = [
@@ -41,6 +68,9 @@ export const ACTIVE_CARRIER_PATHS = [
   "engine-source.json",
   "rust/crates/rusty-d20/Cargo.toml",
   "Cargo.lock",
+  "package.json",
+  "pnpm-workspace.yaml",
+  "pnpm-lock.yaml",
   "rules/packages/d20-authoring/package.json",
   "rules/pnpm-workspace.yaml",
   "rules/pnpm-lock.yaml",
@@ -54,9 +84,7 @@ export const DERIVED_CONSUMER_PATHS = [
 ];
 
 const REPAIR_COMMAND = "./scripts/engine-revision update <sha>";
-const DECLARED_PACKAGE_MANIFESTS = new Set([
-  "rules/packages/d20-authoring/package.json",
-]);
+const DECLARED_PACKAGE_MANIFESTS = new Set(ENGINE_PACKAGE_MANIFESTS.keys());
 const DECLARED_CARGO_MANIFESTS = new Set(["rust/crates/rusty-d20/Cargo.toml"]);
 const MANIFEST_SCAN_IGNORES = new Set([
   ".git",
@@ -110,15 +138,27 @@ export function checkEngineRevision(repoRoot) {
   const violations = [];
   checkCargoManifest(repoRoot, source, violations);
   checkCargoLock(repoRoot, source, violations);
-  checkPackageManifest(
-    repoRoot,
-    "rules/packages/d20-authoring/package.json",
-    new Set(ENGINE_PACKAGES.keys()),
-    source,
-    violations,
-  );
-  checkPnpmWorkspace(repoRoot, source, violations);
-  checkPnpmLock(repoRoot, source, violations);
+  for (const [relativePath, expectedNames] of ENGINE_PACKAGE_MANIFESTS) {
+    checkPackageManifest(
+      repoRoot,
+      relativePath,
+      expectedNames,
+      source,
+      violations,
+    );
+  }
+  for (const [relativePath, expectedNames] of ENGINE_PNPM_WORKSPACES) {
+    checkPnpmWorkspace(
+      repoRoot,
+      relativePath,
+      expectedNames,
+      source,
+      violations,
+    );
+  }
+  for (const [relativePath, expectedNames] of ENGINE_PNPM_LOCKS) {
+    checkPnpmLock(repoRoot, relativePath, expectedNames, source, violations);
+  }
   checkAdjacentDependencyManifests(repoRoot, violations);
   checkDerivedConsumers(repoRoot, source, violations);
   if (violations.length > 0) {
@@ -213,17 +253,22 @@ export function rewriteActiveCarriers(repoRoot, previousCommit, commit) {
     previousCommit,
     commit,
   );
-  rewritePackageManifest(
-    resolve(repoRoot, "rules/packages/d20-authoring/package.json"),
-    new Set(ENGINE_PACKAGES.keys()),
-    previousCommit,
-    commit,
-  );
-  rewriteWorkspacePolicy(
-    resolve(repoRoot, "rules/pnpm-workspace.yaml"),
-    previousCommit,
-    commit,
-  );
+  for (const [relativePath, expectedNames] of ENGINE_PACKAGE_MANIFESTS) {
+    rewritePackageManifest(
+      resolve(repoRoot, relativePath),
+      expectedNames,
+      previousCommit,
+      commit,
+    );
+  }
+  for (const [relativePath, expectedNames] of ENGINE_PNPM_WORKSPACES) {
+    rewriteWorkspacePolicy(
+      resolve(repoRoot, relativePath),
+      expectedNames,
+      previousCommit,
+      commit,
+    );
+  }
 }
 
 export async function provePublicCommit(repository, commit) {
@@ -281,16 +326,18 @@ async function regenerateLocks(candidate) {
   run("cargo", ["metadata", "--format-version", "1"], {
     cwd: candidate,
   });
-  run(
-    "pnpm",
-    [
-      "install",
-      "--lockfile-only",
-      "--ignore-scripts",
-      "--frozen-lockfile=false",
-    ],
-    { cwd: resolve(candidate, "rules") },
-  );
+  for (const relativeRoot of [".", "rules"]) {
+    run(
+      "pnpm",
+      [
+        "install",
+        "--lockfile-only",
+        "--ignore-scripts",
+        "--frozen-lockfile=false",
+      ],
+      { cwd: resolve(candidate, relativeRoot) },
+    );
+  }
 }
 
 async function validateCandidate(candidate) {
@@ -434,8 +481,13 @@ function checkPackageManifest(
   }
 }
 
-function checkPnpmWorkspace(repoRoot, source, violations) {
-  const relativePath = "rules/pnpm-workspace.yaml";
+function checkPnpmWorkspace(
+  repoRoot,
+  relativePath,
+  expectedNames,
+  source,
+  violations,
+) {
   const content = readFile(repoRoot, relativePath, violations);
   if (content === null) return;
   const observed = [
@@ -443,14 +495,20 @@ function checkPnpmWorkspace(repoRoot, source, violations) {
       /^\s+"([^"]*(?:@rusty-engine\/|FuzzySlipper\/rusty-engine)[^"]*)":\s+true$/gimu,
     ),
   ].map((match) => match[1]);
-  const expected = [...ENGINE_PACKAGES.entries()].map(
-    ([name, path]) => `${name}@${codeloadSpecifier(source.commit, path)}`,
-  );
+  const expected = [...expectedNames].map((name) => {
+    const path = ENGINE_PACKAGES.get(name);
+    return `${name}@${codeloadSpecifier(source.commit, path)}`;
+  });
   compareSets(relativePath, expected, observed, violations);
 }
 
-function checkPnpmLock(repoRoot, source, violations) {
-  const relativePath = "rules/pnpm-lock.yaml";
+function checkPnpmLock(
+  repoRoot,
+  relativePath,
+  expectedNames,
+  source,
+  violations,
+) {
   const content = readFile(repoRoot, relativePath, violations);
   if (content === null) return;
   const references = [
@@ -468,16 +526,23 @@ function checkPnpmLock(repoRoot, source, violations) {
       );
     }
   }
-  for (const [name, path] of ENGINE_PACKAGES) {
-    if (
-      !content.includes(`${name}:`) &&
-      !content.includes(`${name}@`) &&
-      !content.includes(`'${name}@`)
-    ) {
-      violations.push(`${relativePath}: missing locked package ${name}`);
+  for (const name of expectedNames) {
+    const path = ENGINE_PACKAGES.get(name);
+    const expectedSpecifier = packageSpecifier(source.commit, path);
+    const importerPattern = new RegExp(
+      `^\\s+'${escapeRegExp(name)}':\\n\\s+specifier: ${escapeRegExp(expectedSpecifier)}$`,
+      "mu",
+    );
+    if (!importerPattern.test(content)) {
+      violations.push(
+        `${relativePath}: missing exact importer for ${name} at ${expectedSpecifier}`,
+      );
     }
-    if (!content.includes(`#path:${path}`)) {
-      violations.push(`${relativePath}: missing locked Engine path ${path}`);
+    const expectedPackageKey = `'${name}@${codeloadSpecifier(source.commit, path)}':`;
+    if (!content.includes(expectedPackageKey)) {
+      violations.push(
+        `${relativePath}: missing exact locked package identity ${expectedPackageKey}`,
+      );
     }
   }
   const enginePaths = [
@@ -486,7 +551,10 @@ function checkPnpmLock(repoRoot, source, violations) {
     ),
   ].map((match) => match[1]);
   for (const observed of new Set(enginePaths)) {
-    if (![...ENGINE_PACKAGES.values()].includes(observed)) {
+    const expectedPaths = [...expectedNames].map((name) =>
+      ENGINE_PACKAGES.get(name),
+    );
+    if (!expectedPaths.includes(observed)) {
       violations.push(
         `${relativePath}: unexpected Engine package path ${observed}`,
       );
@@ -619,9 +687,10 @@ function rewritePackageManifest(path, expectedNames, previousCommit, commit) {
   writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-function rewriteWorkspacePolicy(path, previousCommit, commit) {
+function rewriteWorkspacePolicy(path, expectedNames, previousCommit, commit) {
   let content = readFileSync(path, "utf8");
-  for (const [name, packagePath] of ENGINE_PACKAGES) {
+  for (const name of expectedNames) {
+    const packagePath = ENGINE_PACKAGES.get(name);
     const before = `"${name}@${codeloadSpecifier(previousCommit, packagePath)}": true`;
     const after = `"${name}@${codeloadSpecifier(commit, packagePath)}": true`;
     if (!content.includes(before)) {

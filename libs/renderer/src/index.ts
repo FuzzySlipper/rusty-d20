@@ -4,9 +4,31 @@ import {
   computed,
   input,
   output,
+  signal,
+  viewChild,
+} from "@angular/core";
+import type {
+  AfterViewInit,
+  ElementRef,
+  OnChanges,
+  OnDestroy,
 } from "@angular/core";
 import { StatusLineComponent } from "@rusty-d20/components";
 import type { RuntimeReadoutView } from "@rusty-d20/domain";
+import type { RendererSurface } from "@rusty-engine/renderer-host";
+
+import {
+  createDungeonRenderFrame,
+  type DungeonRenderFrame,
+  type DungeonViewportView,
+} from "./dungeon-frame";
+
+export {
+  createDungeonRenderFrame,
+  type DungeonDepthView,
+  type DungeonRenderFrame,
+  type DungeonViewportView,
+} from "./dungeon-frame";
 
 @Component({
   imports: [StatusLineComponent],
@@ -25,22 +47,6 @@ export class StatusRendererComponent {
   readonly status = input.required<RuntimeReadoutView>();
 }
 
-export interface DungeonDepthView {
-  readonly depth: number;
-  readonly frontBlocked: boolean;
-  readonly leftBlocked: boolean;
-  readonly rightBlocked: boolean;
-}
-
-export interface DungeonViewportView {
-  readonly title: string;
-  readonly wallStyle: string;
-  readonly facing: string;
-  readonly x: number;
-  readonly y: number;
-  readonly depths: readonly DungeonDepthView[];
-}
-
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: "aui-dungeon-viewport",
@@ -53,14 +59,7 @@ export interface DungeonViewportView {
 
       .viewport {
         aspect-ratio: 16 / 9;
-        background:
-          linear-gradient(
-            to bottom,
-            #111923 0 48%,
-            #332b22 48% 52%,
-            #11100f 52%
-          ),
-          #090d12;
+        background: #090d12;
         border: 2px solid var(--rusty-engine-border);
         border-radius: var(--rusty-engine-radius);
         box-shadow: inset 0 0 70px rgb(0 0 0 / 0.8);
@@ -81,32 +80,12 @@ export interface DungeonViewportView {
         position: absolute;
       }
 
-      .depth {
-        border-color: color-mix(
-          in srgb,
-          var(--rusty-engine-accent) 16%,
-          #26313b
-        );
-        border-style: solid;
-        border-width: 0;
-        inset: calc(var(--depth) * 10%);
+      .surface {
+        display: block;
+        height: 100%;
+        inset: 0;
         position: absolute;
-      }
-
-      .depth--left {
-        border-left-width: clamp(16px, 5vw, 70px);
-      }
-
-      .depth--right {
-        border-right-width: clamp(16px, 5vw, 70px);
-      }
-
-      .depth--front {
-        background:
-          linear-gradient(135deg, rgb(255 255 255 / 0.04), transparent 44%),
-          color-mix(in srgb, var(--rusty-engine-surface-solid) 88%, #413626);
-        border-width: 1px;
-        box-shadow: inset 0 0 34px rgb(0 0 0 / 0.55);
+        width: 100%;
       }
 
       .reticle {
@@ -134,6 +113,18 @@ export interface DungeonViewportView {
         right: 0;
         z-index: 3;
       }
+
+      .renderer-error {
+        background: rgb(62 14 16 / 0.94);
+        border: 1px solid rgb(255 135 135 / 0.5);
+        left: 50%;
+        max-width: min(86%, 560px);
+        padding: 12px 14px;
+        position: absolute;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 4;
+      }
     `,
   ],
   template: `
@@ -150,15 +141,17 @@ export interface DungeonViewportView {
         view().y
       "
       [attr.data-wall-style]="view().wallStyle"
+      data-renderer-backend="rusty-engine-three"
     >
-      @for (depth of reversedDepths(); track depth.depth) {
-        <span
-          class="depth"
-          [class.depth--left]="depth.leftBlocked"
-          [class.depth--right]="depth.rightBlocked"
-          [class.depth--front]="depth.frontBlocked"
-          [style.--depth]="depth.depth"
-        ></span>
+      <canvas
+        #dungeonCanvas
+        class="surface"
+        aria-hidden="true"
+        width="960"
+        height="540"
+      ></canvas>
+      @if (rendererError(); as message) {
+        <p class="renderer-error" role="alert">{{ message }}</p>
       }
       <span class="reticle" aria-hidden="true">◇</span>
       <div class="caption">
@@ -168,12 +161,72 @@ export interface DungeonViewportView {
     </section>
   `,
 })
-export class DungeonViewportComponent {
+export class DungeonViewportComponent
+  implements AfterViewInit, OnChanges, OnDestroy
+{
   readonly view = input.required<DungeonViewportView>();
+  protected readonly rendererError = signal<string | null>(null);
+  private readonly canvas =
+    viewChild.required<ElementRef<HTMLCanvasElement>>("dungeonCanvas");
+  private surface: RendererSurface | null = null;
+  private activeHandles: DungeonRenderFrame["handles"] = [];
+  private destroyed = false;
 
-  protected reversedDepths(): readonly DungeonDepthView[] {
-    return [...this.view().depths].reverse();
+  async ngAfterViewInit(): Promise<void> {
+    try {
+      const { mountRendererSurface } = await import(
+        "@rusty-engine/renderer-host"
+      );
+      if (this.destroyed) {
+        return;
+      }
+      const scene = createDungeonRenderFrame(this.view());
+      this.surface = mountRendererSurface(this.canvas().nativeElement, {
+        autoStart: true,
+        clearColor: 0x070b0e,
+        frame: scene.frame,
+        pixelRatio: Math.min(globalThis.devicePixelRatio ?? 1, 2),
+        projection: { fovYDegrees: 58, near: 0.1, far: 20 },
+      });
+      this.surface.setCameraPose({
+        position: [0, 1.35, 0.55],
+        pitchDegrees: 0,
+        yawDegrees: 0,
+      });
+      this.surface.renderOnce();
+      this.activeHandles = scene.handles;
+      this.rendererError.set(null);
+    } catch (error) {
+      this.rendererError.set(rendererFailureMessage(error));
+    }
   }
+
+  ngOnChanges(): void {
+    if (this.surface === null) {
+      return;
+    }
+    try {
+      const scene = createDungeonRenderFrame(this.view(), this.activeHandles);
+      this.surface.applyFrame(scene.frame);
+      this.surface.renderOnce();
+      this.activeHandles = scene.handles;
+      this.rendererError.set(null);
+    } catch (error) {
+      this.rendererError.set(rendererFailureMessage(error));
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.destroyed = true;
+    this.surface?.dispose();
+    this.surface = null;
+    this.activeHandles = [];
+  }
+}
+
+function rendererFailureMessage(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error);
+  return `The Rusty Engine dungeon renderer could not present this view: ${detail}`;
 }
 
 export interface TacticalBoardCellView {
