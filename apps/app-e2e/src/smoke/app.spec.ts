@@ -48,6 +48,76 @@ async function takeCameraTransitionWitness(
   });
 }
 
+async function expectCombatOverlayLayout(
+  page: Page,
+  minimumControlHeight = 0,
+): Promise<void> {
+  const layout = await page.evaluate(() => {
+    const action = document.querySelector(".combat-action-panel");
+    const log = document.querySelector(".combat-log-panel");
+    const status = document.querySelector(".combat-status");
+    if (
+      !(action instanceof HTMLElement) ||
+      !(log instanceof HTMLElement) ||
+      !(status instanceof HTMLElement)
+    ) {
+      throw new Error("combat overlay panels are missing");
+    }
+    const actionBox = action.getBoundingClientRect();
+    const logBox = log.getBoundingClientRect();
+    const statusBox = status.getBoundingClientRect();
+    const controls = Array.from(action.querySelectorAll("button"), (control) =>
+      control.getBoundingClientRect(),
+    );
+    return {
+      action: {
+        bottom: actionBox.bottom,
+        left: actionBox.left,
+        right: actionBox.right,
+        top: actionBox.top,
+      },
+      controls: controls.map((control) => ({
+        height: control.height,
+        left: control.left,
+        right: control.right,
+      })),
+      log: {
+        bottom: logBox.bottom,
+        clientWidth: log.clientWidth,
+        left: logBox.left,
+        right: logBox.right,
+        scrollWidth: log.scrollWidth,
+        top: logBox.top,
+      },
+      status: {
+        bottom: statusBox.bottom,
+        top: statusBox.top,
+      },
+      viewportHeight: window.innerHeight,
+      viewportWidth: window.innerWidth,
+    };
+  });
+
+  expect(layout.action.left).toBeGreaterThanOrEqual(0);
+  expect(layout.action.right).toBeLessThanOrEqual(layout.log.left);
+  expect(layout.log.right).toBeLessThanOrEqual(layout.viewportWidth);
+  expect(layout.action.bottom, JSON.stringify(layout)).toBeCloseTo(
+    layout.log.bottom,
+    0,
+  );
+  expect(layout.action.bottom).toBeGreaterThan(layout.viewportHeight * 0.9);
+  expect(layout.status.bottom).toBeLessThanOrEqual(layout.action.top);
+  expect(layout.log.scrollWidth).toBeLessThanOrEqual(layout.log.clientWidth);
+  expect(
+    layout.controls.every(
+      (control) =>
+        control.height >= minimumControlHeight &&
+        control.left >= layout.action.left &&
+        control.right <= layout.action.right,
+    ),
+  ).toBe(true);
+}
+
 async function expectRendererCanvasAtPoint(
   page: Page,
   x: number,
@@ -748,6 +818,7 @@ test.describe.serial("real Rust encounter shell", () => {
     await expect(page.locator("aui-tactical-board")).toHaveCount(0);
     await expect(page.getByLabel("Combat actions")).toBeVisible();
     await expect(page.getByLabel("Combat log")).toBeVisible();
+    await expectCombatOverlayLayout(page);
     await testInfo.attach("renderer-root-encounter-desktop.png", {
       body: await page.screenshot(),
       contentType: "image/png",
@@ -761,6 +832,7 @@ test.describe.serial("real Rust encounter shell", () => {
     await expect(tacticalBoard).toBeVisible();
     await expect(page.getByLabel("Combat actions")).toBeVisible();
     await expect(page.getByLabel("Combat log")).toBeVisible();
+    await expectCombatOverlayLayout(page, 44);
     await testInfo.attach("renderer-root-encounter-mobile.png", {
       body: await page.screenshot(),
       contentType: "image/png",

@@ -107,6 +107,19 @@ in those named presentation layers. The aspect-fitted overhead camera and
 canvas keyboard cursor are presentation facts suitable for replacement by a
 later native input host.
 
+The renderer-first product loop is certified as one composition rather than a
+set of isolated scene demos. Adventure selection and camp drag/loadout commands,
+save/reopen, exploration inventory and tweened navigation, trigger-driven
+encounter entry, action-first retained-grid targeting, reactions, tactical
+movement, outcomes, recovery, continuation, terminal completion, guarded reset,
+malformed-save recovery, and classified transport/protocol failures all retain
+the same canvas, strict projection, store, and Rust host boundaries. At narrow
+widths the initiative strip remains above the board, status remains on the
+upper edge, and the independently scrollable action and combat-log panels share
+disjoint bottom-left and bottom-right safe-area regions. Hotbar controls wrap,
+log text wraps within its panel, and touch controls have a 44-pixel minimum
+height without creating a second mobile gameplay layout.
+
 `D20Session` stages heterogeneous action work in an `EntityState` clone and
 publishes only after every d20 and Engine service succeeds. Damage, equipment,
 effects, stats, tracks, and attributed sources remain Engine mechanisms.
@@ -298,3 +311,15 @@ Round advancement is an explicit downstream consequence of resolving the
 opposition action and expires recorded effect instances atomically before the
 next player decision. There is no clock callback, tick subscription, event
 bus, or persisted closure.
+
+## Native-host boundary
+
+The reusable host boundary is the Rust-owned projection and typed command
+contract plus the public Engine retained-frame, camera, picking, and renderer
+surface processes. The current Angular application still owns DOM overlay
+composition, browser drag/touch/keyboard translation, focus semantics,
+`requestAnimationFrame`, `matchMedia`, `ResizeObserver`, same-origin HTTP, and
+the browser save/reset presentation. A future non-web game must supply its own
+window, UI toolkit, input translation, transport/storage adapter, and
+accessibility behavior. This browser implementation is structured to make that
+consumer possible; it is not itself a native host.

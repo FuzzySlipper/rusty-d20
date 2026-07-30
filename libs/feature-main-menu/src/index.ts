@@ -107,6 +107,8 @@ interface LoadoutItemLocation {
       }
 
       .game-overlay {
+        --game-overlay-gutter: clamp(16px, 3vw, 32px);
+
         display: grid;
         gap: 18px;
         grid-template-rows: auto minmax(0, 1fr);
@@ -115,7 +117,7 @@ interface LoadoutItemLocation {
         max-width: 1440px;
         overflow-x: hidden;
         overflow-y: auto;
-        padding: clamp(16px, 3vw, 32px);
+        padding: var(--game-overlay-gutter);
         pointer-events: none;
         position: relative;
         scrollbar-gutter: stable;
@@ -561,10 +563,6 @@ interface LoadoutItemLocation {
         min-width: 0;
       }
 
-      .combat-action-panel {
-        position: relative;
-      }
-
       .combat-status,
       .combat-log-panel {
         transition: opacity 80ms linear;
@@ -761,7 +759,12 @@ interface LoadoutItemLocation {
 
       @media (max-width: 420px) {
         .game-overlay {
-          padding: 12px;
+          --game-overlay-gutter: 12px;
+        }
+
+        button,
+        select {
+          min-height: 44px;
         }
 
         .actions__header {

@@ -16,9 +16,18 @@ Catalog, camp, terminal, loading, and failure modes retain abstract
 presentation-only backdrops. Exploration steps and quarter-turns use brief
 latest-projection-wins Engine camera tweens, and combat actions use
 revision-bound action-then-grid picking against Rust-projected legal targets.
-Task 6431 remains the renderer-first campaign certification boundary. A native
-window/input host remains a later downstream consumer; this browser composition
-does not claim to be that host.
+The renderer-first campaign is certified through one cache-isolated real
+Rust-host suite across preparation, persistence, exploration, combat,
+continuation, terminal/reset recovery, classified failures, and inspected
+desktop/mobile layouts.
+
+A native window/input host remains an explicit downstream phase. Rust
+projections and commands plus public Engine retained-frame, camera, surface,
+and picking processes are reusable, but the current application still depends
+on Angular overlays, DOM focus/accessibility, browser drag/touch/keyboard
+events, animation/media/resize browser ports, same-origin HTTP, and browser
+save/reset presentation. No native window, UI toolkit, controller adapter,
+native storage policy, or native accessibility implementation is claimed.
 
 - The live slice has an authored four-person Warden company and four
   Ruleweaver/Asha-derived opposition roles,

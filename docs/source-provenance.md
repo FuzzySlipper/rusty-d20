@@ -245,6 +245,20 @@ pose through `RendererSurface.setCameraPose`. No dungeon topology, collision,
 discovery, trigger, save fact, input queue, private Three object, or CSS canvas
 transform participates in the tween.
 
+Task 6431 reconciles the renderer-first campaign without changing any source
+pin: renderer root task 6426 is approved at
+`9cc5695f7c614b3e63abd0c312d299975a40afea`, loadout task 6427 at
+`cba4918f96fe6a58a8e3e3682800a39ecaeaf9ca`, tactical renderer task 6428 at
+`9638de2b53942ebc690aa8d3ed15819f4311db49`, action-first targeting task 6430
+at `7e110ff61b0232a910e570c58c3b221638b3f90b`, and camera tween task 6429 at
+`5df74a4c9295dcbbca661946831bd4ff92277ab6`. The overlay pointer-pass-through
+finding and busy loadout false-success finding are verified fixed in those
+registered descendant revisions; the remaining descendants had no findings.
+The combined proof consumes only public Engine package roots at
+`fb608e323a8b44a55195f5720101224ff37fd5db`; no sibling checkout, private Three
+object, copied renderer mechanism, donor update, or new content source enters
+the certification.
+
 ## Ruleweaver foundation translation disposition
 
 The foundation translation keeps both reviewed Engine/UI pins unchanged.

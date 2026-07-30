@@ -1,11 +1,11 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input } from "@angular/core";
 
 /** View model for one log line. Local to the widget — no game types. */
 export interface CombatLogEntryView {
   readonly id: number;
   readonly source: string;
   readonly text: string;
-  readonly severity: 'info' | 'hit' | 'miss' | 'system';
+  readonly severity: "info" | "hit" | "miss" | "system";
 }
 
 /**
@@ -14,13 +14,14 @@ export interface CombatLogEntryView {
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  selector: 'aui-combat-log',
+  selector: "aui-combat-log",
   standalone: true,
   styles: [
     `
       :host {
         display: block;
-        width: 320px;
+        min-width: 0;
+        width: min(320px, 100%);
       }
 
       .entries {
@@ -37,6 +38,7 @@ export interface CombatLogEntryView {
       .entry {
         font-size: 0.75rem;
         line-height: 1.35;
+        overflow-wrap: anywhere;
       }
 
       .entry__source {
@@ -76,7 +78,8 @@ export interface CombatLogEntryView {
         <ul class="entries">
           @for (entry of entries(); track entry.id) {
             <li class="entry" [class]="'entry entry--' + entry.severity">
-              <span class="entry__source">[{{ entry.source }}]</span>{{ entry.text }}
+              <span class="entry__source">[{{ entry.source }}]</span
+              >{{ entry.text }}
             </li>
           }
         </ul>

@@ -127,6 +127,41 @@ cancel/confirm behavior, reopens a replacement Ember campaign, then starts from
 a deliberately malformed save and recovers through the typed discard path
 without page or console errors.
 
+## Renderer-first campaign certification
+
+Run the complete browser certification without accepting any Nx build or test
+cache:
+
+```bash
+NX_SKIP_NX_CACHE=true E2E_PORT=4384 pnpm run verify:browser
+```
+
+The single fresh Rust-host run covers adventure selection, native drag/drop and
+keyboard/click preparation, save/fresh-process reopen, exploration inventory,
+all-facing Engine-sampled camera movement, trigger-driven encounter entry,
+action-first pointer/touch/keyboard target picking, reactions, tactical
+movement, victory, defeat recovery, continued expedition, terminal completion,
+guarded reset/malformed-save recovery, and classified stale, transport, and
+protocol failures. It requires one permanent Engine canvas across scene changes
+and uses independent saved-process scenarios where persistence or recovery is
+the behavior under test.
+
+Inspect the named Playwright attachments at 1280 by 720 and 390 by 844. The
+representative set is `renderer-root-camp-desktop.png`,
+`drag-loadout-preparation.png`, `exploration-inventory-overlay.png`,
+`engine-dungeon-corridor-mobile.png`,
+`renderer-root-encounter-desktop.png`,
+`renderer-root-encounter-mobile.png`,
+`action-first-targeting-mobile-touch.png`, `mobile-defeat.png`,
+`warden-adventure-complete.png`, and `malformed-save-recovery.png`. The narrow
+encounter assertions additionally prove that the action and log regions stay
+at the bottom edge without intersecting each other or the status region,
+neither escapes the viewport, combat-log content has no horizontal overflow,
+and every narrow action control has at least a 44-pixel hit height. Existing
+focus restoration/navigation assertions, document-width checks, pointer
+pass-through probes, renderer resize observations, and camera disposal tests
+cover focus order, safe gaps, horizontal overflow, resize, and teardown.
+
 ## Standalone clone
 
 Ordinary verification must not require sibling checkouts. A certification clone

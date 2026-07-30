@@ -33,6 +33,7 @@ export interface HotbarSlotView {
 
       .slots {
         display: flex;
+        flex-wrap: wrap;
         gap: 6px;
         list-style: none;
         margin: 0;

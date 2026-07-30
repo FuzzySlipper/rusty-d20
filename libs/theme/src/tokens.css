@@ -120,7 +120,7 @@
   backdrop-filter: blur(12px);
   grid-template-columns: minmax(0, 1fr);
   left: 0;
-  max-height: calc(100% - 44px - min(38vh, 360px));
+  max-height: calc(100% - 52px - min(38vh, 360px));
   overflow: auto;
   padding-right: 4px;
   position: absolute;
@@ -209,21 +209,34 @@
   }
 
   .game-shell .characters.combat-status {
-    max-height: 30vh;
+    bottom: calc(min(31vh, 360px) + 12px);
+    max-height: none;
     width: calc(50% - 6px);
+  }
+
+  .game-shell .combat-actions {
+    bottom: max(var(--game-overlay-gutter), env(safe-area-inset-bottom, 0px));
+    display: block;
+    left: var(--game-overlay-gutter);
+    max-height: 31vh;
+    position: fixed;
+    width: calc(50vw - var(--game-overlay-gutter) - 6px);
+    z-index: 5;
   }
 
   .game-shell .combat-action-panel {
     max-height: 31vh;
+    position: static;
     width: 100%;
   }
 
   .game-shell .combat-log-panel {
-    bottom: auto;
-    max-height: 30vh;
-    right: 0;
-    top: 52px;
-    width: calc(50% - 6px);
+    bottom: max(var(--game-overlay-gutter), env(safe-area-inset-bottom, 0px));
+    max-height: 31vh;
+    position: fixed;
+    right: var(--game-overlay-gutter);
+    top: auto;
+    width: calc(50vw - var(--game-overlay-gutter) - 6px);
   }
 
   .game-shell .combat-board-hint {
