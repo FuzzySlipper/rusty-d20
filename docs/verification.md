@@ -77,10 +77,15 @@ desktop/mobile presentation.
 The ordinary real-host smoke additionally requires exactly one
 `aui-game-viewport` canvas while the scene mode changes from catalog to camp,
 exploration, and encounter. Its artifacts include the full-window catalog,
-camp, all-facing corridor, mobile corridor, and encounter overlay states.
-Renderer frame tests separately prove that abstract phase backdrops have no
-gameplay source identities and that exploration still delegates to the
-occlusion-safe dungeon adapter.
+camp, all-facing corridor, mobile corridor, and desktop/mobile rendered
+encounter HUD states. Renderer frame tests separately prove that abstract phase
+backdrops have no gameplay source identities, exploration still delegates to
+the occlusion-safe dungeon adapter, and encounter/outcome mapping preserves
+stable cell/entity pick handles, route geometry, state markers, lifecycle
+replacement, and responsive overhead camera fitting. The browser smoke uses
+the public Engine surface picker plus the focusable canvas keyboard cursor to
+prove a rendered cell still issues the normal Rust-owned tactical movement
+command.
 
 The ordinary browser gate also launches an isolated Rust host, saves through
 normal loadout controls, stops that process, starts a fresh process against the

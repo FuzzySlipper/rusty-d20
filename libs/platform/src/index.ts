@@ -9,6 +9,18 @@ export interface AnimationFramePort {
   readonly cancel: (handle: number) => void;
 }
 
+export interface ElementSize {
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface ElementResizePort {
+  readonly observe: (
+    element: Element,
+    callback: (size: ElementSize) => void,
+  ) => () => void;
+}
+
 export interface KeyValueStoragePort {
   readonly getItem: (key: string) => string | null;
   readonly setItem: (key: string, value: string) => void;
@@ -45,7 +57,28 @@ export const browserAnimationFrame: AnimationFramePort = {
   cancel: (handle) => window.cancelAnimationFrame(handle),
 };
 
-export const memoryStorage = (initial: Readonly<Record<string, string>> = {}): KeyValueStoragePort => {
+export const browserElementResize: ElementResizePort = {
+  observe: (element, callback) => {
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry !== undefined) {
+        callback({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
+      }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  },
+};
+
+export const browserDevicePixelRatio = (): number =>
+  Math.min(window.devicePixelRatio, 2);
+
+export const memoryStorage = (
+  initial: Readonly<Record<string, string>> = {},
+): KeyValueStoragePort => {
   const values = new Map(Object.entries(initial));
   return {
     getItem: (key) => values.get(key) ?? null,
@@ -68,27 +101,35 @@ export const browserDocumentEffects = (): DocumentEffectsPort => ({
   setTitle: (title) => {
     document.title = title;
   },
-  setRootClass: (className, enabled) => document.documentElement.classList.toggle(className, enabled),
+  setRootClass: (className, enabled) =>
+    document.documentElement.classList.toggle(className, enabled),
 });
 
 export const browserHttp = (): HttpPort => ({
   getJson: async (path) => {
     const response = await fetch(path, {
-      headers: { accept: 'application/json' },
-      method: 'GET',
+      headers: { accept: "application/json" },
+      method: "GET",
     });
-    const contentType = response.headers.get('content-type') ?? '';
-    const body: unknown = contentType.includes('application/json') ? await response.json() : await response.text();
+    const contentType = response.headers.get("content-type") ?? "";
+    const body: unknown = contentType.includes("application/json")
+      ? await response.json()
+      : await response.text();
     return { status: response.status, body };
   },
   postJson: async (path, requestBody) => {
     const response = await fetch(path, {
       body: JSON.stringify(requestBody),
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
-      method: 'POST',
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      method: "POST",
     });
-    const contentType = response.headers.get('content-type') ?? '';
-    const body: unknown = contentType.includes('application/json') ? await response.json() : await response.text();
+    const contentType = response.headers.get("content-type") ?? "";
+    const body: unknown = contentType.includes("application/json")
+      ? await response.json()
+      : await response.text();
     return { status: response.status, body };
   },
 });

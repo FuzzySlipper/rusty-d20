@@ -19,6 +19,54 @@ async function expectRendererCanvasAtPoint(
   expect(hit).toEqual({ insideRenderer: true, tagName: "CANVAS" });
 }
 
+async function clickRenderedTacticalCell(
+  page: Page,
+  x: number,
+  y: number,
+  boardWidth: number,
+  boardHeight: number,
+): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+  const canvas = page.getByRole("application", {
+    name: /Rendered tactical combat board/,
+  });
+  const point = await canvas.evaluate(
+    (element, cell) => {
+      const bounds = element.getBoundingClientRect();
+      const cellSize = 0.84;
+      const fitWidth = cell.boardWidth * cellSize;
+      const fitHeight = cell.boardHeight * cellSize;
+      const aspect = bounds.width / bounds.height;
+      const halfFovRadians = (58 * Math.PI) / 360;
+      const distanceForHeight = fitHeight / (2 * Math.tan(halfFovRadians));
+      const distanceForWidth =
+        fitWidth / (2 * Math.tan(halfFovRadians) * aspect);
+      const distance =
+        Math.max(distanceForHeight, distanceForWidth) * 1.12 + 0.8;
+      const visibleHeight = 2 * distance * Math.tan(halfFovRadians);
+      const worldX = (cell.x - (cell.boardWidth - 1) / 2) * cellSize;
+      const worldZ = (cell.y - (cell.boardHeight - 1) / 2) * cellSize;
+      return {
+        x:
+          bounds.left +
+          bounds.width / 2 +
+          (worldX / visibleHeight) * bounds.height,
+        y:
+          bounds.top +
+          bounds.height / 2 +
+          (worldZ / visibleHeight) * bounds.height,
+      };
+    },
+    { x, y, boardWidth, boardHeight },
+  );
+  await page.mouse.click(point.x, point.y);
+}
+
 test.describe.serial("real Rust encounter shell", () => {
   test("loading projection is visible while Rust save status is pending", async ({
     page,
@@ -324,9 +372,9 @@ test.describe.serial("real Rust encounter shell", () => {
     await expect(rejectedExplorationMove.json()).resolves.toMatchObject({
       kind: "phase",
     });
-    await expect((await request.get("/api/v1/session")).json()).resolves.toEqual(
-      beforeExplorationInventory,
-    );
+    await expect(
+      (await request.get("/api/v1/session")).json(),
+    ).resolves.toEqual(beforeExplorationInventory);
     await page.keyboard.press("Escape");
     await expect(explorationInventory).toHaveCount(0);
     await expect(inventoryTrigger).toBeFocused();
@@ -422,27 +470,40 @@ test.describe.serial("real Rust encounter shell", () => {
       page.getByRole("button", { name: "Pin In Place" }),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Disrupt" })).toBeVisible();
-    const tacticalBoard = page.getByRole("region", {
-      name: "Authoritative tactical combat board",
+    const tacticalBoard = page.getByRole("application", {
+      name: /Rendered tactical combat board/,
     });
-    await expect(tacticalBoard.getByRole("gridcell")).toHaveCount(96);
-    await expect(
-      tacticalBoard.getByRole("gridcell", {
-        name: /Mara Venn, party, at 7, 4, acting/,
-      }),
-    ).toBeVisible();
+    await expect(tacticalBoard).toBeVisible();
+    await expect(page.locator("aui-tactical-board")).toHaveCount(0);
+    await expect(page.getByLabel("Combat actions")).toBeVisible();
+    await expect(page.getByLabel("Combat log")).toBeVisible();
     await testInfo.attach("renderer-root-encounter-desktop.png", {
       body: await page.screenshot(),
       contentType: "image/png",
     });
-    await tacticalBoard
-      .getByRole("gridcell", { name: "Move to 7, 3, cost 1" })
-      .click();
-    await expect(
-      tacticalBoard.getByRole("gridcell", {
-        name: /Mara Venn, party, at 7, 3, acting/,
-      }),
-    ).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await expect(tacticalBoard).toBeVisible();
+    await expect(page.getByLabel("Combat actions")).toBeVisible();
+    await expect(page.getByLabel("Combat log")).toBeVisible();
+    await testInfo.attach("renderer-root-encounter-mobile.png", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await clickRenderedTacticalCell(page, 7, 4, 12, 8);
+    await expect(tacticalBoard).toHaveAttribute(
+      "data-last-pick-identity",
+      "entity:101",
+    );
+    await tacticalBoard.focus();
+    await page.keyboard.press("ArrowUp");
+    await expect(page.getByText(/Move to 7, 3, cost 1/)).toBeVisible();
+    await page.keyboard.press("Enter");
     const afterMovement = (await (
       await request.get("/api/v1/session")
     ).json()) as {

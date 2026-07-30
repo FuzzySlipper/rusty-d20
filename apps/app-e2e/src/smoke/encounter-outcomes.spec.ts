@@ -102,14 +102,15 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
           await expect(reaction).toContainText(/Longsword Strike|Precise Shot/);
           await expect(reaction).not.toContainText(/Pin In Place|Disrupt/);
           await expect(
-            page
-              .getByRole("region", {
-                name: "Authoritative tactical combat board",
-              })
-              .getByRole("gridcell", {
-                name: /Iron Warden, opposition, at 10, 4/,
-              }),
+            page.getByRole("application", {
+              name: /Rendered tactical combat board/,
+            }),
           ).toBeVisible();
+          expect(
+            selected.encounter?.participants.find(
+              (participant) => participant.character.id === 102,
+            ),
+          ).toMatchObject({ x: 10, y: 4 });
           expect(
             selected.encounter?.log.some((entry) =>
               entry.details.some((detail) =>

@@ -63,6 +63,7 @@ const depConstraints = [
   {
     "sourceTag": "scope:renderer",
     "onlyDependOnLibsWithTags": [
+      "scope:platform",
       "scope:domain",
       "scope:components",
       "scope:theme"

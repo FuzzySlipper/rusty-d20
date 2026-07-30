@@ -4,7 +4,7 @@ liveScenario(
   "Rust-owned authored encounter live evidence @live",
   async ({ page, collector, liveBaseUrl }) => {
     collector.addNonClaim(
-      "This live scenario certifies the Warden path landing, Engine-backed camp loadout, Rust-owned first-person grid traversal, an authored landmark, encounter activation at its dungeon trigger, and one complete player/opposition round. Tactical overhead combat remains a later milestone.",
+      "This live scenario certifies the Warden path landing, Engine-backed camp loadout, Rust-owned first-person grid traversal, an authored landmark, encounter activation at its dungeon trigger, the retained Engine overhead scene and overlay HUD, and one complete player/opposition round. It does not certify later action-then-grid targeting or camera tween tasks.",
     );
 
     await page.goto(liveBaseUrl);
@@ -98,6 +98,16 @@ liveScenario(
       screenshot: true,
       layerSnapshot: {
         latest: await page.getByLabel("Latest outcome explanation").innerText(),
+        viewport: await page
+          .getByRole("region", { name: /tactical encounter/ })
+          .getAttribute("aria-label"),
+        renderer: await page
+          .getByRole("region", { name: /tactical encounter/ })
+          .getAttribute("data-renderer-backend"),
+        rendererErrors: await page
+          .getByRole("region", { name: /tactical encounter/ })
+          .getByRole("alert")
+          .count(),
       },
     });
 

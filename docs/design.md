@@ -80,13 +80,20 @@ never reconstructs hidden topology or gameplay state.
 That Engine surface is the permanent visual root of the product rather than an
 exploration widget embedded in a document. One `GameViewport` canvas survives
 catalog, camp, exploration, encounter, outcome, terminal, loading, and failure
-phase changes. Exploration supplies the bounded dungeon frame above; every
-other phase currently supplies an explicit abstract backdrop whose retained
-nodes contain no entity, inventory, target, navigation, or rules facts.
-Angular composes translucent top, left, right, bottom, modal, and status
-regions over the surface and keeps pointer/focus ownership in those named
-presentation layers. Later tactical and inventory presentation can replace a
-backdrop or overlay without moving gameplay meaning out of Rust.
+phase changes. Exploration supplies the bounded dungeon frame above. Encounter
+and outcome phases adapt the immutable Rust tactical projection into retained
+floor and wall cells, participant occupancy, active/selected/defeated markers,
+and deduplicated movement-route lines. Stable cell handles and entity metadata
+feed the public Engine surface picker; Angular receives only the resulting
+typed cell identity and sends the same existing Rust commands. It does not
+raycast, reconstruct routes, or decide tactical legality. Catalog, camp,
+terminal, loading, and failure phases use explicit abstract backdrops whose
+retained nodes contain no entity, inventory, target, navigation, or rules
+facts. Angular composes translucent initiative, party/status, action, log,
+modal, and status regions over the surface and keeps pointer/focus ownership
+in those named presentation layers. The aspect-fitted overhead camera and
+canvas keyboard cursor are presentation facts suitable for replacement by a
+later native input host.
 
 `D20Session` stages heterogeneous action work in an `EntityState` clone and
 publishes only after every d20 and Engine service succeeds. Damage, equipment,

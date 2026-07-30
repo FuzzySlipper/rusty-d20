@@ -1,7 +1,6 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  computed,
   input,
   output,
   signal,
@@ -15,13 +14,23 @@ import type {
 } from "@angular/core";
 import { StatusLineComponent } from "@rusty-d20/components";
 import type { RuntimeReadoutView } from "@rusty-d20/domain";
+import {
+  browserDevicePixelRatio,
+  browserElementResize,
+} from "@rusty-d20/platform";
 import type { RendererSurface } from "@rusty-engine/renderer-host";
 
 import {
   createGameRenderFrame,
+  tacticalCameraPose,
   type GameRenderFrame,
   type GameViewportView,
 } from "./game-frame";
+import {
+  tacticalCellLabel,
+  tacticalSelectionAt,
+  type TacticalBoardSelection,
+} from "./tactical-frame";
 
 export {
   createDungeonRenderFrame,
@@ -36,6 +45,18 @@ export {
   type GameSceneMode,
   type GameViewportView,
 } from "./game-frame";
+export {
+  createTacticalRenderFrame,
+  tacticalCellLabel,
+  tacticalSelectionAt,
+  type TacticalBoardCellView,
+  type TacticalBoardSelection,
+  type TacticalBoardView,
+  type TacticalCameraFit,
+  type TacticalCellCoordinate,
+  type TacticalRenderFrame,
+  type TacticalScenePick,
+} from "./tactical-frame";
 
 @Component({
   imports: [StatusLineComponent],
@@ -103,6 +124,33 @@ export class StatusRendererComponent {
         width: 100%;
       }
 
+      .surface:focus-visible {
+        outline: 3px solid var(--rusty-engine-accent);
+        outline-offset: -5px;
+      }
+
+      .board-focus {
+        backdrop-filter: blur(10px);
+        background: rgb(6 11 14 / 0.82);
+        border: 1px solid var(--rusty-engine-accent);
+        border-radius: var(--rusty-engine-radius-sm);
+        bottom: 18px;
+        color: var(--rusty-engine-text);
+        left: 50%;
+        max-width: min(80%, 560px);
+        opacity: 0;
+        padding: 7px 10px;
+        pointer-events: none;
+        position: absolute;
+        transform: translateX(-50%);
+        transition: opacity 80ms linear;
+        z-index: 3;
+      }
+
+      .surface:focus-visible ~ .board-focus {
+        opacity: 1;
+      }
+
       .reticle {
         color: var(--rusty-engine-accent);
         font-size: 1.3rem;
@@ -131,7 +179,11 @@ export class StatusRendererComponent {
   template: `
     <section
       class="viewport"
-      role="img"
+      [attr.role]="
+        view().mode === 'encounter' || view().mode === 'outcome'
+          ? 'region'
+          : 'img'
+      "
       [attr.aria-label]="view().label"
       [attr.data-scene-mode]="view().mode"
       data-renderer-backend="rusty-engine-three"
@@ -139,10 +191,37 @@ export class StatusRendererComponent {
       <canvas
         #gameCanvas
         class="surface"
-        aria-hidden="true"
+        [attr.aria-hidden]="
+          view().mode === 'encounter' || view().mode === 'outcome'
+            ? null
+            : 'true'
+        "
+        [attr.aria-label]="
+          view().mode === 'encounter' || view().mode === 'outcome'
+            ? 'Rendered tactical combat board. Use arrow keys to inspect cells and Enter to choose one.'
+            : null
+        "
+        [attr.aria-roledescription]="
+          view().mode === 'encounter' || view().mode === 'outcome'
+            ? 'tactical combat board'
+            : null
+        "
+        [attr.role]="
+          view().mode === 'encounter' || view().mode === 'outcome'
+            ? 'application'
+            : null
+        "
+        [attr.tabindex]="view().mode === 'encounter' ? 0 : -1"
         width="960"
         height="540"
+        (click)="pickScene($event)"
+        (keydown)="handleSceneKeydown($event)"
       ></canvas>
+      @if (view().mode === "encounter") {
+        <p class="board-focus" aria-live="polite">
+          {{ keyboardCellLabel() }} · Arrow keys inspect · Enter selects
+        </p>
+      }
       @if (rendererError(); as message) {
         <p class="renderer-error" role="alert">{{ message }}</p>
       }
@@ -156,11 +235,18 @@ export class GameViewportComponent
   implements AfterViewInit, OnChanges, OnDestroy
 {
   readonly view = input.required<GameViewportView>();
+  readonly sceneSelected = output<TacticalBoardSelection>();
   protected readonly rendererError = signal<string | null>(null);
+  protected readonly keyboardCellLabel = signal(
+    "Focus the board to inspect its Rust-projected cells",
+  );
   private readonly canvas =
     viewChild.required<ElementRef<HTMLCanvasElement>>("gameCanvas");
   private surface: RendererSurface | null = null;
   private activeHandles: GameRenderFrame["handles"] = [];
+  private activeScene: GameRenderFrame | null = null;
+  private keyboardCell: readonly [number, number] | null = null;
+  private stopResizeObservation: (() => void) | null = null;
   private destroyed = false;
 
   async ngAfterViewInit(): Promise<void> {
@@ -176,12 +262,21 @@ export class GameViewportComponent
         autoStart: true,
         clearColor: 0x070b0e,
         frame: scene.frame,
-        pixelRatio: Math.min(globalThis.devicePixelRatio ?? 1, 2),
-        projection: { fovYDegrees: 58, near: 0.1, far: 20 },
+        pixelRatio: browserDevicePixelRatio(),
+        projection: { fovYDegrees: 58, near: 0.1, far: 64 },
       });
-      this.surface.setCameraPose(scene.camera);
+      this.activeScene = scene;
+      this.syncKeyboardCell();
+      this.applyCameraForSize(
+        this.canvas().nativeElement.clientWidth,
+        this.canvas().nativeElement.clientHeight,
+      );
       this.surface.renderOnce();
       this.activeHandles = scene.handles;
+      this.stopResizeObservation = browserElementResize.observe(
+        this.canvas().nativeElement,
+        ({ width, height }) => this.applyCameraForSize(width, height),
+      );
       this.rendererError.set(null);
     } catch (error) {
       this.rendererError.set(rendererFailureMessage(error));
@@ -195,7 +290,12 @@ export class GameViewportComponent
     try {
       const scene = createGameRenderFrame(this.view(), this.activeHandles);
       this.surface.applyFrame(scene.frame);
-      this.surface.setCameraPose(scene.camera);
+      this.activeScene = scene;
+      this.syncKeyboardCell();
+      this.applyCameraForSize(
+        this.canvas().nativeElement.clientWidth,
+        this.canvas().nativeElement.clientHeight,
+      );
       this.surface.renderOnce();
       this.activeHandles = scene.handles;
       this.rendererError.set(null);
@@ -206,252 +306,137 @@ export class GameViewportComponent
 
   ngOnDestroy(): void {
     this.destroyed = true;
+    this.stopResizeObservation?.();
+    this.stopResizeObservation = null;
     this.surface?.dispose();
     this.surface = null;
     this.activeHandles = [];
+    this.activeScene = null;
+  }
+
+  protected pickScene(event: MouseEvent): void {
+    if (
+      this.surface === null ||
+      (this.view().mode !== "encounter" && this.view().mode !== "outcome")
+    ) {
+      return;
+    }
+    const bounds = this.canvas().nativeElement.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) {
+      return;
+    }
+    const receipt = this.surface.pick({
+      filter: { tags: ["tactical-pickable"] },
+      ray: {
+        kind: "viewport",
+        point: [
+          ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+          1 - ((event.clientY - bounds.top) / bounds.height) * 2,
+        ],
+      },
+    });
+    const pick = this.activeScene?.picks.find(
+      (entry) => entry.handle === receipt.hint?.handle,
+    );
+    if (pick !== undefined) {
+      this.keyboardCell = [pick.selection.x, pick.selection.y];
+      this.keyboardCellLabel.set(pick.label);
+      this.canvas().nativeElement.dataset["lastPickIdentity"] = pick.identity;
+      this.sceneSelected.emit(pick.selection);
+    }
+  }
+
+  protected handleSceneKeydown(event: KeyboardEvent): void {
+    const tactical = this.view().tactical;
+    if (this.view().mode !== "encounter" || tactical === null) {
+      return;
+    }
+    this.syncKeyboardCell();
+    const current = this.keyboardCell;
+    if (current === null) {
+      return;
+    }
+    let [x, y] = current;
+    if (event.key === "ArrowLeft") {
+      x -= 1;
+    } else if (event.key === "ArrowRight") {
+      x += 1;
+    } else if (event.key === "ArrowUp") {
+      y -= 1;
+    } else if (event.key === "ArrowDown") {
+      y += 1;
+    } else if (event.key === "Enter" || event.key === " ") {
+      const selection = tacticalSelectionAt(tactical, x, y);
+      if (selection !== null) {
+        event.preventDefault();
+        this.sceneSelected.emit(selection);
+      }
+      return;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    x = Math.max(0, Math.min(tactical.width - 1, x));
+    y = Math.max(0, Math.min(tactical.height - 1, y));
+    this.keyboardCell = [x, y];
+    this.keyboardCellLabel.set(
+      tacticalCellLabel(tactical, x, y) ?? "Unknown tactical cell",
+    );
+  }
+
+  private syncKeyboardCell(): void {
+    const tactical = this.view().tactical;
+    if (tactical === null) {
+      this.keyboardCell = null;
+      this.keyboardCellLabel.set(
+        "Focus the board to inspect its Rust-projected cells",
+      );
+      return;
+    }
+    if (
+      this.keyboardCell !== null &&
+      tacticalSelectionAt(
+        tactical,
+        this.keyboardCell[0],
+        this.keyboardCell[1],
+      ) !== null
+    ) {
+      this.keyboardCellLabel.set(
+        tacticalCellLabel(
+          tactical,
+          this.keyboardCell[0],
+          this.keyboardCell[1],
+        ) ?? "Unknown tactical cell",
+      );
+      return;
+    }
+    const initial =
+      tactical.cells.find((cell) => cell.current) ??
+      tactical.cells.find((cell) => cell.legalMoveCost !== null) ??
+      tactical.cells.find((cell) => cell.terrain === "floor");
+    if (initial !== undefined) {
+      this.keyboardCell = [initial.x, initial.y];
+      this.keyboardCellLabel.set(
+        tacticalCellLabel(tactical, initial.x, initial.y) ??
+          "Unknown tactical cell",
+      );
+    }
+  }
+
+  private applyCameraForSize(width: number, height: number): void {
+    if (this.surface === null || this.activeScene === null) {
+      return;
+    }
+    const fit = this.activeScene.cameraFit;
+    this.surface.setCameraPose(
+      fit === null
+        ? this.activeScene.camera
+        : tacticalCameraPose(fit, width > 0 && height > 0 ? width / height : 1),
+    );
   }
 }
 
 function rendererFailureMessage(error: unknown): string {
   const detail = error instanceof Error ? error.message : String(error);
   return `The Rusty Engine game renderer could not present this scene: ${detail}`;
-}
-
-export interface TacticalBoardCellView {
-  readonly id: string;
-  readonly x: number;
-  readonly y: number;
-  readonly terrain: "floor" | "wall";
-  readonly participantId: number | null;
-  readonly participantName: string | null;
-  readonly faction: "party" | "opposition" | null;
-  readonly defeated: boolean;
-  readonly current: boolean;
-  readonly selectedTarget: boolean;
-  readonly selectable: boolean;
-  readonly legalMoveCost: number | null;
-}
-
-export interface TacticalBoardView {
-  readonly width: number;
-  readonly height: number;
-  readonly cells: readonly TacticalBoardCellView[];
-}
-
-export interface TacticalBoardSelection {
-  readonly x: number;
-  readonly y: number;
-  readonly participantId: number | null;
-}
-
-@Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  selector: "aui-tactical-board",
-  standalone: true,
-  styles: [
-    `
-      :host {
-        display: block;
-        max-width: 100%;
-        min-width: 0;
-      }
-
-      .board-frame {
-        background:
-          radial-gradient(
-            circle at 50% 40%,
-            rgb(55 74 78 / 0.34),
-            transparent 58%
-          ),
-          #070b0e;
-        border: 2px solid var(--rusty-engine-border);
-        border-radius: var(--rusty-engine-radius);
-        box-sizing: border-box;
-        box-shadow: inset 0 0 42px rgb(0 0 0 / 0.68);
-        max-width: 100%;
-        overflow-x: auto;
-        padding: clamp(8px, 1.5vw, 14px);
-        width: 100%;
-      }
-
-      .board {
-        display: grid;
-        gap: 2px;
-        margin: 0 auto;
-        min-width: 480px;
-        width: min(100%, 780px);
-      }
-
-      .cell {
-        align-items: center;
-        aspect-ratio: 1;
-        background: rgb(36 45 48 / 0.9);
-        border: 1px solid rgb(121 143 142 / 0.2);
-        border-radius: 2px;
-        color: var(--rusty-engine-text);
-        display: grid;
-        font-size: clamp(0.62rem, 1.4vw, 0.88rem);
-        min-height: 0;
-        padding: 0;
-        place-items: center;
-        position: relative;
-      }
-
-      .cell--wall {
-        background:
-          linear-gradient(135deg, rgb(255 255 255 / 0.05), transparent 45%),
-          #181c1c;
-        border-color: #2b302e;
-      }
-
-      .cell--legal {
-        background: color-mix(
-          in srgb,
-          var(--rusty-engine-cool) 18%,
-          rgb(36 45 48 / 0.9)
-        );
-        border-color: var(--rusty-engine-cool);
-        cursor: pointer;
-      }
-
-      .cell--party,
-      .cell--opposition {
-        border-width: 2px;
-        font-weight: 900;
-      }
-
-      .cell--selectable {
-        cursor: pointer;
-      }
-
-      .cell--party {
-        background: color-mix(in srgb, var(--rusty-engine-cool) 38%, #162126);
-        border-color: var(--rusty-engine-cool);
-      }
-
-      .cell--opposition {
-        background: color-mix(in srgb, var(--rusty-engine-danger) 34%, #25191a);
-        border-color: var(--rusty-engine-danger);
-      }
-
-      .cell--current {
-        box-shadow:
-          0 0 0 2px var(--rusty-engine-accent),
-          0 0 16px
-            color-mix(in srgb, var(--rusty-engine-accent) 75%, transparent);
-        z-index: 2;
-      }
-
-      .cell--target {
-        outline: 3px solid var(--rusty-engine-warn);
-        outline-offset: -4px;
-      }
-
-      .cell--defeated {
-        filter: grayscale(1);
-        opacity: 0.42;
-      }
-
-      .token {
-        line-height: 1;
-        text-shadow: 0 1px 4px rgb(0 0 0 / 0.85);
-      }
-
-      .move-cost {
-        bottom: 1px;
-        color: var(--rusty-engine-cool);
-        font-size: 0.52rem;
-        position: absolute;
-        right: 2px;
-      }
-    `,
-  ],
-  template: `
-    <section
-      class="board-frame"
-      aria-label="Authoritative tactical combat board"
-    >
-      <div
-        class="board"
-        role="grid"
-        [style.grid-template-columns]="'repeat(' + view().width + ', 1fr)'"
-        [attr.aria-rowcount]="view().height"
-        [attr.aria-colcount]="view().width"
-      >
-        @for (cell of cells(); track cell.id) {
-          <button
-            class="cell"
-            type="button"
-            role="gridcell"
-            [class.cell--wall]="cell.terrain === 'wall'"
-            [class.cell--legal]="cell.legalMoveCost !== null"
-            [class.cell--party]="cell.faction === 'party'"
-            [class.cell--opposition]="cell.faction === 'opposition'"
-            [class.cell--current]="cell.current"
-            [class.cell--target]="cell.selectedTarget"
-            [class.cell--selectable]="cell.selectable"
-            [class.cell--defeated]="cell.defeated"
-            [disabled]="
-              cell.terrain === 'wall' ||
-              (cell.legalMoveCost === null && !cell.selectable)
-            "
-            [attr.aria-label]="cellLabel(cell)"
-            [attr.data-x]="cell.x"
-            [attr.data-y]="cell.y"
-            [attr.data-participant-id]="cell.participantId"
-            [attr.data-move-cost]="cell.legalMoveCost"
-            (click)="select(cell)"
-          >
-            @if (cell.participantName !== null) {
-              <span class="token" aria-hidden="true">{{
-                token(cell.participantName)
-              }}</span>
-            }
-            @if (cell.legalMoveCost !== null) {
-              <span class="move-cost" aria-hidden="true">{{
-                cell.legalMoveCost
-              }}</span>
-            }
-          </button>
-        }
-      </div>
-    </section>
-  `,
-})
-export class TacticalBoardComponent {
-  readonly view = input.required<TacticalBoardView>();
-  readonly cellSelected = output<TacticalBoardSelection>();
-
-  protected readonly cells = computed(() => this.view().cells);
-
-  protected select(cell: TacticalBoardCellView): void {
-    this.cellSelected.emit({
-      x: cell.x,
-      y: cell.y,
-      participantId: cell.participantId,
-    });
-  }
-
-  protected token(name: string): string {
-    return name
-      .split(/\s+/)
-      .map((part) => part[0] ?? "")
-      .join("")
-      .slice(0, 2)
-      .toUpperCase();
-  }
-
-  protected cellLabel(cell: TacticalBoardCellView): string {
-    if (cell.terrain === "wall") {
-      return `Wall at ${cell.x}, ${cell.y}`;
-    }
-    if (cell.participantName !== null) {
-      return `${cell.participantName}, ${cell.faction}, at ${cell.x}, ${cell.y}${
-        cell.current ? ", acting" : ""
-      }${cell.defeated ? ", defeated" : ""}`;
-    }
-    return cell.legalMoveCost === null
-      ? `Open terrain at ${cell.x}, ${cell.y}`
-      : `Move to ${cell.x}, ${cell.y}, cost ${cell.legalMoveCost}`;
-  }
 }

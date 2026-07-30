@@ -2,21 +2,23 @@
 
 The interactive product now proves a small Gold Box-style game loop with two
 selectable authored paths: camp, Rust-owned first-person grid exploration,
-hidden encounter triggers, the existing modal combat screen, outcomes, and
+hidden encounter triggers, a rendered overhead combat scene with overlay HUD,
+outcomes, and
 complete saves. Warden's Gate is the first complete bounded Ruleweaver-derived
 adventure with three ordered encounters, treasure, a locked door, a durable
 checkpoint, and a terminal ending; Ember's Wake has one encounter.
 
 The browser now mounts one permanent full-window Rusty Engine renderer and
-places phase UI in named overlay regions. Catalog, camp, encounter, outcome,
-terminal, loading, and failure modes currently use abstract presentation-only
-backdrops; exploration uses the real bounded corridor frame. The following
-renderer-first campaign gaps are recorded in Den rather than implied complete:
-task 6429 adds brief camera tweens, task 6428 promotes the tactical board into
-the rendered scene, task 6430 replaces target dropdowns with grid picking, and
-task 6431 certifies the combined loop. A native window/input host remains a
-later downstream consumer; this browser composition does not claim to be that
-host.
+places phase UI in named overlay regions. Encounter and outcome modes now render
+the Rust-projected tactical board, occupancy, movement routes, and combat states
+through that shared surface; exploration uses the bounded corridor frame.
+Catalog, camp, terminal, loading, and failure modes retain abstract
+presentation-only backdrops. The remaining renderer-first campaign gaps are
+recorded in Den rather than implied complete: task 6429 adds brief camera
+tweens, task 6430 replaces the temporary target dropdown with action-then-grid
+picking, and task 6431 certifies the combined loop. A native window/input host
+remains a later downstream consumer; this browser composition does not claim
+to be that host.
 
 - The live slice has an authored four-person Warden company and four
   Ruleweaver/Asha-derived opposition roles,

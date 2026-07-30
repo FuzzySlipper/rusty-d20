@@ -10,6 +10,12 @@ import {
   createDungeonRenderFrame,
   type DungeonViewportView,
 } from "./dungeon-frame";
+import {
+  createTacticalRenderFrame,
+  type TacticalBoardView,
+  type TacticalCameraFit,
+  type TacticalScenePick,
+} from "./tactical-frame";
 
 export type GameSceneMode =
   | "loading"
@@ -25,6 +31,7 @@ export interface GameViewportView {
   readonly mode: GameSceneMode;
   readonly label: string;
   readonly dungeon: DungeonViewportView | null;
+  readonly tactical: TacticalBoardView | null;
 }
 
 export interface GameCameraPose {
@@ -37,6 +44,8 @@ export interface GameRenderFrame {
   readonly frame: RenderFrameDiff;
   readonly handles: readonly RenderHandle[];
   readonly camera: GameCameraPose;
+  readonly cameraFit: TacticalCameraFit | null;
+  readonly picks: readonly TacticalScenePick[];
 }
 
 const FIRST_SCENE_HANDLE = 100;
@@ -104,6 +113,19 @@ export function createGameRenderFrame(
         pitchDegrees: 0,
         yawDegrees: 0,
       },
+      cameraFit: null,
+      picks: [],
+    };
+  }
+
+  if (
+    (view.mode === "encounter" || view.mode === "outcome") &&
+    view.tactical !== null
+  ) {
+    const tactical = createTacticalRenderFrame(view.tactical, previousHandles);
+    return {
+      ...tactical,
+      camera: tacticalCameraPose(tactical.cameraFit, 16 / 9),
     };
   }
 
@@ -163,5 +185,25 @@ export function createGameRenderFrame(
       pitchDegrees: -8,
       yawDegrees: 0,
     },
+    cameraFit: null,
+    picks: [],
+  };
+}
+
+export function tacticalCameraPose(
+  fit: TacticalCameraFit,
+  aspectRatio: number,
+): GameCameraPose {
+  const safeAspect =
+    Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 1;
+  const halfFovRadians = (58 * Math.PI) / 360;
+  const distanceForHeight = fit.height / (2 * Math.tan(halfFovRadians));
+  const distanceForWidth =
+    fit.width / (2 * Math.tan(halfFovRadians) * safeAspect);
+  const distance = Math.max(distanceForHeight, distanceForWidth) * 1.12 + 0.8;
+  return {
+    position: [0, distance, 0],
+    pitchDegrees: -90,
+    yawDegrees: 0,
   };
 }

@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { createGameRenderFrame, type GameViewportView } from "./game-frame";
+import {
+  createGameRenderFrame,
+  tacticalCameraPose,
+  type GameViewportView,
+} from "./game-frame";
 
 const campView: GameViewportView = {
   mode: "camp",
   label: "Warden's Gate camp",
   dungeon: null,
+  tactical: null,
 };
 
 describe("createGameRenderFrame", () => {
@@ -28,7 +33,12 @@ describe("createGameRenderFrame", () => {
   it("destroys the previous mode before creating the next backdrop", () => {
     const camp = createGameRenderFrame(campView);
     const catalog = createGameRenderFrame(
-      { mode: "catalog", label: "Choose an adventure", dungeon: null },
+      {
+        mode: "catalog",
+        label: "Choose an adventure",
+        dungeon: null,
+        tactical: null,
+      },
       camp.handles,
     );
 
@@ -67,6 +77,7 @@ describe("createGameRenderFrame", () => {
           },
         ],
       },
+      tactical: null,
     });
     const labels = scene.frame.ops
       .filter((op) => op.op === "create")
@@ -79,5 +90,78 @@ describe("createGameRenderFrame", () => {
       pitchDegrees: 0,
       yawDegrees: 0,
     });
+  });
+
+  it("promotes encounter and outcome boards into the persistent renderer scene", () => {
+    const tactical = {
+      width: 1,
+      height: 1,
+      cells: [
+        {
+          id: "0:0",
+          x: 0,
+          y: 0,
+          terrain: "floor" as const,
+          participantId: 101,
+          participantName: "Mara Venn",
+          faction: "party" as const,
+          defeated: false,
+          current: true,
+          selectedTarget: false,
+          selectable: false,
+          legalMoveCost: null,
+          route: null,
+        },
+      ],
+    };
+    const encounter = createGameRenderFrame({
+      mode: "encounter",
+      label: "Rendered encounter",
+      dungeon: null,
+      tactical,
+    });
+    const outcome = createGameRenderFrame(
+      {
+        mode: "outcome",
+        label: "Rendered outcome",
+        dungeon: null,
+        tactical: {
+          ...tactical,
+          cells: tactical.cells.map((cell) => ({
+            ...cell,
+            current: false,
+            defeated: true,
+          })),
+        },
+      },
+      encounter.handles,
+    );
+
+    expect(
+      encounter.frame.ops
+        .filter((op) => op.op === "create")
+        .some((op) => op.node.metadata.tags.includes("game-backdrop")),
+    ).toBe(false);
+    expect(encounter.picks.map((pick) => pick.identity)).toContain(
+      "entity:101",
+    );
+    expect(outcome.frame.ops.slice(0, encounter.handles.length)).toEqual(
+      encounter.handles.map((handle) => ({ op: "destroy", handle })),
+    );
+    expect(
+      outcome.frame.ops
+        .filter((op) => op.op === "create")
+        .find((op) => op.node.metadata.label === "tactical-entity-101")?.node
+        .metadata.tags,
+    ).toContain("defeated");
+  });
+
+  it("fits the same overhead board at desktop and narrow viewport aspects", () => {
+    const desktop = tacticalCameraPose({ width: 10, height: 7 }, 16 / 9);
+    const mobile = tacticalCameraPose({ width: 10, height: 7 }, 390 / 844);
+
+    expect(desktop.pitchDegrees).toBe(-90);
+    expect(mobile.pitchDegrees).toBe(-90);
+    expect(mobile.position[1]).toBeGreaterThan(desktop.position[1]);
   });
 });

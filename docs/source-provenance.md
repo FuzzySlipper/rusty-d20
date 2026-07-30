@@ -228,6 +228,15 @@ camera, retained application, render loop, resize, and disposal. The catalog,
 camp, encounter, outcome, terminal, loading, and failure backdrops intentionally
 carry no Rust or browser-authored gameplay identities.
 
+Task 6428 reuses the same reviewed Engine surface without a pin or donor
+change. Rusty D20 maps only its immutable tactical projection into retained
+cell, obstacle, participant, marker, and route nodes. Public renderer handles,
+metadata source identities, viewport picking, camera control, resize, and
+disposal remain Engine processes. Angular arranges initiative, status, action,
+log, reaction, outcome, and failure overlays and translates a typed picked
+cell back into the pre-existing Rust command path; it does not acquire
+movement, occupancy, targeting, or outcome authority.
+
 ## Ruleweaver foundation translation disposition
 
 The foundation translation keeps both reviewed Engine/UI pins unchanged.

@@ -17,7 +17,6 @@ import type {
 } from "@rusty-d20/protocol";
 import {
   GameViewportComponent,
-  TacticalBoardComponent,
   type DungeonViewportView,
   type GameViewportView,
   type TacticalBoardSelection,
@@ -74,7 +73,6 @@ interface LoadoutItemLocation {
     HotbarComponent,
     InventoryGridComponent,
     MinimapComponent,
-    TacticalBoardComponent,
   ],
   selector: "aui-main-menu-screen",
   standalone: true,
@@ -131,8 +129,7 @@ interface LoadoutItemLocation {
       .game-overlay__stage aui-equipment-panel,
       .game-overlay__stage aui-hotbar,
       .game-overlay__stage aui-inventory-grid,
-      .game-overlay__stage aui-minimap,
-      .game-overlay__stage aui-tactical-board {
+      .game-overlay__stage aui-minimap {
         pointer-events: auto;
       }
 
@@ -713,7 +710,11 @@ interface LoadoutItemLocation {
   ],
   template: `
     <main class="game-shell" [attr.data-scene-mode]="gameViewport().mode">
-      <aui-game-viewport class="game-viewport" [view]="gameViewport()" />
+      <aui-game-viewport
+        class="game-viewport"
+        [view]="gameViewport()"
+        (sceneSelected)="selectTacticalCell($event)"
+      />
       <div class="game-overlay">
         <header class="topbar" data-overlay-region="top">
           <div class="topbar__identity">
@@ -1157,7 +1158,9 @@ interface LoadoutItemLocation {
                           aria-label="Selected loadout item"
                           [attr.aria-busy]="store.busy()"
                         >
-                          <p class="meta-label">Touch and keyboard alternative</p>
+                          <p class="meta-label">
+                            Touch and keyboard alternative
+                          </p>
                           @if (selectedLoadoutLocation(); as selection) {
                             <div class="selected-loadout">
                               <span class="stash__identity">
@@ -1541,9 +1544,7 @@ interface LoadoutItemLocation {
                                 activePartyMember()?.character?.id ===
                                 member.character.id
                               "
-                              (click)="
-                                selectPartyMember(member.character.id)
-                              "
+                              (click)="selectPartyMember(member.character.id)"
                             >
                               {{ member.character.name }}
                             </button>
@@ -1631,7 +1632,11 @@ interface LoadoutItemLocation {
                   </section>
                 }
               } @else {
-                <section class="encounter-meta" aria-label="Encounter identity">
+                <section
+                  class="rusty-engine-panel encounter-meta combat-initiative"
+                  data-overlay-region="top"
+                  aria-label="Encounter identity"
+                >
                   <span>Round {{ encounter().round }}</span>
                   <span>
                     {{
@@ -1642,6 +1647,20 @@ interface LoadoutItemLocation {
                           : "Encounter resolved"
                     }}
                   </span>
+                  @for (
+                    participant of initiativeOrder();
+                    track participant.character.id
+                  ) {
+                    <span
+                      class="initiative-entry"
+                      [class.initiative-entry--active]="
+                        participant.character.id === encounter().currentActorId
+                      "
+                    >
+                      {{ participant.character.name }}
+                      {{ participant.initiative }}
+                    </span>
+                  }
                   <span>State revision {{ game()?.revision }}</span>
                   @for (
                     defense of activePartyMember()?.loadout?.defenses ?? [];
@@ -1660,7 +1679,11 @@ interface LoadoutItemLocation {
                   </span>
                 </section>
 
-                <section class="characters" aria-label="Character status">
+                <section
+                  class="characters combat-status"
+                  data-overlay-region="left"
+                  aria-label="Character status"
+                >
                   @for (
                     participant of encounter().participants;
                     track participant.character.id
@@ -1709,9 +1732,10 @@ interface LoadoutItemLocation {
 
                 @if (game()?.campaign?.phase === "outcome") {
                   @if (game()?.campaign?.latestOutcome; as outcome) {
-                    <section class="workspace">
+                    <section class="workspace combat-workspace">
                       <article
-                        class="rusty-engine-panel outcome-banner"
+                        class="rusty-engine-panel outcome-banner combat-modal"
+                        data-overlay-region="modal"
                         [attr.aria-label]="'Encounter ' + outcome.kind"
                       >
                         <p class="eyebrow">{{ outcome.kind }}</p>
@@ -1748,7 +1772,10 @@ interface LoadoutItemLocation {
                           }}
                         </button>
                       </article>
-                      <aside class="rusty-engine-panel outcome">
+                      <aside
+                        class="rusty-engine-panel outcome combat-log-panel"
+                        data-overlay-region="bottom-right"
+                      >
                         <aui-combat-log [entries]="combatLog()" />
                         @if (latestLog(); as latest) {
                           <section
@@ -1771,13 +1798,16 @@ interface LoadoutItemLocation {
                     </section>
                   }
                 } @else {
-                  <section class="workspace">
-                    <div class="action-workbench">
-                      <aui-tactical-board
-                        [view]="tacticalBoard()"
-                        (cellSelected)="selectTacticalCell($event)"
-                      />
-                      <section class="rusty-engine-panel">
+                  <section class="workspace combat-workspace">
+                    <p class="combat-board-hint" aria-hidden="true">
+                      Click the rendered board to move or choose a combatant
+                    </p>
+                    <div class="action-workbench combat-actions">
+                      <section
+                        class="rusty-engine-panel combat-action-panel"
+                        data-overlay-region="bottom-left"
+                        aria-label="Combat actions"
+                      >
                         <header class="actions__header">
                           <div>
                             <p class="meta-label">
@@ -1882,7 +1912,8 @@ interface LoadoutItemLocation {
 
                       @if (encounter().reactionPrompt; as prompt) {
                         <section
-                          class="rusty-engine-panel preview"
+                          class="rusty-engine-panel preview combat-modal"
+                          data-overlay-region="modal"
                           aria-label="Available reaction"
                         >
                           <p class="meta-label">
@@ -1944,7 +1975,10 @@ interface LoadoutItemLocation {
                       }
                     </div>
 
-                    <aside class="rusty-engine-panel outcome">
+                    <aside
+                      class="rusty-engine-panel outcome combat-log-panel"
+                      data-overlay-region="bottom-right"
+                    >
                       <aui-combat-log [entries]="combatLog()" />
                       @if (latestLog(); as latest) {
                         <section
@@ -2045,6 +2079,7 @@ export class MainMenuScreenComponent implements OnInit {
         mode: "error",
         label: "Runtime failure backdrop",
         dungeon: null,
+        tactical: null,
       };
     }
     if (state.kind !== "data") {
@@ -2052,6 +2087,7 @@ export class MainMenuScreenComponent implements OnInit {
         mode: "loading",
         label: "Loading the Rust-owned game session",
         dungeon: null,
+        tactical: null,
       };
     }
 
@@ -2064,6 +2100,7 @@ export class MainMenuScreenComponent implements OnInit {
             ? "Choose a Rust-compiled adventure"
             : `Continue ${snapshot.campaign.title}`,
         dungeon: null,
+        tactical: null,
       };
     }
 
@@ -2076,6 +2113,7 @@ export class MainMenuScreenComponent implements OnInit {
         mode: "exploration",
         label: `${dungeon.title}, facing ${dungeon.facing} at cell ${dungeon.x}, ${dungeon.y}`,
         dungeon,
+        tactical: null,
       };
     }
 
@@ -2091,6 +2129,7 @@ export class MainMenuScreenComponent implements OnInit {
             ? `${snapshot.campaign.title} encounter outcome`
             : `${snapshot.campaign.title} tactical encounter`,
       dungeon: null,
+      tactical: snapshot.encounter === null ? null : this.tacticalBoard(),
     };
   });
 
@@ -2139,6 +2178,14 @@ export class MainMenuScreenComponent implements OnInit {
       : (exploration.y / Math.max(1, exploration.height - 1)) * 100;
   });
 
+  protected readonly initiativeOrder = computed(() =>
+    [...(this.game()?.encounter?.participants ?? [])].sort(
+      (left, right) =>
+        right.initiative - left.initiative ||
+        left.character.id - right.character.id,
+    ),
+  );
+
   protected readonly tacticalBoard = computed<TacticalBoardView>(() => {
     const encounter = this.game()?.encounter;
     if (encounter === null || encounter === undefined) {
@@ -2151,10 +2198,7 @@ export class MainMenuScreenComponent implements OnInit {
       ]),
     );
     const legalMoves = new Map(
-      encounter.board.legalMoves.map((move) => [
-        `${move.x}:${move.y}`,
-        move.cost,
-      ]),
+      encounter.board.legalMoves.map((move) => [`${move.x}:${move.y}`, move]),
     );
     const cells = encounter.board.rows.flatMap((row, y) =>
       [...row].map((terrain, x) => {
@@ -2174,7 +2218,8 @@ export class MainMenuScreenComponent implements OnInit {
             encounter.currentFaction === "party" &&
             participant?.faction === "opposition" &&
             participant.defeated === false,
-          legalMoveCost: legalMoves.get(`${x}:${y}`) ?? null,
+          legalMoveCost: legalMoves.get(`${x}:${y}`)?.cost ?? null,
+          route: legalMoves.get(`${x}:${y}`)?.route ?? null,
         };
       }),
     );
@@ -2817,9 +2862,7 @@ export class MainMenuScreenComponent implements OnInit {
     }
     const error = this.store.commandError();
     if (error !== null) {
-      this.loadoutAnnouncement.set(
-        `${error.kind} rejection: ${error.message}`,
-      );
+      this.loadoutAnnouncement.set(`${error.kind} rejection: ${error.message}`);
       return;
     }
     const destinationLabel =
