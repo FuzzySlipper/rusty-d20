@@ -172,6 +172,7 @@ describe("decodeGameSnapshot", () => {
         },
       ],
       stashItems: [],
+      stashCapacity: { metric: "carried-items", used: 0, maximum: 24 },
       capacity: { metric: "carried-items", used: 1, maximum: 2 },
       defenses: [
         {
@@ -208,6 +209,51 @@ describe("decodeGameSnapshot", () => {
     expect(decodeGameSnapshot({ ...empty, campaign })).toMatchObject({
       ok: true,
     });
+    const ally = {
+      ...hero,
+      id: 102,
+      name: "Ilyra Fen",
+    };
+    const allyLoadout = {
+      ...loadout,
+      ownerId: 102,
+      inventorySlots: [null, null],
+      equipmentSlots: [{ id: "body", label: "Body", equipped: null }],
+      capacity: { ...loadout.capacity, used: 0 },
+    };
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          party: [
+            { character: hero, loadout },
+            { character: ally, loadout: allyLoadout },
+          ],
+        },
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          party: [
+            { character: hero, loadout },
+            {
+              character: ally,
+              loadout: {
+                ...allyLoadout,
+                stashCapacity: {
+                  ...allyLoadout.stashCapacity,
+                  maximum: 23,
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ ok: false });
     expect(
       decodeGameSnapshot({
         ...empty,
@@ -222,6 +268,35 @@ describe("decodeGameSnapshot", () => {
               },
             },
           ],
+        },
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          party: [
+            {
+              character: hero,
+              loadout: {
+                ...loadout,
+                stashCapacity: { ...loadout.stashCapacity, used: 1 },
+              },
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ ok: false });
+    const missingStashCapacity = Object.fromEntries(
+      Object.entries(loadout).filter(([key]) => key !== "stashCapacity"),
+    );
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          party: [{ character: hero, loadout: missingStashCapacity }],
         },
       }),
     ).toMatchObject({ ok: false });

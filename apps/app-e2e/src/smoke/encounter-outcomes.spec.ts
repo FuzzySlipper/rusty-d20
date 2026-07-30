@@ -223,9 +223,11 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
       await expect(
         page.getByRole("heading", { name: "The Warden's Gate Camp" }),
       ).toBeVisible();
-      await expect(page.getByLabel("Camp stash")).toContainText(
-        "Gate sigil buckler",
-      );
+      await expect(
+        page
+          .getByLabel("Shared camp inventory")
+          .getByRole("button", { name: /Gate sigil buckler/ }),
+      ).toBeVisible();
       await page.getByRole("button", { name: "Enter the dungeon" }).click();
       await stepForward(page, 1);
       await expect(page.getByLabel("Dungeon door")).toContainText(
@@ -355,13 +357,21 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
       await page.goto(host.baseUrl);
       await startAdventure(page, "The Warden's Gate");
       await page
-        .getByLabel("Equipment")
+        .getByRole("region", {
+          name: "Mara Venn equipment",
+          exact: true,
+        })
         .getByRole("button", { name: /Body: Mara's chain armor/ })
         .click();
+      await page.getByRole("button", { name: "Move to pack" }).click();
       await page
-        .getByLabel("Equipment")
+        .getByRole("region", {
+          name: "Mara Venn equipment",
+          exact: true,
+        })
         .getByRole("button", { name: /Off Hand: Mara's buckler/ })
         .click();
+      await page.getByRole("button", { name: "Move to pack" }).click();
       await expect(page.getByLabel("Armor defense readout")).toContainText(
         "14",
       );
@@ -485,9 +495,11 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
       await expect(page.getByLabel("Nerve defense readout")).toContainText(
         "suppressed",
       );
-      await expect(page.getByLabel("Camp stash")).toContainText(
-        "Spare runed robe",
-      );
+      await expect(
+        page
+          .getByLabel("Shared camp inventory")
+          .getByRole("button", { name: /Spare runed robe/ }),
+      ).toBeVisible();
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= window.innerWidth,

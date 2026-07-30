@@ -135,10 +135,16 @@ stash carry `InventoryComponent`, unique armor and implement entities use
 containment plus `ItemComponent`, and `EquipmentComponent` is the only
 assignment authority.
 Rusty D20 owns the authored item selection, slot meaning, camp-only command
-policy, inventory presentation order, and product revision. Engine services own
-capacity, containment, equipment, prospective track validation, and attributed
-stat-source mutation. The browser receives immutable loadout and defense
-readouts and never maintains a shadow inventory.
+policy, shared-stash capacity, inventory presentation order, and product
+revision. Engine services own capacity, containment, equipment, prospective
+track validation, and attributed stat-source mutation. One typed loadout
+placement command stages any required unequip, containment transfer, and equip
+operations in a cloned runtime and publishes only if the complete placement
+succeeds. The browser receives immutable pack, authored slot, shared-stash
+capacity, and defense readouts and never maintains a shadow inventory. Drag and
+drop plus click, keyboard, and touch-compatible selection all issue that same
+command. Exploration may inspect the projection in a read-only overlay, while
+Rust continues to reject loadout mutation outside camp.
 
 Preview records exact relevant component revisions, including actor equipment
 and scheduled conditions. Applying a reaction changes resource and effect
@@ -180,8 +186,9 @@ dependencies. See
 ## Transport and protocol
 
 `rusty-d20-host` serves the Angular build plus read-only session projection and
-typed adventure selection, loadout equip/unequip/transfer, begin-exploration,
-exploration-command, tactical-move, action, reaction/decline-reaction,
+typed adventure selection, atomic loadout placement plus the narrower
+equip/unequip/transfer operations, begin-exploration, exploration-command,
+tactical-move, action, reaction/decline-reaction,
 begin-opposition, continue-after-outcome, and save commands from one origin.
 There is no
 browser-facing command that names an encounter; reaching an authored dungeon

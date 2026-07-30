@@ -12,11 +12,11 @@ places phase UI in named overlay regions. Catalog, camp, encounter, outcome,
 terminal, loading, and failure modes currently use abstract presentation-only
 backdrops; exploration uses the real bounded corridor frame. The following
 renderer-first campaign gaps are recorded in Den rather than implied complete:
-task 6427 adds drag/drop preparation and exploration inventory, task 6429 adds
-brief camera tweens, task 6428 promotes the tactical board into the rendered
-scene, task 6430 replaces target dropdowns with grid picking, and task 6431
-certifies the combined loop. A native window/input host remains a later
-downstream consumer; this browser composition does not claim to be that host.
+task 6429 adds brief camera tweens, task 6428 promotes the tactical board into
+the rendered scene, task 6430 replaces target dropdowns with grid picking, and
+task 6431 certifies the combined loop. A native window/input host remains a
+later downstream consumer; this browser composition does not claim to be that
+host.
 
 - The live slice has an authored four-person Warden company and four
   Ruleweaver/Asha-derived opposition roles,
@@ -71,11 +71,15 @@ downstream consumer; this browser composition does not claim to be that host.
   command then resolves the roll atomically. Completed entity state, turn,
   seeded/static roll-source configuration and position, operation/log
   identities, and bounded receipt explanations persist.
-- The default camp inventory/equipment path proves four carried items
-  (two armor pieces and two implements), one stash spare, one opponent reward,
-  one dungeon treasure, capacity rejection, equipment attribution/binding, and
-  persistence. It does not yet define consumables, shops, loot generation,
-  item comparison, crafting, or a substantial authored item catalog.
+- The default camp inventory/equipment path proves a four-item active-character
+  pack, a projected 24-slot shared inventory seeded with four authored spares,
+  drag/drop and keyboard/click/touch-compatible preparation, one opponent
+  reward, one dungeon treasure, capacity rejection without mutation,
+  equipment attribution/binding, and save/reopen. The same party loadout opens
+  over exploration without changing phase, but is intentionally read-only
+  because Rust admits loadout placement only in camp. It does not yet define
+  consumables, shops, loot generation, item comparison, crafting, or a
+  substantial authored item catalog.
 - The retained compass and minimap are now real product-neutral consumers of
   Rust-projected facing and discovered cells. The complete dungeon topology and
   hidden trigger coordinates never enter browser state.

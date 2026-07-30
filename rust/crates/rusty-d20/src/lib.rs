@@ -82,9 +82,10 @@ pub use game::{
     ExplorationDoorDto, ExplorationDto, ExplorationFacingDto, ExplorationLandmarkDto,
     ExplorationTreasureDto, GameLogEntryDto, GameLogKindDto, GameRuntime, GameRuntimeError,
     GameSnapshotDto, LoadoutCapacityDto, LoadoutDto, LoadoutItemDto, LoadoutRarityDto,
-    MoveActorRequestDto, NewAdventureRequestDto, PartyMemberDto, ReactionDto, ReactionPromptDto,
-    ResetSessionRequestDto, ResourceDto, SaveStateDto, SaveStatusDto, TacticalBoardDto,
-    TacticalCellDto, TacticalMoveDto, TransferItemRequestDto, UnequipItemRequestDto,
+    MoveActorRequestDto, MoveLoadoutItemRequestDto, NewAdventureRequestDto, PartyMemberDto,
+    ReactionDto, ReactionPromptDto, ResetSessionRequestDto, ResourceDto, SaveStateDto,
+    SaveStatusDto, TacticalBoardDto, TacticalCellDto, TacticalMoveDto, TransferItemRequestDto,
+    UnequipItemRequestDto,
 };
 pub use identity::{D20Id, D20IdentityError, D20_ID_PATTERN, MAX_D20_ID_BYTES};
 pub use session::{
@@ -191,6 +192,7 @@ pub fn generated_typescript() -> String {
         EquipItemRequestDto::decl(),
         UnequipItemRequestDto::decl(),
         TransferItemRequestDto::decl(),
+        MoveLoadoutItemRequestDto::decl(),
         MoveActorRequestDto::decl(),
         ChooseActionRequestDto::decl(),
         ApplyReactionRequestDto::decl(),

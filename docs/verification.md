@@ -85,10 +85,16 @@ occlusion-safe dungeon adapter.
 The ordinary browser gate also launches an isolated Rust host, saves through
 normal loadout controls, stops that process, starts a fresh process against the
 same save, verifies exact camp loadout and encounter continuation, and resolves
-the next configured roll automatically. The desktop/mobile smoke covers keyboard and
-click activation plus visible capacity rejection without mutation. The
-fresh-process case also proves a non-durable reaction prompt rejects saving
-without changing either authoritative in-memory state or the last durable save.
+the next configured roll automatically. The desktop/mobile smoke moves
+equipment to the 24-slot shared inventory and back into an authored slot with
+native drag/drop, repeats unequip/equip through keyboard and click activation,
+and proves visible capacity rejection without mutation. It opens the
+exploration inventory without changing phase, checks its read-only controls and
+focus restoration, and directly proves Rust rejects a forged exploration-time
+placement without changing the snapshot. The fresh-process case uses the
+click/touch-compatible preparation path, reopens that exact loadout, and also
+proves a non-durable reaction prompt rejects saving without changing either
+authoritative in-memory state or the last durable save.
 A two-page scenario proves a stale optimistic revision is rejected through a
 normal action control. Dedicated real-host scenarios complete Warden victory
 and defeat plus an Ember victory through ordinary controls. The Ember scenario

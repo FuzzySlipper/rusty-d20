@@ -217,6 +217,18 @@ impl GameRuntime {
             .iter()
             .map(|item| self.project_loadout_item(session, item.entity, None))
             .collect::<Result<Vec<_>, _>>()?;
+        let stash_capacity = stash_view
+            .capacity()
+            .iter()
+            .find(|usage| usage.metric.as_str() == "carried-items")
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(
+                    "camp stash carried-items capacity is missing".to_owned(),
+                )
+            })?;
+        let stash_maximum = stash_capacity.maximum.ok_or_else(|| {
+            GameRuntimeError::InvalidState("camp stash carried-items maximum is missing".to_owned())
+        })?;
         let defenses = self
             .rules
             .defenses()
@@ -255,6 +267,11 @@ impl GameRuntime {
             inventory_slots,
             equipment_slots,
             stash_items,
+            stash_capacity: LoadoutCapacityDto {
+                metric: "carried-items".to_owned(),
+                used: stash_capacity.used,
+                maximum: stash_maximum,
+            },
             capacity: LoadoutCapacityDto {
                 metric: "carried-items".to_owned(),
                 used: capacity.used,

@@ -68,6 +68,7 @@ function transport(
     equipItem: async () => sessionResult,
     unequipItem: async () => sessionResult,
     transferItem: async () => sessionResult,
+    moveLoadoutItem: async () => sessionResult,
     moveActor: async () => sessionResult,
     chooseAction: async () => sessionResult,
     applyReaction: async () => sessionResult,
@@ -106,6 +107,7 @@ describe("SessionStore", () => {
             inventorySlots: [],
             equipmentSlots: [],
             stashItems: [],
+            stashCapacity: { metric: "carried-items", used: 0, maximum: 8 },
             capacity: { metric: "carried-items", used: 0, maximum: 0 },
             defenses: [
               { id: "armor", label: "Armor", value: 12, sources: [] },
@@ -293,6 +295,12 @@ describe("SessionStore", () => {
           );
           return { ok: true, value: { ...snapshot, revision: 2 } };
         },
+        moveLoadoutItem: async (request) => {
+          calls.push(
+            `move:${request.itemId}:${request.fromOwnerId}:${request.toOwnerId}:${request.destinationSlotId}:${request.expectedRevision}`,
+          );
+          return { ok: true, value: { ...snapshot, revision: 3 } };
+        },
         transferItem: async (request) => {
           calls.push(
             `transfer:${request.itemId}:${request.fromOwnerId}:${request.toOwnerId}:${request.expectedRevision}`,
@@ -314,17 +322,26 @@ describe("SessionStore", () => {
       kind: "data",
       value: { revision: 2 },
     });
+    await store.moveLoadoutItem(204, 103, 101, "off-hand");
+    expect(store.session()).toMatchObject({
+      kind: "data",
+      value: { revision: 3 },
+    });
     await store.transferItem(204, 103, 101);
     expect(store.session()).toMatchObject({
       kind: "data",
-      value: { revision: 2 },
+      value: { revision: 3 },
     });
     expect(store.commandError()).toEqual({
       kind: "capacity",
       message: "inventory is full",
       retryable: false,
     });
-    expect(calls).toEqual(["equip:202:body:1", "transfer:204:103:101:2"]);
+    expect(calls).toEqual([
+      "equip:202:body:1",
+      "move:204:103:101:off-hand:2",
+      "transfer:204:103:101:3",
+    ]);
   });
 
   it("projects the authoritative session and preserves typed command rejection", async () => {

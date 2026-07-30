@@ -89,7 +89,7 @@ export type LoadoutCapacityDto = { metric: string, used: number, maximum: number
 
 export type DefenseReadoutDto = { id: string, label: string, value: number, sources: Array<string>, };
 
-export type LoadoutDto = { ownerId: number, stashOwnerId: number, inventorySlots: Array<LoadoutItemDto | null>, equipmentSlots: Array<EquipmentSlotDto>, stashItems: Array<LoadoutItemDto>, capacity: LoadoutCapacityDto, defenses: Array<DefenseReadoutDto>, };
+export type LoadoutDto = { ownerId: number, stashOwnerId: number, inventorySlots: Array<LoadoutItemDto | null>, equipmentSlots: Array<EquipmentSlotDto>, stashItems: Array<LoadoutItemDto>, stashCapacity: LoadoutCapacityDto, capacity: LoadoutCapacityDto, defenses: Array<DefenseReadoutDto>, };
 
 export type PartyMemberDto = { character: CharacterDto, loadout: LoadoutDto, };
 
@@ -116,6 +116,8 @@ export type EquipItemRequestDto = { expectedRevision: number, itemId: number, sl
 export type UnequipItemRequestDto = { expectedRevision: number, itemId: number, };
 
 export type TransferItemRequestDto = { expectedRevision: number, itemId: number, fromOwnerId: number, toOwnerId: number, };
+
+export type MoveLoadoutItemRequestDto = { expectedRevision: number, itemId: number, fromOwnerId: number, toOwnerId: number, destinationSlotId: string | null, };
 
 export type MoveActorRequestDto = { expectedRevision: number, actorId: number, x: number, y: number, };
 

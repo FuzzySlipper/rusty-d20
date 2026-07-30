@@ -416,6 +416,7 @@ pub struct LoadoutDto {
     pub inventory_slots: Vec<Option<LoadoutItemDto>>,
     pub equipment_slots: Vec<EquipmentSlotDto>,
     pub stash_items: Vec<LoadoutItemDto>,
+    pub stash_capacity: LoadoutCapacityDto,
     pub capacity: LoadoutCapacityDto,
     pub defenses: Vec<DefenseReadoutDto>,
 }
@@ -560,6 +561,21 @@ pub struct TransferItemRequestDto {
     pub from_owner_id: u64,
     #[ts(type = "number")]
     pub to_owner_id: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct MoveLoadoutItemRequestDto {
+    #[ts(type = "number")]
+    pub expected_revision: u64,
+    #[ts(type = "number")]
+    pub item_id: u64,
+    #[ts(type = "number")]
+    pub from_owner_id: u64,
+    #[ts(type = "number")]
+    pub to_owner_id: u64,
+    pub destination_slot_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

@@ -1192,6 +1192,116 @@ fn camp_loadout_is_engine_backed_typed_atomic_and_persistent() {
 }
 
 #[test]
+fn atomic_loadout_placement_moves_between_stash_pack_and_equipment() {
+    let mut runtime = GameRuntime::empty().unwrap();
+    let camp = runtime.new_adventure(0).unwrap();
+    let starting_loadout = &camp.campaign.as_ref().unwrap().party[0].loadout;
+    assert_eq!(starting_loadout.stash_capacity.used, 4);
+    assert_eq!(starting_loadout.stash_capacity.maximum, 24);
+
+    let stored = runtime
+        .move_loadout_item(MoveLoadoutItemRequestDto {
+            expected_revision: camp.revision,
+            item_id: PLAYER_BUCKLER.raw(),
+            from_owner_id: PLAYER.raw(),
+            to_owner_id: CAMP_STASH.raw(),
+            destination_slot_id: None,
+        })
+        .unwrap();
+    assert_eq!(stored.revision, camp.revision + 1);
+    assert_eq!(
+        stored.campaign.as_ref().unwrap().party[0]
+            .loadout
+            .stash_capacity
+            .used,
+        5
+    );
+
+    let equipped = runtime
+        .move_loadout_item(MoveLoadoutItemRequestDto {
+            expected_revision: stored.revision,
+            item_id: STASH_BUCKLER.raw(),
+            from_owner_id: CAMP_STASH.raw(),
+            to_owner_id: PLAYER.raw(),
+            destination_slot_id: Some("off-hand".to_owned()),
+        })
+        .unwrap();
+    assert_eq!(equipped.revision, stored.revision + 1);
+    assert_eq!(
+        equipped.campaign.as_ref().unwrap().party[0]
+            .loadout
+            .equipment_slots
+            .iter()
+            .find(|slot| slot.id == "off-hand")
+            .unwrap()
+            .equipped
+            .as_ref()
+            .unwrap()
+            .entity_id,
+        STASH_BUCKLER.raw()
+    );
+
+    let before_invalid = runtime.snapshot().unwrap();
+    let invalid_slot = runtime
+        .move_loadout_item(MoveLoadoutItemRequestDto {
+            expected_revision: equipped.revision,
+            item_id: 228,
+            from_owner_id: CAMP_STASH.raw(),
+            to_owner_id: PLAYER.raw(),
+            destination_slot_id: Some("main-hand".to_owned()),
+        })
+        .unwrap_err();
+    assert_eq!(invalid_slot.api_error().kind, ApiErrorKindDto::InvalidSlot);
+    assert_eq!(runtime.snapshot().unwrap(), before_invalid);
+
+    let stale = runtime
+        .move_loadout_item(MoveLoadoutItemRequestDto {
+            expected_revision: stored.revision,
+            item_id: STASH_BUCKLER.raw(),
+            from_owner_id: PLAYER.raw(),
+            to_owner_id: CAMP_STASH.raw(),
+            destination_slot_id: None,
+        })
+        .unwrap_err();
+    assert_eq!(stale.api_error().kind, ApiErrorKindDto::Stale);
+    assert_eq!(runtime.snapshot().unwrap(), before_invalid);
+
+    let encoded = runtime.encode_save().unwrap();
+    let mut reopened = GameRuntime::decode_save(&encoded).unwrap();
+    let reopened_snapshot = reopened.snapshot().unwrap();
+    assert!(reopened_snapshot.saved);
+    assert_eq!(
+        reopened_snapshot.campaign.as_ref().unwrap().party[0].loadout,
+        before_invalid.campaign.as_ref().unwrap().party[0].loadout
+    );
+    let exploring = reopened
+        .begin_exploration(reopened_snapshot.revision)
+        .unwrap();
+    let before_phase_rejection = reopened.snapshot().unwrap();
+    let phase = reopened
+        .move_loadout_item(MoveLoadoutItemRequestDto {
+            expected_revision: exploring.revision,
+            item_id: STASH_BUCKLER.raw(),
+            from_owner_id: PLAYER.raw(),
+            to_owner_id: CAMP_STASH.raw(),
+            destination_slot_id: None,
+        })
+        .unwrap_err();
+    assert_eq!(phase.api_error().kind, ApiErrorKindDto::Phase);
+    assert_eq!(reopened.snapshot().unwrap(), before_phase_rejection);
+
+    assert!(serde_json::from_value::<MoveLoadoutItemRequestDto>(json!({
+        "expectedRevision": 0,
+        "itemId": 204,
+        "fromOwnerId": 103,
+        "toOwnerId": 101,
+        "destinationSlotId": "off-hand",
+        "unknown": true
+    }))
+    .is_err());
+}
+
+#[test]
 fn equipment_track_bound_failure_keeps_its_public_error_identity() {
     let error = GameRuntimeError::Session(D20SessionError::Mechanics(
         MechanicsError::EquipmentWouldInvalidateTrack {

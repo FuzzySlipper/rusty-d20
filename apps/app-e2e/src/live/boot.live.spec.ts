@@ -27,7 +27,12 @@ liveScenario(
           inventory: await page
             .getByRole("region", { name: "Inventory", exact: true })
             .innerText(),
-          equipment: await page.getByLabel("Equipment").innerText(),
+          equipment: await page
+            .getByRole("region", {
+              name: "Mara Venn equipment",
+              exact: true,
+            })
+            .innerText(),
         },
       });
       await page.setViewportSize({ width: 390, height: 844 });

@@ -85,6 +85,7 @@ export function createFakeRustyD20Transport(
     equipItem: async () => sessionResult,
     unequipItem: async () => sessionResult,
     transferItem: async () => sessionResult,
+    moveLoadoutItem: async () => sessionResult,
     moveActor: async () => sessionResult,
     chooseAction: async () => sessionResult,
     applyReaction: async () => sessionResult,

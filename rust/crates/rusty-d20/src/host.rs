@@ -16,8 +16,9 @@ use crate::{
     ApiErrorDto, ApiErrorKindDto, ApplyReactionRequestDto, ChooseActionRequestDto,
     DeclineReactionRequestDto, EquipItemRequestDto, ExpectedRevisionDto,
     ExplorationCommandRequestDto, GameRuntime, GameRuntimeError, GameSnapshotDto, HealthDto,
-    MoveActorRequestDto, NewAdventureRequestDto, ResetSessionRequestDto, RollSourceConfig,
-    RuntimeReadoutDto, SaveStateDto, SaveStatusDto, TransferItemRequestDto, UnequipItemRequestDto,
+    MoveActorRequestDto, MoveLoadoutItemRequestDto, NewAdventureRequestDto, ResetSessionRequestDto,
+    RollSourceConfig, RuntimeReadoutDto, SaveStateDto, SaveStatusDto, TransferItemRequestDto,
+    UnequipItemRequestDto,
 };
 
 #[derive(Clone)]
@@ -72,6 +73,7 @@ fn router_with_recovery(
         .route("/api/v1/session/loadout/equip", post(equip_item))
         .route("/api/v1/session/loadout/unequip", post(unequip_item))
         .route("/api/v1/session/loadout/transfer", post(transfer_item))
+        .route("/api/v1/session/loadout/move", post(move_loadout_item))
         .route("/api/v1/session/move", post(move_actor))
         .route("/api/v1/session/action", post(choose_action))
         .route("/api/v1/session/reaction", post(reaction))
@@ -321,6 +323,13 @@ async fn transfer_item(
     Json(request): Json<TransferItemRequestDto>,
 ) -> ApiResult {
     mutate(&state, |runtime| runtime.transfer_item(request))
+}
+
+async fn move_loadout_item(
+    State(state): State<HostState>,
+    Json(request): Json<MoveLoadoutItemRequestDto>,
+) -> ApiResult {
+    mutate(&state, |runtime| runtime.move_loadout_item(request))
 }
 
 async fn choose_action(

@@ -8,6 +8,7 @@ import { ChangeDetectionStrategy, Component, computed, input, output, signal } f
 export interface EquippedItemView {
   readonly id: string;
   readonly name: string;
+  readonly description: string;
   readonly icon: string;
   readonly rarity: 'common' | 'uncommon' | 'rare' | 'epic';
 }
@@ -107,6 +108,15 @@ export const DEFAULT_EQUIP_DRAG_TYPE = 'application/x-rusty-engine-inventory-ite
         box-shadow: 0 0 0 1px var(--rusty-engine-accent);
       }
 
+      .slot--compatible {
+        border-color: var(--rusty-engine-accent);
+      }
+
+      .slot--incompatible {
+        filter: saturate(0.35);
+        opacity: 0.58;
+      }
+
       .slot--uncommon {
         border-color: var(--rusty-engine-accent);
       }
@@ -133,11 +143,26 @@ export const DEFAULT_EQUIP_DRAG_TYPE = 'application/x-rusty-engine-inventory-ite
         font-size: 0.68rem;
         text-align: center;
       }
+
+      .slot__compatibility {
+        color: var(--rusty-engine-accent);
+        font-size: 0.58rem;
+        text-transform: uppercase;
+      }
+
+      .instructions {
+        color: var(--rusty-engine-muted);
+        font-size: 0.72rem;
+        margin: 0 0 0.65rem;
+      }
     `,
   ],
   template: `
-    <section class="rusty-engine-panel" aria-label="Equipment">
-      <h2 class="rusty-engine-panel__title">Equipment</h2>
+    <section class="rusty-engine-panel" [attr.aria-label]="label()">
+      <h2 class="rusty-engine-panel__title">{{ label() }}</h2>
+      @if (instructions() !== "") {
+        <p class="instructions">{{ instructions() }}</p>
+      }
       <div class="doll">
         <ul class="column">
           @for (slot of leftSlots(); track slot.id) {
@@ -157,20 +182,28 @@ export const DEFAULT_EQUIP_DRAG_TYPE = 'application/x-rusty-engine-inventory-ite
       </div>
 
       <ng-template #slotTemplate let-slot>
-        <div
+        <button
+          type="button"
           [class]="slotClass(slot)"
-          role="button"
-          [attr.tabindex]="slot.equipped !== null ? 0 : null"
+          [attr.tabindex]="readOnly() ? -1 : 0"
+          [attr.aria-disabled]="readOnly()"
           [attr.aria-label]="
-            slot.equipped !== null ? slot.label + ': ' + slot.equipped.name : slot.label + ': empty'
+            slot.equipped !== null
+              ? slot.label + ': ' + slot.equipped.name + '. ' + slot.equipped.description
+              : slot.label +
+                ': empty' +
+                (selectedItemSlotId() === slot.id ? '. Compatible destination' : '')
           "
           [title]="slot.equipped !== null ? slot.equipped.name : slot.label"
+          [attr.draggable]="slot.equipped !== null && !readOnly() ? true : null"
+          (dragstart)="
+            slot.equipped !== null && !readOnly() && onDragStart($event, slot.equipped)
+          "
+          (dragend)="itemDragEnded.emit()"
           (dragover)="onDragOver($event, slot.id)"
           (dragleave)="onDragLeave(slot.id)"
           (drop)="onDrop($event, slot.id)"
-          (click)="slot.equipped !== null && slotSelected.emit(slot)"
-          (keydown.enter)="slot.equipped !== null && slotSelected.emit(slot)"
-          (keydown.space)="slot.equipped !== null && selectFromSpace($event, slot)"
+          (click)="!readOnly() && activateSlot(slot)"
         >
           @if (slot.equipped !== null) {
             <span class="slot__icon" aria-hidden="true">{{ slot.equipped.icon }}</span>
@@ -179,17 +212,27 @@ export const DEFAULT_EQUIP_DRAG_TYPE = 'application/x-rusty-engine-inventory-ite
             <span class="slot__icon" aria-hidden="true">＋</span>
           }
           <span class="slot__label">{{ slot.label }}</span>
-        </div>
+          @if (selectedItemSlotId() === slot.id) {
+            <span class="slot__compatibility">Compatible</span>
+          }
+        </button>
       </ng-template>
     </section>
   `,
 })
 export class EquipmentPanelComponent {
   readonly slots = input.required<readonly EquipmentSlotView[]>();
+  readonly label = input<string>('Equipment');
+  readonly instructions = input<string>('');
   readonly dragType = input<string>(DEFAULT_EQUIP_DRAG_TYPE);
+  readonly readOnly = input<boolean>(false);
+  readonly selectedItemSlotId = input<string | null>(null);
 
   /** Reports an item drop on a slot; the host decides what "equip" means. */
   readonly itemDropped = output<EquipmentDropEvent>();
+  readonly itemDragStarted = output<EquippedItemView>();
+  readonly itemDragEnded = output<void>();
+  readonly slotActivated = output<EquipmentSlotView>();
   /** Reports a click on a filled slot (e.g. to unequip). */
   readonly slotSelected = output<EquipmentSlotView>();
 
@@ -211,11 +254,22 @@ export class EquipmentPanelComponent {
     if (this.dragOverSlotId() === slot.id) {
       classes.push('slot--drop-target');
     }
+    const selectedSlot = this.selectedItemSlotId();
+    if (selectedSlot !== null) {
+      classes.push(
+        selectedSlot === slot.id ? 'slot--compatible' : 'slot--incompatible',
+      );
+    }
     return classes.join(' ');
   }
 
   protected onDragOver(event: DragEvent, slotId: string): void {
-    if (event.dataTransfer === null || !event.dataTransfer.types.includes(this.dragType())) {
+    if (
+      this.readOnly() ||
+      (this.selectedItemSlotId() !== null && this.selectedItemSlotId() !== slotId) ||
+      event.dataTransfer === null ||
+      !event.dataTransfer.types.includes(this.dragType())
+    ) {
       return;
     }
     event.preventDefault();
@@ -230,6 +284,12 @@ export class EquipmentPanelComponent {
   }
 
   protected onDrop(event: DragEvent, slotId: string): void {
+    if (
+      this.readOnly() ||
+      (this.selectedItemSlotId() !== null && this.selectedItemSlotId() !== slotId)
+    ) {
+      return;
+    }
     event.preventDefault();
     const itemId = event.dataTransfer?.getData(this.dragType()) ?? '';
     this.dragOverSlotId.set(null);
@@ -239,8 +299,18 @@ export class EquipmentPanelComponent {
     this.itemDropped.emit({ slotId, itemId });
   }
 
-  protected selectFromSpace(event: Event, slot: EquipmentSlotView): void {
-    event.preventDefault();
-    this.slotSelected.emit(slot);
+  protected onDragStart(event: DragEvent, item: EquippedItemView): void {
+    if (event.dataTransfer !== null) {
+      event.dataTransfer.setData(this.dragType(), item.id);
+      event.dataTransfer.effectAllowed = 'move';
+    }
+    this.itemDragStarted.emit(item);
+  }
+
+  protected activateSlot(slot: EquipmentSlotView): void {
+    this.slotActivated.emit(slot);
+    if (slot.equipped !== null) {
+      this.slotSelected.emit(slot);
+    }
   }
 }

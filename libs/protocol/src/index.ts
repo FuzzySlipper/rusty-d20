@@ -566,6 +566,7 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
     party === undefined ||
     party.length === 0 ||
     new Set(party.map((member) => member.character.id)).size !== party.length ||
+    !hasCanonicalSharedStash(party) ||
     encounters === undefined ||
     completedEncounters === undefined ||
     new Set(completedEncounters.map((entry) => entry.encounterId)).size !==
@@ -612,6 +613,41 @@ function decodeCampaign(value: unknown): CampaignDto | undefined {
     completedEncounters,
     completion,
   };
+}
+
+function hasCanonicalSharedStash(party: PartyMemberDto[]): boolean {
+  const canonical = party[0]?.loadout;
+  return (
+    canonical !== undefined &&
+    party.every(
+      ({ loadout }) =>
+        loadout.stashOwnerId === canonical.stashOwnerId &&
+        loadout.stashCapacity.metric === canonical.stashCapacity.metric &&
+        loadout.stashCapacity.used === canonical.stashCapacity.used &&
+        loadout.stashCapacity.maximum === canonical.stashCapacity.maximum &&
+        loadout.stashItems.length === canonical.stashItems.length &&
+        loadout.stashItems.every((item, index) =>
+          isSameLoadoutItem(item, canonical.stashItems[index]),
+        ),
+    )
+  );
+}
+
+function isSameLoadoutItem(
+  left: LoadoutItemDto,
+  right: LoadoutItemDto | undefined,
+): boolean {
+  return (
+    right !== undefined &&
+    left.entityId === right.entityId &&
+    left.definitionId === right.definitionId &&
+    left.name === right.name &&
+    left.icon === right.icon &&
+    left.rarity === right.rarity &&
+    left.quantity === right.quantity &&
+    left.equipmentSlotId === right.equipmentSlotId &&
+    left.equippedSlotId === right.equippedSlotId
+  );
 }
 
 function decodeAdventureCompletion(
@@ -717,6 +753,7 @@ function decodeLoadout(value: unknown): LoadoutDto | undefined {
       "equipmentSlots",
       "inventorySlots",
       "ownerId",
+      "stashCapacity",
       "stashOwnerId",
       "stashItems",
     ])
@@ -734,6 +771,7 @@ function decodeLoadout(value: unknown): LoadoutDto | undefined {
     decodeEquipmentSlot,
   );
   const stashItems = decodeArray(value["stashItems"], 256, decodeLoadoutItem);
+  const stashCapacity = decodeLoadoutCapacity(value["stashCapacity"]);
   const capacity = decodeLoadoutCapacity(value["capacity"]);
   const defenses = decodeArray(value["defenses"], 64, decodeDefenseReadout);
   if (
@@ -743,13 +781,16 @@ function decodeLoadout(value: unknown): LoadoutDto | undefined {
     inventorySlots === undefined ||
     equipmentSlots === undefined ||
     stashItems === undefined ||
+    stashCapacity === undefined ||
     capacity === undefined ||
     defenses === undefined ||
     defenses.length === 0 ||
     new Set(defenses.map((defense) => defense.id)).size !== defenses.length ||
     capacity.maximum !== inventorySlots.length ||
     capacity.used !== inventorySlots.filter((item) => item !== null).length ||
-    capacity.used > capacity.maximum
+    capacity.used > capacity.maximum ||
+    stashCapacity.used !== stashItems.length ||
+    stashCapacity.used > stashCapacity.maximum
   ) {
     return undefined;
   }
@@ -790,6 +831,7 @@ function decodeLoadout(value: unknown): LoadoutDto | undefined {
     inventorySlots,
     equipmentSlots,
     stashItems,
+    stashCapacity,
     capacity,
     defenses,
   };

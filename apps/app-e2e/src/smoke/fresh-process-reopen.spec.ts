@@ -32,27 +32,35 @@ test("reaction prompts reject saves and automatically resolved rolls survive a f
         exact: true,
       })
       .click();
-    await page
-      .getByLabel("Equipment")
-      .getByRole("button", { name: "Off Hand: Mara's buckler" })
-      .click();
-    await page
-      .getByLabel("Inventory item actions")
-      .getByRole("listitem")
-      .filter({ hasText: "Mara's buckler" })
-      .getByRole("button", { name: "Store" })
-      .click();
-    await page
-      .getByLabel("Camp stash")
-      .getByRole("listitem")
-      .filter({ hasText: "Spare buckler" })
-      .getByRole("button", { name: "Take" })
-      .click();
-    await page.getByRole("button", { name: "Spare buckler" }).click();
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    const maraEquipment = page.getByRole("region", {
+      name: "Mara Venn equipment",
+      exact: true,
+    });
+    const equippedBuckler = maraEquipment.getByRole("button", {
+      name: /Off Hand: Mara's buckler/,
+    });
+    await equippedBuckler.click();
+    await page.getByRole("button", { name: "Store" }).click();
     await expect(
-      page
-        .getByLabel("Equipment")
-        .getByRole("button", { name: "Off Hand: Spare buckler" }),
+      maraEquipment.getByRole("button", {
+        name: /Off Hand: empty/,
+      }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Camp stash")).toContainText(
+      "Shared slots 5/24",
+    );
+    await page
+      .getByLabel("Shared camp inventory")
+      .getByRole("button", { name: /Spare buckler/ })
+      .click();
+    await maraEquipment
+      .getByRole("button", {
+        name: /Off Hand: empty. Compatible destination/,
+      })
+      .click();
+    await expect(
+      maraEquipment.getByRole("button", { name: /Off Hand: Spare buckler/ }),
     ).toBeVisible();
     await expect(page.getByLabel("Armor defense readout")).toContainText("18");
     await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -109,8 +117,11 @@ test("reaction prompts reject saves and automatically resolved rolls survive a f
     await page.getByRole("button", { name: "Continue Adventure" }).click();
     await expect(
       page
-        .getByLabel("Equipment")
-        .getByRole("button", { name: "Off Hand: Spare buckler" }),
+        .getByRole("region", {
+          name: "Mara Venn equipment",
+          exact: true,
+        })
+        .getByRole("button", { name: /Off Hand: Spare buckler/ }),
     ).toBeVisible();
     await enterWardenEncounter(page);
     await expect(page.getByLabel("Encounter identity")).toContainText(

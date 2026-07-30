@@ -152,6 +152,23 @@ export class SessionStore {
     );
   }
 
+  async moveLoadoutItem(
+    itemId: number,
+    fromOwnerId: number,
+    toOwnerId: number,
+    destinationSlotId: string | null,
+  ): Promise<void> {
+    await this.mutate((expectedRevision) =>
+      this.transport.moveLoadoutItem({
+        expectedRevision,
+        itemId,
+        fromOwnerId,
+        toOwnerId,
+        destinationSlotId,
+      }),
+    );
+  }
+
   async chooseAction(
     actionId: string,
     actorId: number,

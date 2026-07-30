@@ -36,10 +36,12 @@ import { HotbarComponent, type HotbarSlotView } from "@rusty-d20/ui-hotbar";
 import {
   EquipmentPanelComponent,
   type EquipmentDropEvent,
+  type EquippedItemView,
   type EquipmentSlotView,
 } from "@rusty-d20/ui-equipment";
 import {
   InventoryGridComponent,
+  type InventoryDropEvent,
   type InventoryItemView,
 } from "@rusty-d20/ui-inventory";
 import {
@@ -50,6 +52,13 @@ import {
   MinimapComponent,
   type MinimapMarkerView,
 } from "@rusty-d20/ui-minimap";
+
+interface LoadoutItemLocation {
+  readonly item: LoadoutItemDto;
+  readonly ownerId: number;
+  readonly ownerName: string;
+  readonly location: "camp" | "pack" | "equipped";
+}
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -418,6 +427,35 @@ import {
         gap: 10px;
       }
 
+      .exploration-inventory {
+        align-content: start;
+        display: grid;
+        gap: 12px;
+        max-height: calc(100dvh - 132px);
+        overflow: auto;
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: min(620px, 100%);
+        z-index: 4;
+      }
+
+      .exploration-inventory__header,
+      .selected-loadout,
+      .loadout-actions__buttons {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: space-between;
+      }
+
+      .exploration-inventory__widgets {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: minmax(180px, 0.7fr) minmax(300px, 1.3fr);
+      }
+
       .camp {
         align-content: start;
         display: grid;
@@ -426,8 +464,7 @@ import {
       }
 
       .camp__header,
-      .defense-readout,
-      .stash__item {
+      .defense-readout {
         align-items: center;
         display: flex;
         flex-wrap: wrap;
@@ -454,6 +491,25 @@ import {
         grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr);
       }
 
+      .loadout-actions {
+        display: grid;
+        gap: 10px;
+      }
+
+      .loadout-actions__buttons {
+        justify-content: flex-start;
+      }
+
+      .selected-loadout small {
+        color: var(--rusty-engine-muted);
+        display: block;
+      }
+
+      .stash aui-inventory-grid {
+        max-height: 430px;
+        overflow: auto;
+      }
+
       .defense-readout {
         background: rgba(255, 255, 255, 0.04);
         border: 1px solid var(--rusty-engine-border);
@@ -469,21 +525,6 @@ import {
       .capacity {
         color: var(--rusty-engine-muted);
         font-size: 0.75rem;
-      }
-
-      .stash__items {
-        display: grid;
-        gap: 8px;
-        list-style: none;
-        margin: 0;
-        padding: 0;
-      }
-
-      .stash__item {
-        background: var(--rusty-engine-surface-solid);
-        border: 1px solid var(--rusty-engine-border);
-        border-radius: var(--rusty-engine-radius-sm);
-        padding: 8px 10px;
       }
 
       .stash__identity {
@@ -630,6 +671,7 @@ import {
         .camp__layout,
         .adventure-catalog,
         .loadout__widgets,
+        .exploration-inventory__widgets,
         .workspace,
         .exploration,
         .action-catalog {
@@ -692,6 +734,16 @@ import {
                 >
                   {{ snapshot.saved ? "Saved" : "Unsaved changes" }}
                 </span>
+                @if (snapshot.campaign.phase === "exploration") {
+                  <button
+                    type="button"
+                    [attr.aria-expanded]="explorationInventoryOpen()"
+                    [disabled]="store.busy()"
+                    (click)="openExplorationInventory($event)"
+                  >
+                    Inventory
+                  </button>
+                }
                 <button
                   type="button"
                   [disabled]="
@@ -1073,55 +1125,98 @@ import {
                         <div class="loadout__widgets">
                           <aui-inventory-grid
                             [columns]="2"
+                            [label]="
+                              activePartyMember()?.character?.name + ' pack'
+                            "
+                            instructions="Drag carried gear to a highlighted slot, or select it and activate the slot."
                             [selectedItemId]="selectedInventoryItemId()"
                             [slots]="inventorySlots()"
-                            (itemActivated)="activateInventoryItem($event)"
+                            (itemActivated)="selectInventoryItem($event)"
+                            (itemDragStarted)="selectInventoryItem($event)"
+                            (itemDropped)="dropIntoActivePack($event)"
                           />
                           <aui-equipment-panel
+                            [label]="
+                              activePartyMember()?.character?.name +
+                              ' equipment'
+                            "
+                            instructions="Compatible destinations highlight when an item is selected or dragged."
+                            [selectedItemSlotId]="selectedCompatibleSlotId()"
                             [slots]="equipmentSlots()"
                             (itemDropped)="equipDroppedItem($event)"
-                            (slotSelected)="unequipSlot($event)"
+                            (itemDragStarted)="selectEquipmentItem($event)"
+                            (slotActivated)="activateEquipmentSlot($event)"
                           />
                         </div>
 
                         <section
-                          class="rusty-engine-panel"
-                          aria-label="Inventory item actions"
+                          class="rusty-engine-panel loadout-actions"
+                          aria-label="Selected loadout item"
                         >
-                          <p class="meta-label">Carried gear</p>
-                          <ul class="stash__items">
-                            @for (item of carriedItems(); track item.entityId) {
-                              <li class="stash__item">
-                                <span class="stash__identity">
-                                  <span
-                                    class="stash__icon"
-                                    aria-hidden="true"
-                                    >{{ item.icon }}</span
-                                  >
-                                  <span>
-                                    {{ item.name }}
-                                    @if (item.equippedSlotId !== null) {
-                                      · equipped {{ item.equippedSlotId }}
-                                    }
-                                  </span>
+                          <p class="meta-label">Touch and keyboard alternative</p>
+                          @if (selectedLoadoutLocation(); as selection) {
+                            <div class="selected-loadout">
+                              <span class="stash__identity">
+                                <span class="stash__icon" aria-hidden="true">{{
+                                  selection.item.icon
+                                }}</span>
+                                <span>
+                                  <strong>{{ selection.item.name }}</strong>
+                                  <small>
+                                    {{ selection.ownerName }} ·
+                                    {{ selection.location }} · fits
+                                    {{ selection.item.equipmentSlotId }}
+                                  </small>
                                 </span>
+                              </span>
+                              <div class="loadout-actions__buttons">
+                                <button
+                                  class="primary"
+                                  type="button"
+                                  [disabled]="store.busy()"
+                                  (click)="equipSelectedItem()"
+                                >
+                                  Equip to
+                                  {{ activePartyMember()?.character?.name }}
+                                </button>
                                 <button
                                   type="button"
                                   [disabled]="
-                                    store.busy() || item.equippedSlotId !== null
+                                    store.busy() ||
+                                    (selection.ownerId ===
+                                      activePartyMember()?.loadout?.ownerId &&
+                                      selection.location === 'pack' &&
+                                      selection.item.equippedSlotId === null)
                                   "
-                                  [attr.title]="
-                                    item.equippedSlotId !== null
-                                      ? 'Unequip this item before moving it to the stash'
-                                      : null
+                                  (click)="moveSelectedToPack()"
+                                >
+                                  Move to pack
+                                </button>
+                                <button
+                                  type="button"
+                                  [disabled]="
+                                    store.busy() ||
+                                    selection.ownerId ===
+                                      activePartyMember()?.loadout?.stashOwnerId
                                   "
-                                  (click)="storeItem(item)"
+                                  (click)="moveSelectedToCampInventory()"
                                 >
                                   Store
                                 </button>
-                              </li>
-                            }
-                          </ul>
+                                <button type="button" (click)="clearLoadoutSelection()">
+                                  Clear
+                                </button>
+                              </div>
+                            </div>
+                          } @else {
+                            <p class="muted">
+                              Select or drag an item from the shared inventory,
+                              a pack, or an equipment slot.
+                            </p>
+                          }
+                          <p class="muted" role="status" aria-live="polite">
+                            {{ loadoutAnnouncement() }}
+                          </p>
                         </section>
                       </div>
 
@@ -1134,42 +1229,29 @@ import {
                           <p class="meta-label">Canonical storage</p>
                           <h2>Camp stash</h2>
                         </div>
-                        @if (
-                          (activePartyMember()?.loadout?.stashItems?.length ??
-                            0) === 0
-                        ) {
-                          <p class="muted">The stash is empty.</p>
-                        } @else {
-                          <ul class="stash__items">
-                            @for (
-                              item of activePartyMember()?.loadout
-                                ?.stashItems ?? [];
-                              track item.entityId
-                            ) {
-                              <li class="stash__item">
-                                <span class="stash__identity">
-                                  <span
-                                    class="stash__icon"
-                                    aria-hidden="true"
-                                    >{{ item.icon }}</span
-                                  >
-                                  <span>{{ item.name }}</span>
-                                </span>
-                                <button
-                                  type="button"
-                                  [disabled]="store.busy()"
-                                  (click)="takeItem(item)"
-                                >
-                                  Take
-                                </button>
-                              </li>
-                            }
-                          </ul>
-                        }
+                        <p class="capacity">
+                          Shared slots
+                          {{
+                            activePartyMember()?.loadout?.stashCapacity?.used
+                          }}/{{
+                            activePartyMember()?.loadout?.stashCapacity?.maximum
+                          }}
+                        </p>
+                        <aui-inventory-grid
+                          [columns]="4"
+                          label="Shared camp inventory"
+                          instructions="Drag a canonical item directly to its highlighted character slot."
+                          [selectedItemId]="selectedInventoryItemId()"
+                          [slots]="stashSlots()"
+                          (itemActivated)="selectInventoryItem($event)"
+                          (itemDragStarted)="selectInventoryItem($event)"
+                          (itemDropped)="dropIntoCampInventory($event)"
+                        />
                         <p class="muted">
-                          Capacity, containment, equipped-item, and stale-state
-                          rejections come from the Rust owner without changing
-                          the live loadout.
+                          One optimistic Rust command stages containment,
+                          unequip, transfer, and equip services together.
+                          Capacity, slot, track, phase, and stale failures leave
+                          the live loadout unchanged.
                         </p>
 
                         @if (campaign.availableEncounters.length > 0) {
@@ -1412,6 +1494,84 @@ import {
                         </span>
                       </section>
                     </aside>
+                    @if (explorationInventoryOpen()) {
+                      <aside
+                        class="rusty-engine-panel exploration-inventory"
+                        data-overlay-region="right"
+                        role="dialog"
+                        aria-modal="false"
+                        aria-labelledby="exploration-inventory-title"
+                        aria-describedby="exploration-inventory-policy"
+                      >
+                        <header class="exploration-inventory__header">
+                          <div>
+                            <p class="eyebrow">Expedition inventory</p>
+                            <h2 id="exploration-inventory-title">
+                              Party loadout
+                            </h2>
+                          </div>
+                          <button
+                            #explorationInventoryClose
+                            type="button"
+                            (click)="closeExplorationInventory()"
+                          >
+                            Close
+                          </button>
+                        </header>
+                        <nav
+                          class="reaction-list"
+                          aria-label="Exploration inventory character"
+                        >
+                          @for (
+                            member of game()!.campaign!.party;
+                            track member.character.id
+                          ) {
+                            <button
+                              type="button"
+                              [class.primary]="
+                                activePartyMember()?.character?.id ===
+                                member.character.id
+                              "
+                              (click)="
+                                selectPartyMember(member.character.id)
+                              "
+                            >
+                              {{ member.character.name }}
+                            </button>
+                          }
+                        </nav>
+                        <div class="exploration-inventory__widgets">
+                          <aui-inventory-grid
+                            [columns]="2"
+                            [label]="
+                              activePartyMember()?.character?.name + ' pack'
+                            "
+                            instructions="Read-only during exploration."
+                            [readOnly]="true"
+                            [slots]="inventorySlots()"
+                          />
+                          <aui-equipment-panel
+                            [label]="
+                              activePartyMember()?.character?.name +
+                              ' equipment'
+                            "
+                            instructions="Read-only during exploration."
+                            [readOnly]="true"
+                            [slots]="equipmentSlots()"
+                          />
+                        </div>
+                        <p
+                          id="exploration-inventory-policy"
+                          class="action-note"
+                        >
+                          The authoritative loadout remains visible, but Rust
+                          permits equipment and containment changes only in
+                          camp. Exploration continues at cell
+                          {{ exploration.x }},{{ exploration.y }} while this
+                          panel is open.
+                        </p>
+                      </aside>
+                    }
                   </section>
                 }
               } @else if (game()?.campaign?.phase === "adventure-complete") {
@@ -1810,6 +1970,10 @@ export class MainMenuScreenComponent implements OnInit {
   private readonly selectedTarget = signal<number | null>(null);
   private readonly selectedLoadoutItem = signal<number | null>(null);
   private readonly selectedPartyMember = signal<number | null>(null);
+  protected readonly explorationInventoryOpen = signal(false);
+  protected readonly loadoutAnnouncement = signal(
+    "Choose an item, then choose its highlighted equipment slot.",
+  );
   protected readonly campaignEntered = signal(false);
   private readonly resetDialog =
     viewChild.required<ElementRef<HTMLDialogElement>>("resetDialog");
@@ -1820,10 +1984,14 @@ export class MainMenuScreenComponent implements OnInit {
   private readonly newAdventureHeading = viewChild<
     ElementRef<HTMLHeadingElement>
   >("newAdventureHeading");
+  private readonly explorationInventoryClose = viewChild<
+    ElementRef<HTMLButtonElement>
+  >("explorationInventoryClose");
   private readonly injector = inject(Injector);
   private readonly animationFrame = browserAnimationFrame;
   private readonly clock = browserClock;
   private resetDialogTrigger: HTMLElement | null = null;
+  private explorationInventoryTrigger: HTMLElement | null = null;
   protected readonly compassMarkers: readonly CompassMarkerView[] = [];
 
   protected readonly game = computed(() => {
@@ -2008,6 +2176,41 @@ export class MainMenuScreenComponent implements OnInit {
     };
   });
 
+  private readonly loadoutItemLocations = computed<
+    readonly LoadoutItemLocation[]
+  >(() => {
+    const campaign = this.game()?.campaign;
+    if (campaign === null || campaign === undefined) {
+      return [];
+    }
+    const partyItems = campaign.party.flatMap((member) =>
+      member.loadout.inventorySlots.flatMap((item) =>
+        item === null
+          ? []
+          : [
+              {
+                item,
+                ownerId: member.loadout.ownerId,
+                ownerName: member.character.name,
+                location:
+                  item.equippedSlotId === null
+                    ? ("pack" as const)
+                    : ("equipped" as const),
+              },
+            ],
+      ),
+    );
+    const firstLoadout = campaign.party[0]?.loadout;
+    const stashItems =
+      firstLoadout?.stashItems.map((item) => ({
+        item,
+        ownerId: firstLoadout.stashOwnerId,
+        ownerName: "Camp inventory",
+        location: "camp" as const,
+      })) ?? [];
+    return [...partyItems, ...stashItems];
+  });
+
   protected readonly inventorySlots = computed<
     readonly (InventoryItemView | null)[]
   >(() =>
@@ -2016,10 +2219,39 @@ export class MainMenuScreenComponent implements OnInit {
     ),
   );
 
+  protected readonly stashSlots = computed<
+    readonly (InventoryItemView | null)[]
+  >(() => {
+    const loadout = this.activePartyMember()?.loadout;
+    if (loadout === undefined) {
+      return [];
+    }
+    const slots: (InventoryItemView | null)[] = loadout.stashItems.map((item) =>
+      this.inventoryItem(item),
+    );
+    while (slots.length < loadout.stashCapacity.maximum) {
+      slots.push(null);
+    }
+    return slots;
+  });
+
   protected readonly selectedInventoryItemId = computed(() => {
     const selected = this.selectedLoadoutItem();
     return selected === null ? null : String(selected);
   });
+
+  protected readonly selectedLoadoutLocation = computed(() => {
+    const selected = this.selectedLoadoutItem();
+    return selected === null
+      ? null
+      : (this.loadoutItemLocations().find(
+          (location) => location.item.entityId === selected,
+        ) ?? null);
+  });
+
+  protected readonly selectedCompatibleSlotId = computed(
+    () => this.selectedLoadoutLocation()?.item.equipmentSlotId ?? null,
+  );
 
   protected readonly equipmentSlots = computed<readonly EquipmentSlotView[]>(
     () =>
@@ -2032,16 +2264,11 @@ export class MainMenuScreenComponent implements OnInit {
             : {
                 id: String(slot.equipped.entityId),
                 name: slot.equipped.name,
+                description: `${slot.label} slot. Drag to a pack or the camp inventory to unequip it.`,
                 icon: slot.equipped.icon,
                 rarity: slot.equipped.rarity,
               },
       })),
-  );
-
-  protected readonly carriedItems = computed<readonly LoadoutItemDto[]>(() =>
-    (this.activePartyMember()?.loadout.inventorySlots ?? []).filter(
-      (item): item is LoadoutItemDto => item !== null,
-    ),
   );
 
   protected readonly hotbarSlots = computed<readonly HotbarSlotView[]>(() =>
@@ -2189,12 +2416,26 @@ export class MainMenuScreenComponent implements OnInit {
     void this.store.beginExploration();
   }
 
-  protected explorationCommand(command: ExplorationCommandKindDto): void {
-    void this.store.explorationCommand(command);
+  protected async explorationCommand(
+    command: ExplorationCommandKindDto,
+  ): Promise<void> {
+    await this.store.explorationCommand(command);
+    if (this.game()?.campaign?.phase !== "exploration") {
+      this.explorationInventoryOpen.set(false);
+      this.explorationInventoryTrigger = null;
+    }
   }
 
   protected handleExplorationKeydown(event: KeyboardEvent): void {
-    if (this.game()?.campaign?.phase !== "exploration" || this.store.busy()) {
+    if (this.game()?.campaign?.phase !== "exploration") {
+      return;
+    }
+    if (event.key === "Escape" && this.explorationInventoryOpen()) {
+      event.preventDefault();
+      this.closeExplorationInventory();
+      return;
+    }
+    if (this.store.busy()) {
       return;
     }
     const target = event.target;
@@ -2220,59 +2461,133 @@ export class MainMenuScreenComponent implements OnInit {
                 : undefined;
     if (command !== undefined) {
       event.preventDefault();
-      this.explorationCommand(command);
+      void this.explorationCommand(command);
     }
   }
 
-  protected activateInventoryItem(item: InventoryItemView): void {
-    const authoritative = this.findCarriedItem(item.id);
-    if (authoritative === undefined) {
+  protected selectInventoryItem(item: InventoryItemView): void {
+    const location = this.findLoadoutItem(item.id);
+    if (location === undefined) {
       return;
     }
-    this.selectedLoadoutItem.set(authoritative.entityId);
-    if (authoritative.equippedSlotId === null) {
-      void this.store.equipItem(
-        authoritative.entityId,
-        authoritative.equipmentSlotId,
+    this.selectedLoadoutItem.set(location.item.entityId);
+    this.loadoutAnnouncement.set(
+      `${location.item.name} selected from ${location.ownerName}. It fits the ${location.item.equipmentSlotId} slot.`,
+    );
+  }
+
+  protected selectEquipmentItem(item: EquippedItemView): void {
+    const location = this.findLoadoutItem(item.id);
+    if (location !== undefined) {
+      this.selectedLoadoutItem.set(location.item.entityId);
+      this.loadoutAnnouncement.set(
+        `${location.item.name} selected from ${location.ownerName}'s ${location.item.equippedSlotId} slot.`,
       );
-    } else {
-      void this.store.unequipItem(authoritative.entityId);
     }
+  }
+
+  protected activateEquipmentSlot(slot: EquipmentSlotView): void {
+    if (slot.equipped !== null) {
+      this.selectEquipmentItem(slot.equipped);
+      return;
+    }
+    const selection = this.selectedLoadoutLocation();
+    if (selection === null) {
+      this.loadoutAnnouncement.set(
+        `Choose an item before activating the empty ${slot.label} slot.`,
+      );
+      return;
+    }
+    if (selection.item.equipmentSlotId !== slot.id) {
+      this.loadoutAnnouncement.set(
+        `${selection.item.name} fits ${selection.item.equipmentSlotId}, not ${slot.id}.`,
+      );
+      return;
+    }
+    void this.moveLoadoutItem(selection, slot.id);
   }
 
   protected equipDroppedItem(event: EquipmentDropEvent): void {
-    const authoritative = this.findCarriedItem(event.itemId);
-    if (authoritative !== undefined) {
-      void this.store.equipItem(authoritative.entityId, event.slotId);
+    const location = this.findLoadoutItem(event.itemId);
+    if (location !== undefined) {
+      this.selectedLoadoutItem.set(location.item.entityId);
+      void this.moveLoadoutItem(location, event.slotId);
     }
   }
 
-  protected unequipSlot(slot: EquipmentSlotView): void {
-    if (slot.equipped !== null) {
-      void this.store.unequipItem(Number(slot.equipped.id));
+  protected dropIntoActivePack(event: InventoryDropEvent): void {
+    const location = this.findLoadoutItem(event.itemId);
+    if (location !== undefined) {
+      this.selectedLoadoutItem.set(location.item.entityId);
+      void this.moveLoadoutItem(location, null, "pack");
     }
   }
 
-  protected storeItem(item: LoadoutItemDto): void {
-    const loadout = this.activePartyMember()?.loadout;
-    if (loadout !== undefined && item.equippedSlotId === null) {
-      void this.store.transferItem(
-        item.entityId,
-        loadout.ownerId,
-        loadout.stashOwnerId,
-      );
+  protected dropIntoCampInventory(event: InventoryDropEvent): void {
+    const location = this.findLoadoutItem(event.itemId);
+    if (location !== undefined) {
+      this.selectedLoadoutItem.set(location.item.entityId);
+      void this.moveLoadoutItem(location, null, "camp");
     }
   }
 
-  protected takeItem(item: LoadoutItemDto): void {
-    const loadout = this.activePartyMember()?.loadout;
-    if (loadout !== undefined) {
-      void this.store.transferItem(
-        item.entityId,
-        loadout.stashOwnerId,
-        loadout.ownerId,
-      );
+  protected equipSelectedItem(): void {
+    const selection = this.selectedLoadoutLocation();
+    if (selection !== null) {
+      void this.moveLoadoutItem(selection, selection.item.equipmentSlotId);
     }
+  }
+
+  protected moveSelectedToPack(): void {
+    const selection = this.selectedLoadoutLocation();
+    if (selection !== null) {
+      void this.moveLoadoutItem(selection, null, "pack");
+    }
+  }
+
+  protected moveSelectedToCampInventory(): void {
+    const selection = this.selectedLoadoutLocation();
+    if (selection !== null) {
+      void this.moveLoadoutItem(selection, null, "camp");
+    }
+  }
+
+  protected clearLoadoutSelection(): void {
+    this.selectedLoadoutItem.set(null);
+    this.loadoutAnnouncement.set(
+      "Choose an item, then choose its highlighted equipment slot.",
+    );
+  }
+
+  protected openExplorationInventory(event: Event): void {
+    this.explorationInventoryTrigger =
+      event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    this.explorationInventoryOpen.set(true);
+    afterNextRender(
+      () => {
+        this.clock.setTimeout(
+          () => this.explorationInventoryClose()?.nativeElement.focus(),
+          0,
+        );
+      },
+      { injector: this.injector },
+    );
+  }
+
+  protected closeExplorationInventory(): void {
+    this.explorationInventoryOpen.set(false);
+    const trigger = this.explorationInventoryTrigger;
+    this.explorationInventoryTrigger = null;
+    afterNextRender(
+      () => {
+        this.clock.setTimeout(() => {
+          if (trigger?.isConnected) {
+            trigger.focus();
+          }
+        }, 0);
+      },
+      { injector: this.injector },
+    );
   }
 
   protected applyReaction(token: string, reactionId: string): void {
@@ -2400,6 +2715,10 @@ export class MainMenuScreenComponent implements OnInit {
         item.equippedSlotId === null
           ? item.name
           : `${item.name} · equipped ${item.equippedSlotId}`,
+      description:
+        item.equippedSlotId === null
+          ? `Fits the ${item.equipmentSlotId} equipment slot.`
+          : `Currently equipped in the ${item.equippedSlotId} slot.`,
       icon: item.icon,
       rarity: item.rarity,
       quantity: item.quantity,
@@ -2407,8 +2726,62 @@ export class MainMenuScreenComponent implements OnInit {
     };
   }
 
-  private findCarriedItem(itemId: string): LoadoutItemDto | undefined {
+  private findLoadoutItem(itemId: string): LoadoutItemLocation | undefined {
     const entityId = Number(itemId);
-    return this.carriedItems().find((item) => item.entityId === entityId);
+    return this.loadoutItemLocations().find(
+      (location) => location.item.entityId === entityId,
+    );
+  }
+
+  private async moveLoadoutItem(
+    selection: LoadoutItemLocation,
+    destinationSlotId: string | null,
+    destination: "pack" | "camp" = "pack",
+  ): Promise<void> {
+    const campaign = this.game()?.campaign;
+    const active = this.activePartyMember();
+    if (campaign?.phase !== "camp" || active === null) {
+      this.loadoutAnnouncement.set(
+        "Rust permits loadout changes only while the party is in camp.",
+      );
+      return;
+    }
+    const toOwnerId =
+      destination === "camp"
+        ? active.loadout.stashOwnerId
+        : active.loadout.ownerId;
+    if (
+      selection.ownerId === toOwnerId &&
+      selection.item.equippedSlotId === destinationSlotId
+    ) {
+      this.loadoutAnnouncement.set(
+        `${selection.item.name} is already in that destination.`,
+      );
+      return;
+    }
+
+    this.loadoutAnnouncement.set(`Moving ${selection.item.name}…`);
+    await this.store.moveLoadoutItem(
+      selection.item.entityId,
+      selection.ownerId,
+      toOwnerId,
+      destinationSlotId,
+    );
+    const error = this.store.commandError();
+    if (error !== null) {
+      this.loadoutAnnouncement.set(
+        `${error.kind} rejection: ${error.message}`,
+      );
+      return;
+    }
+    const destinationLabel =
+      destinationSlotId !== null
+        ? `${active.character.name}'s ${destinationSlotId} slot`
+        : destination === "camp"
+          ? "the shared camp inventory"
+          : `${active.character.name}'s pack`;
+    this.loadoutAnnouncement.set(
+      `${selection.item.name} moved to ${destinationLabel}.`,
+    );
   }
 }

@@ -7,6 +7,7 @@ import { ChangeDetectionStrategy, Component, computed, input, output, signal } f
 export interface InventoryItemView {
   readonly id: string;
   readonly name: string;
+  readonly description: string;
   readonly icon: string;
   readonly rarity: 'common' | 'uncommon' | 'rare' | 'epic';
   readonly quantity: number;
@@ -18,6 +19,12 @@ export interface InventoryItemView {
 export interface InventoryMoveEvent {
   readonly itemId: string;
   readonly fromIndex: number;
+  readonly toIndex: number;
+}
+
+/** Emitted for any item dropped on this inventory, including cross-panel drags. */
+export interface InventoryDropEvent {
+  readonly itemId: string;
   readonly toIndex: number;
 }
 
@@ -65,6 +72,7 @@ export const DEFAULT_ITEM_DRAG_TYPE = 'application/x-rusty-engine-inventory-item
         min-width: 52px;
         padding: 0;
         position: relative;
+        width: 100%;
       }
 
       .slot--occupied {
@@ -83,6 +91,10 @@ export const DEFAULT_ITEM_DRAG_TYPE = 'application/x-rusty-engine-inventory-item
       .slot--selected {
         background: var(--rusty-engine-hover-bg);
         box-shadow: 0 0 0 2px var(--rusty-engine-accent);
+      }
+
+      .slot--readonly {
+        cursor: default;
       }
 
       .slot--common {
@@ -116,33 +128,48 @@ export const DEFAULT_ITEM_DRAG_TYPE = 'application/x-rusty-engine-inventory-item
         position: absolute;
         top: 2px;
       }
+
+      .instructions {
+        color: var(--rusty-engine-muted);
+        font-size: 0.72rem;
+        margin: 0 0 0.65rem;
+      }
     `,
   ],
   template: `
-    <section class="rusty-engine-panel" aria-label="Inventory">
-      <h2 class="rusty-engine-panel__title">Inventory</h2>
+    <section class="rusty-engine-panel" [attr.aria-label]="label()">
+      <h2 class="rusty-engine-panel__title">{{ label() }}</h2>
+      @if (instructions() !== "") {
+        <p class="instructions">{{ instructions() }}</p>
+      }
       <ul class="grid" [style.grid-template-columns]="gridTemplate()">
         @for (slot of slots(); track $index) {
           <li>
-            <div
+            <button
+              type="button"
               class="slot"
               [class.slot--occupied]="slot !== null"
               [class.slot--drop-target]="dragOverIndex() === $index"
+              [class.slot--readonly]="readOnly()"
               [class]="slotClass(slot, $index)"
-              role="button"
-              [attr.tabindex]="slot !== null ? 0 : null"
+              [attr.tabindex]="slot !== null && !readOnly() ? 0 : -1"
+              [attr.aria-disabled]="readOnly()"
               [attr.aria-pressed]="slot !== null ? selectedItemId() === slot.id : null"
-              [attr.aria-label]="slot !== null ? slot.name : 'Empty slot ' + $index"
+              [attr.aria-label]="
+                slot !== null
+                  ? slot.name + '. ' + slot.description
+                  : 'Empty slot ' + ($index + 1)
+              "
               [title]="slot !== null ? slot.name : ''"
-              [attr.draggable]="slot !== null ? true : null"
-              (dragstart)="slot !== null && onDragStart($event, $index, slot)"
+              [attr.draggable]="slot !== null && !readOnly() ? true : null"
+              (dragstart)="
+                slot !== null && !readOnly() && onDragStart($event, $index, slot)
+              "
               (dragend)="onDragEnd()"
               (dragover)="onDragOver($event, $index)"
               (dragleave)="onDragLeave($index)"
               (drop)="onDrop($event, $index)"
-              (click)="slot !== null && itemActivated.emit(slot)"
-              (keydown.enter)="slot !== null && itemActivated.emit(slot)"
-              (keydown.space)="slot !== null && activateFromSpace($event, slot)"
+              (click)="slot !== null && !readOnly() && itemActivated.emit(slot)"
             >
               @if (slot !== null) {
                 @if (slot.equippable) {
@@ -153,7 +180,7 @@ export const DEFAULT_ITEM_DRAG_TYPE = 'application/x-rusty-engine-inventory-item
                   <span class="slot__quantity">{{ slot.quantity }}</span>
                 }
               }
-            </div>
+            </button>
           </li>
         }
       </ul>
@@ -163,11 +190,15 @@ export const DEFAULT_ITEM_DRAG_TYPE = 'application/x-rusty-engine-inventory-item
 export class InventoryGridComponent {
   readonly columns = input.required<number>();
   readonly slots = input.required<readonly (InventoryItemView | null)[]>();
+  readonly label = input<string>('Inventory');
+  readonly instructions = input<string>('');
   readonly dragType = input<string>(DEFAULT_ITEM_DRAG_TYPE);
+  readonly readOnly = input<boolean>(false);
   readonly selectedItemId = input<string | null>(null);
 
   /** Reports a completed drag between grid slots; the host decides what it means. */
   readonly itemMoved = output<InventoryMoveEvent>();
+  readonly itemDropped = output<InventoryDropEvent>();
   /** Reports the start of any item drag (e.g. so the host can track cross-panel drags). */
   readonly itemDragStarted = output<InventoryItemView>();
   readonly itemDragEnded = output<void>();
@@ -190,6 +221,9 @@ export class InventoryGridComponent {
     if (this.dragOverIndex() === index) {
       classes.push('slot--drop-target');
     }
+    if (this.readOnly()) {
+      classes.push('slot--readonly');
+    }
     return classes.join(' ');
   }
 
@@ -203,7 +237,11 @@ export class InventoryGridComponent {
   }
 
   protected onDragOver(event: DragEvent, index: number): void {
-    if (event.dataTransfer === null || !event.dataTransfer.types.includes(this.dragType())) {
+    if (
+      this.readOnly() ||
+      event.dataTransfer === null ||
+      !event.dataTransfer.types.includes(this.dragType())
+    ) {
       return;
     }
     event.preventDefault();
@@ -218,24 +256,25 @@ export class InventoryGridComponent {
   }
 
   protected onDrop(event: DragEvent, toIndex: number): void {
+    if (this.readOnly()) {
+      return;
+    }
     event.preventDefault();
     const itemId = event.dataTransfer?.getData(this.dragType()) ?? '';
     const fromIndex = this.dragSourceIndex;
     this.resetDrag();
-    if (itemId === '' || fromIndex === null || fromIndex === toIndex) {
+    if (itemId === '') {
       return;
     }
-    this.itemMoved.emit({ itemId, fromIndex, toIndex });
+    this.itemDropped.emit({ itemId, toIndex });
+    if (fromIndex !== null && fromIndex !== toIndex) {
+      this.itemMoved.emit({ itemId, fromIndex, toIndex });
+    }
   }
 
   protected onDragEnd(): void {
     this.resetDrag();
     this.itemDragEnded.emit();
-  }
-
-  protected activateFromSpace(event: Event, item: InventoryItemView): void {
-    event.preventDefault();
-    this.itemActivated.emit(item);
   }
 
   private resetDrag(): void {

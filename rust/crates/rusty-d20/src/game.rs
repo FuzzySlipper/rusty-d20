@@ -748,6 +748,160 @@ impl GameRuntime {
         self.snapshot()
     }
 
+    pub fn move_loadout_item(
+        &mut self,
+        request: MoveLoadoutItemRequestDto,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        let mut staged = self.clone();
+        let snapshot = staged.move_loadout_item_inner(request)?;
+        *self = staged;
+        Ok(snapshot)
+    }
+
+    fn move_loadout_item_inner(
+        &mut self,
+        request: MoveLoadoutItemRequestDto,
+    ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        self.ensure_revision(request.expected_revision)?;
+        self.ensure_camp_phase()?;
+        self.ensure_mutation_capacity(true, true)?;
+
+        let item = entity(request.item_id)?;
+        let from_owner = entity(request.from_owner_id)?;
+        let to_owner = entity(request.to_owner_id)?;
+        let adventure = self.adventure()?.clone();
+        let item_definition = product_loadout_item(&self.rules, &adventure, item)?.clone();
+        let equipment = item_definition.equipment.clone();
+        let (_, required_slot) = self
+            .rules
+            .equipment_definition(&equipment)
+            .expect("authored equipment exists in the compiled ruleset");
+        if let Some(destination_slot) = &request.destination_slot_id {
+            if destination_slot != required_slot.as_str() {
+                return Err(GameRuntimeError::InvalidEquipmentSlot {
+                    requested: destination_slot.clone(),
+                    required: required_slot.to_string(),
+                });
+            }
+        }
+
+        let stash = storage_entity(&self.rules, &adventure, &adventure.camp_storage)?;
+        let party_entities = adventure
+            .party
+            .iter()
+            .map(|member| character_entity(&self.rules, &adventure, member))
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        let allowed_owner = |owner: EntityId| owner == stash || party_entities.contains(&owner);
+        if !allowed_owner(from_owner) || !allowed_owner(to_owner) {
+            return Err(GameRuntimeError::InvalidContainment(
+                "loadout placement is limited to party inventories and the camp stash".to_owned(),
+            ));
+        }
+        if request.destination_slot_id.is_some() && !party_entities.contains(&to_owner) {
+            return Err(GameRuntimeError::InvalidContainment(
+                "only a party member can receive equipped gear".to_owned(),
+            ));
+        }
+
+        let actual_owner = self
+            .session()?
+            .entities()
+            .contained_in(item)
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidContainment(format!(
+                    "item {} has no canonical owner",
+                    item.raw()
+                ))
+            })?;
+        if actual_owner != from_owner {
+            return Err(GameRuntimeError::InvalidContainment(format!(
+                "item {} belongs to entity {}, not requested source entity {}",
+                item.raw(),
+                actual_owner.raw(),
+                from_owner.raw()
+            )));
+        }
+
+        let equipped_slot = self
+            .session()?
+            .entities()
+            .component::<EquipmentComponent>(from_owner)?
+            .and_then(|equipment| {
+                equipment
+                    .assignments()
+                    .iter()
+                    .find(|assignment| assignment.item == item)
+                    .map(|assignment| assignment.slot.to_string())
+            });
+        if from_owner == to_owner {
+            match (&equipped_slot, &request.destination_slot_id) {
+                (None, None) => {
+                    return Err(GameRuntimeError::InvalidContainment(
+                        "item is already in the requested inventory".to_owned(),
+                    ));
+                }
+                (Some(current), Some(destination)) if current == destination => {
+                    return Err(GameRuntimeError::InvalidEquipmentSlot {
+                        requested: destination.clone(),
+                        required: "an empty destination or inventory".to_owned(),
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        let serial = self.next_operation;
+        if equipped_slot.is_some() {
+            self.session_mut()?.unequip_item(
+                from_owner,
+                item,
+                operation(&format!("move-loadout-{serial}-unequip"))?,
+            )?;
+        }
+        if from_owner != to_owner {
+            self.session_mut()?.transfer_item(
+                item,
+                from_owner,
+                to_owner,
+                operation(&format!("move-loadout-{serial}-transfer"))?,
+            )?;
+        }
+        if request.destination_slot_id.is_some() {
+            self.session_mut()?.equip_item(
+                to_owner,
+                item,
+                &equipment,
+                operation(&format!("move-loadout-{serial}-equip"))?,
+            )?;
+        }
+
+        self.next_operation = serial + 1;
+        self.bump_revision()?;
+        self.saved_revision = None;
+        let destination = match &request.destination_slot_id {
+            Some(slot) => format!(
+                "{}'s {} slot",
+                party_member_name(&self.rules, &adventure, to_owner)?,
+                humanize(slot)
+            ),
+            None if to_owner == stash => "the camp inventory".to_owned(),
+            None => format!(
+                "{}'s pack",
+                party_member_name(&self.rules, &adventure, to_owner)?
+            ),
+        };
+        self.push_log(
+            GameLogKindDto::System,
+            "Loadout",
+            &format!("Placed {} in {destination}.", item_definition.name),
+            vec![
+                "The transfer and equipment services committed as one Rust-owned operation."
+                    .to_owned(),
+            ],
+        )?;
+        self.snapshot()
+    }
+
     pub fn choose_action(
         &mut self,
         request: ChooseActionRequestDto,

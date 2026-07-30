@@ -86,22 +86,38 @@ test.describe.serial("real Rust encounter shell", () => {
     );
     await expect(page.getByLabel("Armor defense readout")).toContainText("18");
     await expect(
-      page.getByRole("region", { name: "Inventory", exact: true }),
+      page.getByRole("region", { name: "Mara Venn pack", exact: true }),
     ).toBeVisible();
-    await expect(page.getByLabel("Equipment")).toBeVisible();
-    await expect(page.getByLabel("Equipment")).toContainText(
-      "Mara's training blade",
+    const maraEquipment = page.getByRole("region", {
+      name: "Mara Venn equipment",
+      exact: true,
+    });
+    await expect(maraEquipment).toBeVisible();
+    await expect(maraEquipment).toContainText("Mara's training blade");
+    await expect(maraEquipment).toContainText("Mara's field bow");
+    await expect(page.getByLabel("Camp stash")).toContainText(
+      "Shared slots 4/24",
     );
-    await expect(page.getByLabel("Equipment")).toContainText(
-      "Mara's field bow",
-    );
-    await expect(page.getByLabel("Camp stash")).toContainText("Spare buckler");
+    await expect(
+      page
+        .getByLabel("Shared camp inventory")
+        .getByRole("button", { name: /Spare chain armor/ }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByLabel("Shared camp inventory")
+        .getByRole("button", { name: /Spare training blade/ }),
+    ).toBeVisible();
     await testInfo.attach("renderer-root-camp-desktop.png", {
       body: await page.screenshot(),
       contentType: "image/png",
     });
 
-    await page.getByRole("button", { name: "Take" }).click();
+    await page
+      .getByLabel("Shared camp inventory")
+      .getByRole("button", { name: /Spare buckler/ })
+      .click();
+    await page.getByRole("button", { name: "Move to pack" }).click();
     await expect(page.getByRole("alert")).toContainText("capacity rejection");
     await expect(page.getByRole("alert")).toContainText("maximum: 4");
     await testInfo.attach("capacity-rejection.png", {
@@ -112,18 +128,51 @@ test.describe.serial("real Rust encounter shell", () => {
     await expect(page.getByLabel("Armor defense readout")).toContainText("18");
     await expect(page.getByText("Carried 4/4")).toBeVisible();
 
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    const equippedBuckler = maraEquipment.getByRole("button", {
+      name: /Off Hand: Mara's buckler/,
+    });
+    const campEmptySlot = page
+      .getByLabel("Shared camp inventory")
+      .getByRole("button", { name: "Empty slot 5" });
+    await equippedBuckler.dragTo(campEmptySlot);
+    await expect(page.getByLabel("Camp stash")).toContainText(
+      "Shared slots 5/24",
+    );
+    const spareBuckler = page
+      .getByLabel("Shared camp inventory")
+      .getByRole("button", { name: /Spare buckler/ });
+    const emptyOffHand = maraEquipment.getByRole("button", {
+      name: /Off Hand: empty. Compatible destination/,
+    });
+    await spareBuckler.dragTo(emptyOffHand);
+    await expect(maraEquipment).toContainText("Spare buckler");
+    await expect(page.getByLabel("Camp stash")).toContainText(
+      "Shared slots 4/24",
+    );
+
     const chainInventory = page.getByRole("button", {
       name: /Mara's chain armor · equipped body/,
     });
     await chainInventory.focus();
     await chainInventory.press("Enter");
+    await page.getByRole("button", { name: "Move to pack" }).click();
     await expect(page.getByLabel("Armor defense readout")).toContainText("16");
     const unequippedChain = page.getByRole("button", {
-      name: "Mara's chain armor",
+      name: /Mara's chain armor. Fits the body equipment slot/,
     });
     await unequippedChain.focus();
     await unequippedChain.press("Space");
+    await maraEquipment
+      .getByRole("button", {
+        name: /Body: empty. Compatible destination/,
+      })
+      .press("Enter");
     await expect(page.getByLabel("Armor defense readout")).toContainText("18");
+    await testInfo.attach("drag-loadout-preparation.png", {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.locator("aui-character-status")).toHaveCount(1);
@@ -141,9 +190,12 @@ test.describe.serial("real Rust encounter shell", () => {
         exact: true,
       }),
     ).toBeVisible();
-    await expect(page.getByLabel("Equipment")).toContainText(
-      "Ilyra's chain armor",
-    );
+    await expect(
+      page.getByRole("region", {
+        name: "Ilyra Fen equipment",
+        exact: true,
+      }),
+    ).toContainText("Ilyra's chain armor");
     await page
       .getByRole("navigation", { name: "Party loadout selection" })
       .getByRole("button", { name: "Mara Venn" })
@@ -172,6 +224,51 @@ test.describe.serial("real Rust encounter shell", () => {
     await expect(dungeonViewport.locator("canvas")).toBeVisible();
     await expect(dungeonViewport.getByRole("alert")).toHaveCount(0);
     await expectRendererCanvasAtPoint(page, 640, 400);
+    const beforeExplorationInventory = await (
+      await request.get("/api/v1/session")
+    ).json();
+    const inventoryTrigger = page.getByRole("button", { name: "Inventory" });
+    await inventoryTrigger.click();
+    const explorationInventory = page.getByRole("dialog", {
+      name: "Party loadout",
+    });
+    await expect(explorationInventory).toBeVisible();
+    await expect(
+      explorationInventory.getByRole("button", { name: "Close" }),
+    ).toBeFocused();
+    await expect(
+      explorationInventory
+        .getByRole("region", { name: "Mara Venn pack", exact: true })
+        .getByRole("button", {
+          name: /Mara's chain armor/,
+        }),
+    ).toHaveAttribute("aria-disabled", "true");
+    await testInfo.attach("exploration-inventory-overlay.png", {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
+    const rejectedExplorationMove = await request.post(
+      "/api/v1/session/loadout/move",
+      {
+        data: {
+          expectedRevision: beforeExplorationInventory.revision,
+          itemId: 202,
+          fromOwnerId: 101,
+          toOwnerId: 103,
+          destinationSlotId: null,
+        },
+      },
+    );
+    expect(rejectedExplorationMove.status()).toBe(422);
+    await expect(rejectedExplorationMove.json()).resolves.toMatchObject({
+      kind: "phase",
+    });
+    await expect((await request.get("/api/v1/session")).json()).resolves.toEqual(
+      beforeExplorationInventory,
+    );
+    await page.keyboard.press("Escape");
+    await expect(explorationInventory).toHaveCount(0);
+    await expect(inventoryTrigger).toBeFocused();
     await testInfo.attach("engine-dungeon-corridor.png", {
       body: await dungeonViewport.screenshot(),
       contentType: "image/png",

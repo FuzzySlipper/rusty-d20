@@ -140,6 +140,25 @@ describe('createHttpRustyD20Transport', () => {
       }),
     ).resolves.toEqual({ ok: true, value: snapshot });
     await expect(
+      transport.moveLoadoutItem({
+        expectedRevision: 0,
+        itemId: 204,
+        fromOwnerId: 103,
+        toOwnerId: 101,
+        destinationSlotId: 'off-hand',
+      }),
+    ).resolves.toEqual({ ok: true, value: snapshot });
+    expect(posts.at(-1)).toEqual({
+      path: '/api/v1/session/loadout/move',
+      body: {
+        expectedRevision: 0,
+        itemId: 204,
+        fromOwnerId: 103,
+        toOwnerId: 101,
+        destinationSlotId: 'off-hand',
+      },
+    });
+    await expect(
       transport.moveActor({
         expectedRevision: 0,
         actorId: 101,
