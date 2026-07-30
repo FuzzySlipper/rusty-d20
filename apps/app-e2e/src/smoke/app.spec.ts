@@ -1,5 +1,24 @@
 import { expect, test, type Page } from "@playwright/test";
 
+async function expectRendererCanvasAtPoint(
+  page: Page,
+  x: number,
+  y: number,
+): Promise<void> {
+  const hit = await page.evaluate(
+    ({ pointX, pointY }) => {
+      const target = document.elementFromPoint(pointX, pointY);
+      return {
+        insideRenderer: target?.closest("aui-game-viewport") !== null,
+        tagName: target?.tagName ?? null,
+      };
+    },
+    { pointX: x, pointY: y },
+  );
+
+  expect(hit).toEqual({ insideRenderer: true, tagName: "CANVAS" });
+}
+
 test.describe.serial("real Rust encounter shell", () => {
   test("loading projection is visible while Rust save status is pending", async ({
     page,
@@ -152,6 +171,7 @@ test.describe.serial("real Rust encounter shell", () => {
     );
     await expect(dungeonViewport.locator("canvas")).toBeVisible();
     await expect(dungeonViewport.getByRole("alert")).toHaveCount(0);
+    await expectRendererCanvasAtPoint(page, 640, 400);
     await testInfo.attach("engine-dungeon-corridor.png", {
       body: await dungeonViewport.screenshot(),
       contentType: "image/png",
@@ -163,6 +183,26 @@ test.describe.serial("real Rust encounter shell", () => {
         () => document.documentElement.scrollWidth <= window.innerWidth,
       ),
     ).toBe(true);
+    const narrowPanels = page.locator(
+      ".exploration__main > .rusty-engine-panel",
+    );
+    const narrowUpperPanel = await narrowPanels.nth(0).boundingBox();
+    const narrowLowerPanel = await narrowPanels.nth(1).boundingBox();
+    expect(narrowUpperPanel).not.toBeNull();
+    expect(narrowLowerPanel).not.toBeNull();
+    await expectRendererCanvasAtPoint(
+      page,
+      195,
+      Math.floor(
+        ((narrowUpperPanel?.y ?? 0) +
+          (narrowUpperPanel?.height ?? 0) +
+          (narrowLowerPanel?.y ?? 0)) /
+          2,
+      ),
+    );
+    const narrowForward = page.getByRole("button", { name: "↑ Forward" });
+    await narrowForward.focus();
+    await expect(narrowForward).toBeFocused();
     await testInfo.attach("engine-dungeon-corridor-mobile.png", {
       body: await page.locator("aui-game-viewport").screenshot(),
       contentType: "image/png",

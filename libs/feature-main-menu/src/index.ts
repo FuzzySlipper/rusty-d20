@@ -106,8 +106,24 @@ import {
         z-index: 2;
       }
 
-      .game-overlay > *,
-      .game-overlay__stage > * {
+      .game-overlay > .topbar,
+      .game-overlay > .reset-dialog,
+      .game-overlay__stage .rusty-engine-panel,
+      .game-overlay__stage .command-error,
+      .game-overlay__stage button,
+      .game-overlay__stage a,
+      .game-overlay__stage input,
+      .game-overlay__stage select,
+      .game-overlay__stage summary,
+      .game-overlay__stage textarea,
+      .game-overlay__stage aui-character-status,
+      .game-overlay__stage aui-combat-log,
+      .game-overlay__stage aui-compass,
+      .game-overlay__stage aui-equipment-panel,
+      .game-overlay__stage aui-hotbar,
+      .game-overlay__stage aui-inventory-grid,
+      .game-overlay__stage aui-minimap,
+      .game-overlay__stage aui-tactical-board {
         pointer-events: auto;
       }
 

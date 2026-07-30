@@ -107,6 +107,7 @@ export class StatusRendererComponent {
         color: var(--rusty-engine-accent);
         font-size: 1.3rem;
         left: 50%;
+        pointer-events: none;
         position: absolute;
         text-shadow: 0 0 8px rgb(0 0 0);
         top: 50%;
