@@ -8,6 +8,9 @@ import {
 const board: TacticalBoardView = {
   width: 3,
   height: 2,
+  interactionMode: "targeting",
+  targetingActionId: "longsword-strike",
+  targetingActionLabel: "Longsword Strike",
   cells: [
     {
       id: "0:0",
@@ -19,8 +22,7 @@ const board: TacticalBoardView = {
       faction: null,
       defeated: false,
       current: false,
-      selectedTarget: false,
-      selectable: false,
+      legalActionTarget: false,
       legalMoveCost: null,
       route: null,
     },
@@ -34,8 +36,7 @@ const board: TacticalBoardView = {
       faction: "party",
       defeated: false,
       current: true,
-      selectedTarget: false,
-      selectable: false,
+      legalActionTarget: false,
       legalMoveCost: null,
       route: null,
     },
@@ -49,8 +50,7 @@ const board: TacticalBoardView = {
       faction: null,
       defeated: false,
       current: false,
-      selectedTarget: false,
-      selectable: false,
+      legalActionTarget: false,
       legalMoveCost: 2,
       route: [
         { x: 1, y: 0 },
@@ -69,8 +69,7 @@ const board: TacticalBoardView = {
       faction: null,
       defeated: false,
       current: false,
-      selectedTarget: false,
-      selectable: false,
+      legalActionTarget: false,
       legalMoveCost: null,
       route: null,
     },
@@ -84,8 +83,7 @@ const board: TacticalBoardView = {
       faction: "opposition",
       defeated: false,
       current: false,
-      selectedTarget: true,
-      selectable: true,
+      legalActionTarget: true,
       legalMoveCost: null,
       route: null,
     },
@@ -99,8 +97,7 @@ const board: TacticalBoardView = {
       faction: null,
       defeated: false,
       current: false,
-      selectedTarget: false,
-      selectable: false,
+      legalActionTarget: false,
       legalMoveCost: 1,
       route: [
         { x: 1, y: 0 },
@@ -137,7 +134,7 @@ describe("createTacticalRenderFrame", () => {
     expect(
       creates.find((op) => op.node.metadata.label === "tactical-entity-102")
         ?.node.metadata.tags,
-    ).toEqual(expect.arrayContaining(["opposition", "selected-target"]));
+    ).toEqual(expect.arrayContaining(["opposition", "legal-action-target"]));
   });
 
   it("keeps stable handles and typed cell/entity pick identities across frames", () => {
@@ -161,7 +158,8 @@ describe("createTacticalRenderFrame", () => {
     expect(
       first.picks.find((pick) => pick.identity === "entity:102"),
     ).toMatchObject({
-      label: "Iron Warden, opposition, at 1, 1",
+      label:
+        "Iron Warden, opposition, at 1, 1, legal target for Longsword Strike",
       selection: { x: 1, y: 1, participantId: 102 },
     });
   });

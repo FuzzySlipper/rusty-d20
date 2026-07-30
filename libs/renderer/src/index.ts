@@ -198,7 +198,7 @@ export class StatusRendererComponent {
         "
         [attr.aria-label]="
           view().mode === 'encounter' || view().mode === 'outcome'
-            ? 'Rendered tactical combat board. Use arrow keys to inspect cells and Enter to choose one.'
+            ? boardAriaLabel()
             : null
         "
         [attr.aria-roledescription]="
@@ -211,6 +211,7 @@ export class StatusRendererComponent {
             ? 'application'
             : null
         "
+        [attr.data-interaction-mode]="view().tactical?.interactionMode ?? null"
         [attr.tabindex]="view().mode === 'encounter' ? 0 : -1"
         width="960"
         height="540"
@@ -219,7 +220,7 @@ export class StatusRendererComponent {
       ></canvas>
       @if (view().mode === "encounter") {
         <p class="board-focus" aria-live="polite">
-          {{ keyboardCellLabel() }} · Arrow keys inspect · Enter selects
+          {{ keyboardCellLabel() }} · {{ boardKeyboardInstructions() }}
         </p>
       }
       @if (rendererError(); as message) {
@@ -236,6 +237,7 @@ export class GameViewportComponent
 {
   readonly view = input.required<GameViewportView>();
   readonly sceneSelected = output<TacticalBoardSelection>();
+  readonly sceneCancelled = output<void>();
   protected readonly rendererError = signal<string | null>(null);
   protected readonly keyboardCellLabel = signal(
     "Focus the board to inspect its Rust-projected cells",
@@ -246,6 +248,7 @@ export class GameViewportComponent
   private activeHandles: GameRenderFrame["handles"] = [];
   private activeScene: GameRenderFrame | null = null;
   private keyboardCell: readonly [number, number] | null = null;
+  private keyboardInteractionKey: string | null = null;
   private stopResizeObservation: (() => void) | null = null;
   private destroyed = false;
 
@@ -372,6 +375,13 @@ export class GameViewportComponent
         this.sceneSelected.emit(selection);
       }
       return;
+    } else if (
+      event.key === "Escape" &&
+      tactical.interactionMode === "targeting"
+    ) {
+      event.preventDefault();
+      this.sceneCancelled.emit();
+      return;
     } else {
       return;
     }
@@ -388,10 +398,18 @@ export class GameViewportComponent
     const tactical = this.view().tactical;
     if (tactical === null) {
       this.keyboardCell = null;
+      this.keyboardInteractionKey = null;
       this.keyboardCellLabel.set(
         "Focus the board to inspect its Rust-projected cells",
       );
       return;
+    }
+    const interactionKey = `${tactical.interactionMode}:${
+      tactical.targetingActionId ?? ""
+    }`;
+    if (interactionKey !== this.keyboardInteractionKey) {
+      this.keyboardCell = null;
+      this.keyboardInteractionKey = interactionKey;
     }
     if (
       this.keyboardCell !== null &&
@@ -411,6 +429,7 @@ export class GameViewportComponent
       return;
     }
     const initial =
+      tactical.cells.find((cell) => cell.legalActionTarget) ??
       tactical.cells.find((cell) => cell.current) ??
       tactical.cells.find((cell) => cell.legalMoveCost !== null) ??
       tactical.cells.find((cell) => cell.terrain === "floor");
@@ -421,6 +440,20 @@ export class GameViewportComponent
           "Unknown tactical cell",
       );
     }
+  }
+
+  protected boardAriaLabel(): string {
+    const tactical = this.view().tactical;
+    return tactical?.interactionMode === "targeting" &&
+      tactical.targetingActionLabel !== null
+      ? `Rendered tactical combat board. Targeting ${tactical.targetingActionLabel}. Use arrow keys to inspect cells, Enter to choose a legal target, and Escape to cancel.`
+      : "Rendered tactical combat board. Use arrow keys to inspect cells and Enter to move.";
+  }
+
+  protected boardKeyboardInstructions(): string {
+    return this.view().tactical?.interactionMode === "targeting"
+      ? "Arrow keys inspect · Enter targets · Escape cancels"
+      : "Arrow keys inspect · Enter moves";
   }
 
   private applyCameraForSize(width: number, height: number): void {

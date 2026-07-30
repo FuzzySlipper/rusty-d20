@@ -1038,11 +1038,7 @@ function decodeEncounter(value: unknown): EncounterDto | undefined {
         new Set(entry.targetIds).size !== entry.targetIds.length ||
         entry.targetIds.some((targetId) => {
           const target = participantById.get(targetId);
-          return (
-            target === undefined ||
-            target.defeated ||
-            target.faction !== "opposition"
-          );
+          return target === undefined || target.defeated;
         }),
     ) ||
     (currentActorId !== null &&

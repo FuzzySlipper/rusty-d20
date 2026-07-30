@@ -16,8 +16,7 @@ export interface TacticalBoardCellView {
   readonly faction: "party" | "opposition" | null;
   readonly defeated: boolean;
   readonly current: boolean;
-  readonly selectedTarget: boolean;
-  readonly selectable: boolean;
+  readonly legalActionTarget: boolean;
   readonly legalMoveCost: number | null;
   readonly route: readonly TacticalCellCoordinate[] | null;
 }
@@ -30,6 +29,9 @@ export interface TacticalCellCoordinate {
 export interface TacticalBoardView {
   readonly width: number;
   readonly height: number;
+  readonly interactionMode: "movement" | "targeting" | "readonly";
+  readonly targetingActionId: string | null;
+  readonly targetingActionLabel: string | null;
   readonly cells: readonly TacticalBoardCellView[];
 }
 
@@ -73,7 +75,8 @@ const COLORS = {
   opposition: [0.66, 0.16, 0.18, 1],
   party: [0.12, 0.47, 0.62, 1],
   route: [0.3, 0.86, 0.8, 1],
-  selected: [0.95, 0.78, 0.22, 1],
+  target: [0.95, 0.78, 0.22, 1],
+  targetFloor: [0.38, 0.31, 0.08, 1],
   wall: [0.16, 0.18, 0.18, 1],
 } as const satisfies Readonly<Record<string, Vec4>>;
 
@@ -93,8 +96,8 @@ export function createTacticalRenderFrame(
     const isWall = cell.terrain === "wall";
     const color = isWall
       ? COLORS.wall
-      : cell.selectedTarget
-        ? COLORS.selected
+      : cell.legalActionTarget
+        ? COLORS.targetFloor
         : cell.legalMoveCost === null
           ? COLORS.floor
           : COLORS.legal;
@@ -102,7 +105,7 @@ export function createTacticalRenderFrame(
     picks.push({
       handle,
       identity: `cell:${cell.x}:${cell.y}`,
-      label: cellLabel(cell),
+      label: cellLabel(view, cell),
       selection: {
         x: cell.x,
         y: cell.y,
@@ -190,8 +193,8 @@ export function createTacticalRenderFrame(
     const handle = renderHandle(PARTICIPANT_HANDLE_BASE + index);
     const color = cell.defeated
       ? COLORS.defeated
-      : cell.selectedTarget
-        ? COLORS.selected
+      : cell.legalActionTarget
+        ? COLORS.target
         : cell.current
           ? COLORS.active
           : cell.faction === "party"
@@ -201,7 +204,7 @@ export function createTacticalRenderFrame(
     picks.push({
       handle,
       identity: `entity:${cell.participantId}`,
-      label: cellLabel(cell),
+      label: cellLabel(view, cell),
       selection: {
         x: cell.x,
         y: cell.y,
@@ -237,14 +240,16 @@ export function createTacticalRenderFrame(
             cell.faction ?? "unknown-faction",
             cell.current ? "active" : "waiting",
             cell.defeated ? "defeated" : "standing",
-            cell.selectedTarget ? "selected-target" : "not-selected",
+            cell.legalActionTarget
+              ? "legal-action-target"
+              : "not-action-target",
           ],
           label: `tactical-entity-${cell.participantId}`,
         },
       },
     });
 
-    if (cell.current || cell.selectedTarget) {
+    if (cell.current || cell.legalActionTarget) {
       const markerHandle = renderHandle(ACTIVE_MARKER_HANDLE_BASE + index);
       handles.push(markerHandle);
       ops.push({
@@ -254,7 +259,7 @@ export function createTacticalRenderFrame(
         node: {
           geometry: { kind: "sphere" },
           material: {
-            color: cell.selectedTarget ? COLORS.selected : COLORS.active,
+            color: cell.legalActionTarget ? COLORS.target : COLORS.active,
             wireframe: true,
           },
           transform: {
@@ -274,7 +279,9 @@ export function createTacticalRenderFrame(
             tags: [
               "rusty-d20",
               "tactical-board",
-              cell.selectedTarget ? "selected-target-marker" : "active-marker",
+              cell.legalActionTarget
+                ? "legal-action-target-marker"
+                : "active-marker",
             ],
             label: `tactical-marker-${cell.participantId}`,
           },
@@ -311,7 +318,7 @@ export function tacticalCellLabel(
   y: number,
 ): string | null {
   const cell = view.cells.find((entry) => entry.x === x && entry.y === y);
-  return cell === undefined ? null : cellLabel(cell);
+  return cell === undefined ? null : cellLabel(view, cell);
 }
 
 function cellHandle(x: number, y: number): RenderHandle {
@@ -326,14 +333,21 @@ function cellWorldZ(view: TacticalBoardView, y: number): number {
   return (y - (view.height - 1) / 2) * CELL_SIZE;
 }
 
-function cellLabel(cell: TacticalBoardCellView): string {
+function cellLabel(
+  view: TacticalBoardView,
+  cell: TacticalBoardCellView,
+): string {
   if (cell.terrain === "wall") {
     return `Wall at ${cell.x}, ${cell.y}`;
   }
   if (cell.participantName !== null) {
     return `${cell.participantName}, ${cell.faction}, at ${cell.x}, ${cell.y}${
       cell.current ? ", acting" : ""
-    }${cell.defeated ? ", defeated" : ""}`;
+    }${cell.defeated ? ", defeated" : ""}${
+      cell.legalActionTarget && view.targetingActionLabel !== null
+        ? `, legal target for ${view.targetingActionLabel}`
+        : ""
+    }`;
   }
   return cell.legalMoveCost === null
     ? `Open terrain at ${cell.x}, ${cell.y}`

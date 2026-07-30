@@ -74,7 +74,7 @@ test("reaction prompts reject saves and automatically resolved rolls survive a f
     const baselineFile = await readFile(savePath);
 
     await enterWardenEncounter(page);
-    await page.getByRole("button", { name: "Precise Shot" }).click();
+    await chooseActionOnGrid(page, "Precise Shot");
     const automatic = await sessionSnapshot(request, baseUrl);
     expect(automatic.encounter.reactionPrompt).toBeNull();
     expect(
@@ -127,7 +127,7 @@ test("reaction prompts reject saves and automatically resolved rolls survive a f
     await expect(page.getByLabel("Encounter identity")).toContainText(
       "Armor defense 18",
     );
-    await page.getByRole("button", { name: "Precise Shot" }).click();
+    await chooseActionOnGrid(page, "Precise Shot");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText("Saved", { exact: true })).toBeVisible();
     const saved = await sessionSnapshot(request, baseUrl);
@@ -360,6 +360,19 @@ async function expectReactionPromptSaveRejection(
     message: "choose or decline the reaction before saving",
     retryable: false,
   });
+}
+
+async function chooseActionOnGrid(
+  page: Page,
+  actionLabel: string,
+): Promise<void> {
+  await page.getByRole("button", { name: actionLabel, exact: true }).click();
+  const board = page.getByRole("application", {
+    name: new RegExp(`Targeting ${actionLabel}`),
+  });
+  await expect(board).toHaveAttribute("data-interaction-mode", "targeting");
+  await board.focus();
+  await page.keyboard.press("Enter");
 }
 
 function startHost(port: number, savePath: string): ChildProcess {

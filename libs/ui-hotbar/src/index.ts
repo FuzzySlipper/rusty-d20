@@ -1,4 +1,9 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  input,
+  output,
+} from "@angular/core";
 
 /** View model for one hotbar slot. Local to the widget — no game types. */
 export interface HotbarSlotView {
@@ -7,6 +12,8 @@ export interface HotbarSlotView {
   readonly label: string;
   readonly icon: string;
   readonly empty: boolean;
+  readonly selected: boolean;
+  readonly disabled: boolean;
 }
 
 /**
@@ -16,7 +23,7 @@ export interface HotbarSlotView {
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  selector: 'aui-hotbar',
+  selector: "aui-hotbar",
   standalone: true,
   styles: [
     `
@@ -53,6 +60,12 @@ export interface HotbarSlotView {
         border-color: var(--rusty-engine-border-strong);
       }
 
+      .slot--selected {
+        background: var(--rusty-engine-accent-strong);
+        border-color: var(--rusty-engine-accent);
+        box-shadow: 0 0 0 2px rgb(58 221 203 / 0.2);
+      }
+
       .slot--empty {
         cursor: default;
         opacity: 0.45;
@@ -76,9 +89,13 @@ export interface HotbarSlotView {
             <button
               class="slot"
               [class.slot--empty]="slot.empty"
-              [disabled]="slot.empty"
+              [class.slot--selected]="slot.selected"
+              [disabled]="slot.empty || slot.disabled"
+              [attr.aria-pressed]="slot.empty ? null : slot.selected"
               type="button"
-              [attr.aria-label]="slot.empty ? 'Empty slot ' + slot.keybind : slot.label"
+              [attr.aria-label]="
+                slot.empty ? 'Empty slot ' + slot.keybind : slot.label
+              "
               [title]="slot.empty ? '' : slot.label"
               (click)="slotSelected.emit(slot)"
             >

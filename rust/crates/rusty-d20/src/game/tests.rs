@@ -2,7 +2,7 @@ use serde_json::json;
 
 use super::*;
 use crate::StaticActionRoll;
-use gameplay_rules::decode_canonical_rule_package;
+use gameplay_rules::{decode_canonical_rule_package, RulePackageDependency};
 
 const PLAYER: EntityId = EntityId::new(101);
 const OPPONENT: EntityId = EntityId::new(102);
@@ -129,6 +129,72 @@ fn disconnected_floor_catalog() -> AuthoredAdventureCatalog {
     AuthoredAdventureCatalog::decode(&serde_json::to_string(&artifact).unwrap()).unwrap()
 }
 
+fn target_team_catalog(team: crate::ActionTargetTeamCandidate) -> AuthoredAdventureCatalog {
+    let mut artifact: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../rules/artifacts/starter/catalog.json"
+    ))
+    .unwrap();
+    let packages = artifact["packages"].as_array_mut().unwrap();
+    let mut fingerprints = std::collections::BTreeMap::new();
+    let mut replaced = false;
+    for canonical in packages {
+        let package =
+            decode_canonical_rule_package(canonical.as_str().unwrap().as_bytes()).unwrap();
+        let mut candidate: crate::D20RulesCandidate =
+            serde_json::from_value(package.payload().clone()).unwrap();
+        if let Some(action) = candidate
+            .actions
+            .iter_mut()
+            .find(|action| action.id.as_str() == "precise-shot")
+        {
+            action.target.team = team;
+            action.target.line_of_effect = crate::ActionLineOfEffectCandidate::Ignored;
+            replaced = true;
+        }
+        let dependencies = package
+            .dependencies()
+            .iter()
+            .map(|dependency| {
+                RulePackageDependency::new(
+                    dependency.domain().clone(),
+                    dependency.package().clone(),
+                    dependency.version(),
+                    fingerprints
+                        .get(dependency.package().as_str())
+                        .cloned()
+                        .or_else(|| dependency.fingerprint().cloned()),
+                )
+            })
+            .collect();
+        let admitted = crate::admit_d20_candidate(
+            crate::D20PackageEnvelope {
+                domain: package.identity().domain().clone(),
+                package: package.identity().package().clone(),
+                version: package.identity().version(),
+                dependencies,
+                sources: package.sources().to_vec(),
+                provenance: package.provenance().to_vec(),
+            },
+            candidate,
+        )
+        .unwrap();
+        fingerprints.insert(
+            admitted.identity().package().as_str().to_owned(),
+            admitted.fingerprint().clone(),
+        );
+        *canonical = json!(String::from_utf8(admitted.canonical_bytes().to_vec()).unwrap());
+    }
+    assert!(replaced, "the precise-shot action must be rewritten");
+    AuthoredAdventureCatalog::decode(&serde_json::to_string(&artifact).unwrap()).unwrap()
+}
+
+fn target_team_runtime(team: crate::ActionTargetTeamCandidate) -> GameRuntime {
+    let catalog = target_team_catalog(team);
+    let adventure = id("wardens-gate").unwrap();
+    let rules = catalog.rules_for(&adventure).unwrap();
+    GameRuntime::empty_with_rules(catalog, rules, adventure, RollSourceConfig::default()).unwrap()
+}
+
 fn subset_party_runtime() -> GameRuntime {
     let catalog = subset_party_catalog();
     let adventure = id("wardens-gate").unwrap();
@@ -154,6 +220,111 @@ fn saved_activation_budgets(
         .unwrap()["value"]["budgets"]
         .as_array_mut()
         .unwrap()
+}
+
+#[test]
+fn authored_target_teams_drive_projection_and_command_admission() {
+    assert!(target_team_allows(
+        ActionTargetTeamDefinition::Hostile,
+        PLAYER,
+        EncounterFaction::Party,
+        OPPONENT,
+        EncounterFaction::Opposition,
+    ));
+    assert!(!target_team_allows(
+        ActionTargetTeamDefinition::Hostile,
+        PLAYER,
+        EncounterFaction::Party,
+        PLAYER,
+        EncounterFaction::Party,
+    ));
+    assert!(target_team_allows(
+        ActionTargetTeamDefinition::Ally,
+        PLAYER,
+        EncounterFaction::Party,
+        EntityId::new(104),
+        EncounterFaction::Party,
+    ));
+    assert!(!target_team_allows(
+        ActionTargetTeamDefinition::Ally,
+        PLAYER,
+        EncounterFaction::Party,
+        PLAYER,
+        EncounterFaction::Party,
+    ));
+    assert!(target_team_allows(
+        ActionTargetTeamDefinition::SelfOnly,
+        PLAYER,
+        EncounterFaction::Party,
+        PLAYER,
+        EncounterFaction::Party,
+    ));
+    assert!(target_team_allows(
+        ActionTargetTeamDefinition::Any,
+        PLAYER,
+        EncounterFaction::Party,
+        OPPONENT,
+        EncounterFaction::Opposition,
+    ));
+
+    for (team, expected_faction, self_only) in [
+        (
+            crate::ActionTargetTeamCandidate::Hostile,
+            EncounterFactionDto::Opposition,
+            false,
+        ),
+        (
+            crate::ActionTargetTeamCandidate::Ally,
+            EncounterFactionDto::Party,
+            false,
+        ),
+        (
+            crate::ActionTargetTeamCandidate::SelfOnly,
+            EncounterFactionDto::Party,
+            true,
+        ),
+    ] {
+        let mut runtime = target_team_runtime(team);
+        let started = start_test_encounter(&mut runtime);
+        let encounter = started.encounter.as_ref().unwrap();
+        let targets = encounter
+            .legal_targets
+            .iter()
+            .find(|entry| entry.action_id == "precise-shot")
+            .unwrap_or_else(|| {
+                panic!(
+                    "precise-shot missing for {team:?}; projected actions: {:?}",
+                    encounter
+                        .legal_targets
+                        .iter()
+                        .map(|entry| (&entry.action_id, &entry.target_ids))
+                        .collect::<Vec<_>>()
+                )
+            })
+            .target_ids
+            .clone();
+        assert!(!targets.is_empty());
+        if self_only {
+            assert_eq!(targets, vec![PLAYER.raw()]);
+        } else {
+            assert!(targets.iter().all(|target| {
+                let participant = encounter
+                    .participants
+                    .iter()
+                    .find(|participant| participant.character.id == *target)
+                    .unwrap();
+                participant.faction == expected_faction && *target != PLAYER.raw()
+            }));
+        }
+        runtime
+            .choose_action(ChooseActionRequestDto {
+                expected_revision: started.revision,
+                actor_id: PLAYER.raw(),
+                target_id: targets[0],
+                action_id: "precise-shot".to_owned(),
+            })
+            .unwrap();
+    }
 }
 
 #[test]

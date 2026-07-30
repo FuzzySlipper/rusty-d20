@@ -285,6 +285,42 @@ describe("SessionStore", () => {
     });
   });
 
+  it("admits one target command while busy and allows a later settled choice", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const firstRelease = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const calls: number[] = [];
+    const store = new SessionStore(
+      transport({
+        chooseAction: async (request) => {
+          calls.push(request.targetId);
+          if (calls.length === 1) {
+            markStarted?.();
+            await firstRelease;
+          }
+          return {
+            ok: true,
+            value: { ...snapshot, revision: snapshot.revision + calls.length },
+          };
+        },
+      }),
+    );
+    await store.load();
+    const first = store.chooseAction("strike", 101, 102);
+    await started;
+    await expect(store.chooseAction("strike", 101, 102)).resolves.toBe(false);
+    expect(calls).toEqual([102]);
+    releaseFirst?.();
+    await expect(first).resolves.toBe(true);
+    await expect(store.chooseAction("strike", 101, 103)).resolves.toBe(true);
+    expect(calls).toEqual([102, 103]);
+  });
+
   it("routes loadout commands and preserves typed atomic rejection", async () => {
     const calls: string[] = [];
     const store = new SessionStore(
@@ -345,9 +381,7 @@ describe("SessionStore", () => {
   });
 
   it("reports a busy loadout command as ignored and admits a later move after settlement", async () => {
-    let releaseFirst:
-      | ((result: Result<GameSnapshotDto>) => void)
-      | undefined;
+    let releaseFirst: ((result: Result<GameSnapshotDto>) => void) | undefined;
     const firstResult = new Promise<Result<GameSnapshotDto>>((resolve) => {
       releaseFirst = resolve;
     });
@@ -375,9 +409,9 @@ describe("SessionStore", () => {
     const firstMove = store.moveLoadoutItem(201, 101, 103, null);
     await firstStarted;
     expect(store.busy()).toBe(true);
-    await expect(store.moveLoadoutItem(204, 103, 101, "off-hand")).resolves.toBe(
-      false,
-    );
+    await expect(
+      store.moveLoadoutItem(204, 103, 101, "off-hand"),
+    ).resolves.toBe(false);
     expect(calls).toEqual(["201:null:1"]);
 
     releaseFirst?.({ ok: true, value: { ...snapshot, revision: 2 } });

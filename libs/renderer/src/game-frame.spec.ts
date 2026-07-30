@@ -96,6 +96,9 @@ describe("createGameRenderFrame", () => {
     const tactical = {
       width: 1,
       height: 1,
+      interactionMode: "movement" as const,
+      targetingActionId: null,
+      targetingActionLabel: null,
       cells: [
         {
           id: "0:0",
@@ -107,8 +110,7 @@ describe("createGameRenderFrame", () => {
           faction: "party" as const,
           defeated: false,
           current: true,
-          selectedTarget: false,
-          selectable: false,
+          legalActionTarget: false,
           legalMoveCost: null,
           route: null,
         },

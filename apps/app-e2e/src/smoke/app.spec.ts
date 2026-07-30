@@ -26,6 +26,23 @@ async function clickRenderedTacticalCell(
   boardWidth: number,
   boardHeight: number,
 ): Promise<void> {
+  const point = await renderedTacticalCellPoint(
+    page,
+    x,
+    y,
+    boardWidth,
+    boardHeight,
+  );
+  await page.mouse.click(point.x, point.y);
+}
+
+async function renderedTacticalCellPoint(
+  page: Page,
+  x: number,
+  y: number,
+  boardWidth: number,
+  boardHeight: number,
+): Promise<{ readonly x: number; readonly y: number }> {
   await page.evaluate(
     () =>
       new Promise<void>((resolve) => {
@@ -64,7 +81,60 @@ async function clickRenderedTacticalCell(
     },
     { x, y, boardWidth, boardHeight },
   );
-  await page.mouse.click(point.x, point.y);
+  return point;
+}
+
+async function exposeRendererAtPoint(
+  page: Page,
+  point: { readonly x: number; readonly y: number },
+): Promise<void> {
+  const hit = await page.evaluate(async ({ x, y }) => {
+    const overlay = document.querySelector<HTMLElement>(".game-overlay");
+    if (overlay === null) {
+      return {
+        className: null,
+        clientHeight: null,
+        scrollHeight: null,
+        tagName: null,
+        scrollTop: null,
+      };
+    }
+    const maximum = Math.max(0, overlay.scrollHeight - overlay.clientHeight);
+    const stopCount = Math.max(2, Math.ceil(maximum / 80) + 1);
+    const stops = Array.from(
+      { length: stopCount },
+      (_, index) => (maximum * index) / (stopCount - 1),
+    );
+    for (const scrollTop of stops) {
+      overlay.scrollTop = scrollTop;
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const target = document.elementFromPoint(x, y);
+      if (target?.tagName === "CANVAS") {
+        return {
+          className: target.className,
+          clientHeight: overlay.clientHeight,
+          scrollHeight: overlay.scrollHeight,
+          tagName: target.tagName,
+          scrollTop: overlay.scrollTop,
+        };
+      }
+    }
+    const target = document.elementFromPoint(x, y);
+    return {
+      className:
+        target instanceof HTMLElement ? target.className : target?.nodeName,
+      clientHeight: overlay.clientHeight,
+      scrollHeight: overlay.scrollHeight,
+      tagName: target?.tagName ?? null,
+      scrollTop: overlay.scrollTop,
+    };
+  }, point);
+  expect(
+    hit.tagName,
+    `renderer occluded by ${hit.className} at overlay scroll ${hit.scrollTop}; ${hit.clientHeight}/${hit.scrollHeight}`,
+  ).toBe("CANVAS");
 }
 
 test.describe.serial("real Rust encounter shell", () => {
@@ -87,9 +157,11 @@ test.describe.serial("real Rust encounter shell", () => {
   });
 
   test("empty game starts and resolves authored action, reaction, turn, and save", async ({
+    browser,
     page,
     request,
   }, testInfo) => {
+    test.setTimeout(120_000);
     const health = await request.get("/healthz");
     expect(health.ok()).toBe(true);
     await expect(health.json()).resolves.toEqual({
@@ -536,8 +608,115 @@ test.describe.serial("real Rust encounter shell", () => {
     await expect(translatedStrike).toContainText("range 1");
     await expect(translatedStrike).toContainText("Training Blade");
 
-    await page.getByLabel("Target").selectOption({ label: "Iron Warden" });
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await expect(page.getByLabel("Target")).toHaveCount(0);
+    let failedActionRequests = 0;
+    await page.route("**/api/v1/session/action", async (route) => {
+      failedActionRequests += 1;
+      await route.fulfill({
+        contentType: "application/json",
+        status: 409,
+        body: JSON.stringify({
+          kind: "stale",
+          message: "synthetic stale targeting proof",
+          retryable: true,
+        }),
+      });
+    });
     await page.getByRole("button", { name: "Longsword Strike" }).click();
+    await expect(
+      page.getByRole("button", { name: "Longsword Strike" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(tacticalBoard).toHaveAttribute(
+      "data-interaction-mode",
+      "targeting",
+    );
+    await expect(tacticalBoard).toHaveAttribute(
+      "aria-label",
+      /Targeting Longsword Strike/,
+    );
+    await expect(
+      page.getByRole("navigation", {
+        name: "Legal targets for Longsword Strike",
+      }),
+    ).toContainText("Iron Warden");
+    await testInfo.attach("action-first-targeting-desktop.png", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
+    await tacticalBoard.focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".targeting-status")).toContainText(
+      "not a legal target for the selected action",
+    );
+    expect(failedActionRequests).toBe(0);
+    await clickRenderedTacticalCell(page, 8, 4, 12, 8);
+    await expect.poll(() => failedActionRequests).toBe(1);
+    await expect(page.getByRole("alert")).toContainText("stale rejection");
+    await expect(tacticalBoard).toHaveAttribute(
+      "data-interaction-mode",
+      "movement",
+    );
+    await page.getByRole("button", { name: "Dismiss" }).click();
+    await page.unroute("**/api/v1/session/action");
+
+    const mobileContext = await browser.newContext({
+      hasTouch: true,
+      isMobile: true,
+      viewport: { width: 390, height: 844 },
+    });
+    const mobilePage = await mobileContext.newPage();
+    await mobilePage.goto("/");
+    await continueIfNeeded(mobilePage);
+    let releaseAction: (() => void) | undefined;
+    const actionRelease = new Promise<void>((resolve) => {
+      releaseAction = resolve;
+    });
+    let markActionStarted: (() => void) | undefined;
+    const actionStarted = new Promise<void>((resolve) => {
+      markActionStarted = resolve;
+    });
+    let mobileActionRequests = 0;
+    await mobilePage.route("**/api/v1/session/action", async (route) => {
+      mobileActionRequests += 1;
+      markActionStarted?.();
+      await actionRelease;
+      await route.continue();
+    });
+    await mobilePage.getByRole("button", { name: "Longsword Strike" }).click();
+    const mobileBoard = mobilePage.getByRole("application", {
+      name: /Rendered tactical combat board/,
+    });
+    await expect(mobileBoard).toHaveAttribute(
+      "data-interaction-mode",
+      "targeting",
+    );
+    await testInfo.attach("action-first-targeting-mobile-touch.png", {
+      body: await mobilePage.screenshot(),
+      contentType: "image/png",
+    });
+    const touchTarget = await renderedTacticalCellPoint(
+      mobilePage,
+      8,
+      4,
+      12,
+      8,
+    );
+    await exposeRendererAtPoint(mobilePage, touchTarget);
+    await mobilePage.touchscreen.tap(touchTarget.x, touchTarget.y);
+    await actionStarted;
+    await mobilePage.touchscreen.tap(touchTarget.x, touchTarget.y);
+    expect(mobileActionRequests).toBe(1);
+    releaseAction?.();
+    await expect(mobilePage.getByLabel("Encounter identity")).toContainText(
+      "Gate Skirmisher acting",
+    );
+    await mobilePage.unroute("**/api/v1/session/action");
+    await mobileContext.close();
+
+    await page.reload();
+    await continueIfNeeded(page);
     await expect(page.getByLabel("Available reaction")).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Resolve deterministic roll" }),

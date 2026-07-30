@@ -4,6 +4,7 @@ import {
   Injector,
   afterNextRender,
   computed,
+  effect,
   inject,
   signal,
   viewChild,
@@ -52,6 +53,14 @@ import {
   type MinimapMarkerView,
 } from "@rusty-d20/ui-minimap";
 
+import {
+  startTargeting,
+  targetingCommand,
+  targetingIsCurrent,
+  type TacticalTargetingMode,
+  type TargetingProjection,
+} from "./targeting";
+
 interface LoadoutItemLocation {
   readonly item: LoadoutItemDto;
   readonly ownerId: number;
@@ -62,7 +71,7 @@ interface LoadoutItemLocation {
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    "(window:keydown)": "handleExplorationKeydown($event)",
+    "(window:keydown)": "handleGameKeydown($event)",
   },
   imports: [
     CharacterStatusComponent,
@@ -552,6 +561,27 @@ interface LoadoutItemLocation {
         min-width: 0;
       }
 
+      .combat-action-panel {
+        position: relative;
+      }
+
+      .combat-status,
+      .combat-log-panel {
+        transition: opacity 80ms linear;
+      }
+
+      .game-shell[data-targeting-action] .combat-status,
+      .game-shell[data-targeting-action] .combat-status *,
+      .game-shell[data-targeting-action] .combat-log-panel,
+      .game-shell[data-targeting-action] .combat-log-panel * {
+        pointer-events: none;
+      }
+
+      .game-shell[data-targeting-action] .combat-status,
+      .game-shell[data-targeting-action] .combat-log-panel {
+        opacity: 0.18;
+      }
+
       .outcome-banner {
         border-color: var(--rusty-engine-accent);
       }
@@ -568,16 +598,53 @@ interface LoadoutItemLocation {
         justify-content: space-between;
       }
 
-      .target-control {
+      .targeting-status {
         align-items: center;
         display: flex;
+        flex-wrap: wrap;
         gap: 8px;
+        justify-content: space-between;
       }
 
-      .target-control label {
+      .targeting-status {
+        background: rgb(255 255 255 / 0.04);
+        border: 1px solid var(--rusty-engine-border);
+        border-radius: var(--rusty-engine-radius-sm);
         color: var(--rusty-engine-muted);
         font-size: 0.75rem;
-        font-weight: 700;
+        padding: 8px 10px;
+      }
+
+      .targeting-status strong {
+        color: var(--rusty-engine-accent);
+      }
+
+      .screen-reader-targets {
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        display: flex;
+        gap: 8px;
+        height: 1px;
+        overflow: hidden;
+        position: absolute;
+        white-space: nowrap;
+        width: 1px;
+      }
+
+      .screen-reader-targets:focus-within {
+        background: var(--rusty-engine-surface-solid);
+        border: 2px solid var(--rusty-engine-accent);
+        border-radius: var(--rusty-engine-radius-sm);
+        clip: auto;
+        clip-path: none;
+        flex-wrap: wrap;
+        height: auto;
+        inset: auto 0 100% 0;
+        overflow: visible;
+        padding: 10px;
+        white-space: normal;
+        width: auto;
+        z-index: 6;
       }
 
       .action-catalog {
@@ -700,20 +767,20 @@ interface LoadoutItemLocation {
         .actions__header {
           align-items: stretch;
         }
-
-        .target-control,
-        .target-control select {
-          width: 100%;
-        }
       }
     `,
   ],
   template: `
-    <main class="game-shell" [attr.data-scene-mode]="gameViewport().mode">
+    <main
+      class="game-shell"
+      [attr.data-scene-mode]="gameViewport().mode"
+      [attr.data-targeting-action]="activeTargeting()?.actionId ?? null"
+    >
       <aui-game-viewport
         class="game-viewport"
         [view]="gameViewport()"
         (sceneSelected)="selectTacticalCell($event)"
+        (sceneCancelled)="cancelTargeting()"
       />
       <div class="game-overlay">
         <header class="topbar" data-overlay-region="top">
@@ -1800,7 +1867,12 @@ interface LoadoutItemLocation {
                 } @else {
                   <section class="workspace combat-workspace">
                     <p class="combat-board-hint" aria-hidden="true">
-                      Click the rendered board to move or choose a combatant
+                      {{
+                        activeTargeting() === null
+                          ? "Choose an action or click a highlighted movement cell"
+                          : "Choose a highlighted target for " +
+                            activeTargeting()!.actionLabel
+                      }}
                     </p>
                     <div class="action-workbench combat-actions">
                       <section
@@ -1827,25 +1899,6 @@ interface LoadoutItemLocation {
                               }}
                             </h2>
                           </div>
-                          @if (encounter().currentFaction === "party") {
-                            <div class="target-control">
-                              <label for="target">Target</label>
-                              <select
-                                id="target"
-                                [value]="targetId()"
-                                (change)="selectTarget($event)"
-                              >
-                                @for (
-                                  target of encounter().targets;
-                                  track target.id
-                                ) {
-                                  <option [value]="target.id">
-                                    {{ target.name }}
-                                  </option>
-                                }
-                              </select>
-                            </div>
-                          }
                         </header>
 
                         @if (encounter().currentFaction === "party") {
@@ -1853,6 +1906,58 @@ interface LoadoutItemLocation {
                             [slots]="hotbarSlots()"
                             (slotSelected)="chooseAction($event)"
                           />
+                          <div
+                            class="targeting-status"
+                            role="status"
+                            aria-live="polite"
+                            [attr.data-targeting-action]="
+                              activeTargeting()?.actionId ?? null
+                            "
+                          >
+                            @if (activeTargeting(); as targeting) {
+                              <span>
+                                <strong>{{ targeting.actionLabel }}</strong> ·
+                                {{ targetingAnnouncement() }}
+                              </span>
+                              <button type="button" (click)="cancelTargeting()">
+                                Cancel targeting
+                              </button>
+                            } @else {
+                              <span>{{ targetingAnnouncement() }}</span>
+                            }
+                          </div>
+
+                          @if (activeTargeting(); as targeting) {
+                            <nav
+                              class="screen-reader-targets"
+                              [attr.aria-label]="
+                                'Legal targets for ' + targeting.actionLabel
+                              "
+                            >
+                              <strong
+                                >Legal targets for
+                                {{ targeting.actionLabel }}</strong
+                              >
+                              @for (
+                                participant of legalTargetParticipants();
+                                track participant.character.id
+                              ) {
+                                <button
+                                  type="button"
+                                  [disabled]="store.busy()"
+                                  (click)="
+                                    chooseTarget(participant.character.id)
+                                  "
+                                >
+                                  Target {{ participant.character.name }} at
+                                  {{ participant.x }}, {{ participant.y }}
+                                </button>
+                              }
+                              <button type="button" (click)="cancelTargeting()">
+                                Cancel targeting
+                              </button>
+                            </nav>
+                          }
 
                           <button
                             type="button"
@@ -2010,12 +2115,17 @@ interface LoadoutItemLocation {
 })
 export class MainMenuScreenComponent implements OnInit {
   protected readonly store = inject(SessionStore);
-  private readonly selectedTarget = signal<number | null>(null);
+  private readonly targetingSelection = signal<TacticalTargetingMode | null>(
+    null,
+  );
   private readonly selectedLoadoutItem = signal<number | null>(null);
   private readonly selectedPartyMember = signal<number | null>(null);
   protected readonly explorationInventoryOpen = signal(false);
   protected readonly loadoutAnnouncement = signal(
     "Choose an item, then choose its highlighted equipment slot.",
+  );
+  protected readonly targetingAnnouncement = signal(
+    "Choose an action, then select its highlighted target on the rendered grid.",
   );
   protected readonly campaignEntered = signal(false);
   private readonly resetDialog =
@@ -2040,6 +2150,59 @@ export class MainMenuScreenComponent implements OnInit {
   protected readonly game = computed(() => {
     const state = this.store.session();
     return state.kind === "data" ? state.value : null;
+  });
+
+  private readonly targetingProjection = computed<TargetingProjection | null>(
+    () => {
+      const snapshot = this.game();
+      const campaign = snapshot?.campaign;
+      const encounter = snapshot?.encounter;
+      if (
+        snapshot === null ||
+        campaign === null ||
+        campaign === undefined ||
+        encounter === null ||
+        encounter === undefined ||
+        campaign.activeEncounterId === null
+      ) {
+        return null;
+      }
+      return {
+        campaignId: campaign.id,
+        encounterId: campaign.activeEncounterId,
+        phase: campaign.phase,
+        revision: snapshot.revision,
+        currentActorId: encounter.currentActorId,
+        currentFaction: encounter.currentFaction,
+        reactionPending: encounter.reactionPrompt !== null,
+        actions: encounter.actions,
+        legalTargets: encounter.legalTargets,
+      };
+    },
+  );
+
+  protected readonly activeTargeting = computed(() => {
+    const selection = this.targetingSelection();
+    const projection = this.targetingProjection();
+    return selection !== null &&
+      projection !== null &&
+      targetingIsCurrent(selection, projection)
+      ? selection
+      : null;
+  });
+
+  protected readonly legalTargetParticipants = computed(() => {
+    const targeting = this.activeTargeting();
+    const encounter = this.game()?.encounter;
+    if (targeting === null || encounter === null || encounter === undefined) {
+      return [];
+    }
+    return targeting.targetIds.flatMap((targetId) => {
+      const participant = encounter.participants.find(
+        (entry) => entry.character.id === targetId,
+      );
+      return participant === undefined ? [] : [participant];
+    });
   });
 
   protected readonly saveStatus = computed(() => {
@@ -2200,9 +2363,22 @@ export class MainMenuScreenComponent implements OnInit {
     const legalMoves = new Map(
       encounter.board.legalMoves.map((move) => [`${move.x}:${move.y}`, move]),
     );
+    const targeting = this.activeTargeting();
+    const targetIds = new Set(targeting?.targetIds ?? []);
+    const interactionMode =
+      targeting !== null
+        ? ("targeting" as const)
+        : encounter.currentFaction === "party" &&
+            encounter.reactionPrompt === null
+          ? ("movement" as const)
+          : ("readonly" as const);
     const cells = encounter.board.rows.flatMap((row, y) =>
       [...row].map((terrain, x) => {
         const participant = participants.get(`${x}:${y}`);
+        const legalMove =
+          interactionMode === "movement"
+            ? legalMoves.get(`${x}:${y}`)
+            : undefined;
         return {
           id: `${x}:${y}`,
           x,
@@ -2213,19 +2389,20 @@ export class MainMenuScreenComponent implements OnInit {
           faction: participant?.faction ?? null,
           defeated: participant?.defeated ?? false,
           current: participant?.character.id === encounter.currentActorId,
-          selectedTarget: participant?.character.id === this.selectedTarget(),
-          selectable:
-            encounter.currentFaction === "party" &&
-            participant?.faction === "opposition" &&
-            participant.defeated === false,
-          legalMoveCost: legalMoves.get(`${x}:${y}`)?.cost ?? null,
-          route: legalMoves.get(`${x}:${y}`)?.route ?? null,
+          legalActionTarget:
+            participant !== undefined &&
+            targetIds.has(participant.character.id),
+          legalMoveCost: legalMove?.cost ?? null,
+          route: legalMove?.route ?? null,
         };
       }),
     );
     return {
       width: encounter.board.width,
       height: encounter.board.height,
+      interactionMode,
+      targetingActionId: targeting?.actionId ?? null,
+      targetingActionLabel: targeting?.actionLabel ?? null,
       cells,
     };
   });
@@ -2332,6 +2509,11 @@ export class MainMenuScreenComponent implements OnInit {
       label: action.label,
       icon: index === 0 ? "⚔" : "➶",
       empty: false,
+      selected: this.activeTargeting()?.actionId === action.id,
+      disabled:
+        this.store.busy() ||
+        this.game()?.encounter?.currentFaction !== "party" ||
+        this.game()?.encounter?.reactionPrompt !== null,
     })),
   );
 
@@ -2355,6 +2537,20 @@ export class MainMenuScreenComponent implements OnInit {
     const log = this.game()?.encounter?.log ?? [];
     return log.at(-1) ?? null;
   });
+
+  constructor() {
+    effect(() => {
+      if (
+        this.targetingSelection() !== null &&
+        this.activeTargeting() === null
+      ) {
+        this.targetingSelection.set(null);
+        this.targetingAnnouncement.set(
+          "Targeting canceled because the authoritative encounter changed.",
+        );
+      }
+    });
+  }
 
   ngOnInit(): void {
     void this.store.load();
@@ -2398,10 +2594,6 @@ export class MainMenuScreenComponent implements OnInit {
     };
   }
 
-  protected targetId(): number {
-    return this.selectedTarget() ?? this.encounter().targets[0]?.id ?? 0;
-  }
-
   protected selectPartyMember(memberId: number): void {
     if (this.store.busy()) {
       return;
@@ -2410,22 +2602,30 @@ export class MainMenuScreenComponent implements OnInit {
     this.selectedLoadoutItem.set(null);
   }
 
-  protected selectTarget(event: Event): void {
-    const target = event.target;
-    if (target instanceof HTMLSelectElement) {
-      this.selectedTarget.set(Number(target.value));
-    }
-  }
-
-  protected selectTacticalCell(selection: TacticalBoardSelection): void {
-    const encounter = this.encounter();
-    if (selection.participantId !== null) {
-      const participant = encounter.participants.find(
-        (entry) => entry.character.id === selection.participantId,
+  protected async selectTacticalCell(
+    selection: TacticalBoardSelection,
+  ): Promise<void> {
+    if (this.store.busy()) {
+      this.targetingAnnouncement.set(
+        "Wait for the current Rust command to finish before choosing again.",
       );
-      if (participant?.faction === "opposition" && !participant.defeated) {
-        this.selectedTarget.set(participant.character.id);
+      return;
+    }
+    const encounter = this.encounter();
+    if (this.activeTargeting() !== null) {
+      if (selection.participantId === null) {
+        this.targetingAnnouncement.set(
+          "That cell is not a legal target for the selected action.",
+        );
+        return;
       }
+      await this.chooseTarget(selection.participantId);
+      return;
+    }
+    if (selection.participantId !== null) {
+      this.targetingAnnouncement.set(
+        "Choose an action first, then select a highlighted combatant.",
+      );
       return;
     }
     const actor = encounter.currentActorId;
@@ -2436,29 +2636,104 @@ export class MainMenuScreenComponent implements OnInit {
         (move) => move.x === selection.x && move.y === selection.y,
       )
     ) {
-      void this.store.moveActor(actor, selection.x, selection.y);
+      this.targetingAnnouncement.set(
+        `Moving ${encounter.currentActor?.name ?? "the active character"} to ${selection.x}, ${selection.y}.`,
+      );
+      await this.store.moveActor(actor, selection.x, selection.y);
+      return;
     }
+    this.targetingAnnouncement.set(
+      "That cell is not a legal movement destination.",
+    );
   }
 
   protected chooseAction(slot: HotbarSlotView): void {
+    if (this.store.busy() || slot.disabled) {
+      this.targetingAnnouncement.set(
+        "Wait for the current Rust command before selecting an action.",
+      );
+      return;
+    }
     const action = this.encounter().actions[slot.index];
-    if (action !== undefined) {
-      const targets =
-        this.encounter().legalTargets.find(
-          (entry) => entry.actionId === action.id,
-        )?.targetIds ?? [];
-      const target = targets.includes(this.targetId())
-        ? this.targetId()
-        : (targets[0] ?? 0);
-      const actor = this.encounter().currentActorId;
-      if (actor !== null && target !== 0) {
-        this.selectedTarget.set(target);
-        void this.store.chooseAction(action.id, actor, target);
-      }
+    const projection = this.targetingProjection();
+    if (action === undefined || projection === null) {
+      this.targetingAnnouncement.set(
+        "That action is no longer available in the encounter.",
+      );
+      return;
+    }
+    const started = startTargeting(projection, action.id);
+    if (!started.ok) {
+      this.targetingSelection.set(null);
+      this.targetingAnnouncement.set(started.message);
+      return;
+    }
+    this.targetingSelection.set(started.mode);
+    this.targetingAnnouncement.set(
+      `${started.mode.actionLabel} selected. Choose one of ${started.mode.targetIds.length} Rust-projected legal targets.`,
+    );
+  }
+
+  protected async chooseTarget(targetId: number): Promise<void> {
+    if (this.store.busy()) {
+      this.targetingAnnouncement.set(
+        "Wait for the current Rust command to finish before choosing again.",
+      );
+      return;
+    }
+    const mode = this.activeTargeting();
+    const projection = this.targetingProjection();
+    const command =
+      mode === null || projection === null
+        ? null
+        : targetingCommand(mode, projection, targetId);
+    if (mode === null || command === null) {
+      this.targetingAnnouncement.set(
+        mode === null
+          ? "Choose an action before choosing a target."
+          : "That combatant is not a Rust-projected legal target for this action.",
+      );
+      return;
+    }
+    this.targetingSelection.set(null);
+    const targetName =
+      this.encounter().participants.find(
+        (participant) => participant.character.id === targetId,
+      )?.character.name ?? `entity ${targetId}`;
+    this.targetingAnnouncement.set(
+      `Resolving ${mode.actionLabel} against ${targetName}.`,
+    );
+    const admitted = await this.store.chooseAction(
+      command.actionId,
+      command.actorId,
+      command.targetId,
+    );
+    if (!admitted) {
+      this.targetingAnnouncement.set(
+        "The target command was not admitted because another command is active.",
+      );
+    } else if (this.store.commandError() !== null) {
+      this.targetingAnnouncement.set(
+        `${mode.actionLabel} was rejected without changing the encounter.`,
+      );
+    } else {
+      this.targetingAnnouncement.set(
+        `${mode.actionLabel} resolved. Choose another Rust-projected action or end the activation.`,
+      );
+    }
+  }
+
+  protected cancelTargeting(): void {
+    if (this.targetingSelection() !== null) {
+      this.targetingSelection.set(null);
+      this.targetingAnnouncement.set(
+        "Targeting canceled. Choose an action to begin again.",
+      );
     }
   }
 
   protected async newAdventure(adventureId: string): Promise<void> {
+    this.cancelTargeting();
     await this.store.newAdventure(adventureId);
     if (this.game()?.campaign !== null) {
       this.campaignEntered.set(true);
@@ -2470,6 +2745,7 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected beginExploration(): void {
+    this.cancelTargeting();
     void this.store.beginExploration();
   }
 
@@ -2483,7 +2759,34 @@ export class MainMenuScreenComponent implements OnInit {
     }
   }
 
-  protected handleExplorationKeydown(event: KeyboardEvent): void {
+  protected handleGameKeydown(event: KeyboardEvent): void {
+    if (event.defaultPrevented) {
+      return;
+    }
+    if (this.game()?.campaign?.phase === "encounter") {
+      if (event.key === "Escape" && this.activeTargeting() !== null) {
+        event.preventDefault();
+        this.cancelTargeting();
+        return;
+      }
+      const target = event.target;
+      if (
+        this.store.busy() ||
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLSelectElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLButtonElement
+      ) {
+        return;
+      }
+      const index = Number(event.key) - 1;
+      const slot = Number.isInteger(index) ? this.hotbarSlots()[index] : null;
+      if (slot !== null && slot !== undefined) {
+        event.preventDefault();
+        this.chooseAction(slot);
+      }
+      return;
+    }
     if (this.game()?.campaign?.phase !== "exploration") {
       return;
     }
@@ -2678,26 +2981,32 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected applyReaction(token: string, reactionId: string): void {
+    this.cancelTargeting();
     void this.store.applyReaction(token, reactionId);
   }
 
   protected declineReaction(token: string): void {
+    this.cancelTargeting();
     void this.store.declineReaction(token);
   }
 
   protected beginOppositionTurn(): void {
+    this.cancelTargeting();
     void this.store.beginOppositionTurn();
   }
 
   protected endActivation(): void {
+    this.cancelTargeting();
     void this.store.endActivation();
   }
 
   protected returnToCamp(): void {
+    this.cancelTargeting();
     void this.store.returnToCamp();
   }
 
   protected save(): void {
+    this.cancelTargeting();
     void this.store.save();
   }
 
@@ -2770,6 +3079,7 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected reload(): void {
+    this.cancelTargeting();
     void this.store.load();
   }
 

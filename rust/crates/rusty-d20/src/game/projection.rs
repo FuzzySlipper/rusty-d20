@@ -408,9 +408,7 @@ impl GameRuntime {
         let target_ids = if current_is_party {
             participants
                 .iter()
-                .filter(|participant| {
-                    participant.faction == EncounterFactionDto::Opposition && !participant.defeated
-                })
+                .filter(|participant| !participant.defeated)
                 .map(|participant| participant.character.id)
                 .collect::<Vec<_>>()
         } else {
@@ -433,6 +431,12 @@ impl GameRuntime {
                     .iter()
                     .copied()
                     .filter_map(|target| {
+                        match self.action_target_team_is_legal(actor, EntityId::new(target), action)
+                        {
+                            Ok(true) => {}
+                            Ok(false) => return None,
+                            Err(error) => return Some(Err(error)),
+                        }
                         match self.action_is_spatially_legal(actor, EntityId::new(target), action) {
                             Ok(true) => {}
                             Ok(false) => return None,

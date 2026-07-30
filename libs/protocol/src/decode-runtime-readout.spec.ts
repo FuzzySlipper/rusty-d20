@@ -492,6 +492,64 @@ describe("decodeGameSnapshot", () => {
         campaign: activeCampaign,
         encounter: {
           ...encounterWithAction,
+          actions: [
+            {
+              ...action,
+              target: "1 Self Only Participant · line of effect Required",
+            },
+          ],
+          legalTargets: [
+            {
+              actionId: "longsword-strike",
+              targetIds: [101],
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: activeCampaign,
+        encounter: {
+          ...encounterWithAction,
+          participants: [
+            ...participants,
+            {
+              character: {
+                ...hero,
+                id: 103,
+                name: "Ilyra Fen",
+                title: "Ember Adept",
+              },
+              faction: "party",
+              initiative: 16,
+              defeated: false,
+              x: 3,
+              y: 1,
+            },
+          ],
+          actions: [
+            {
+              ...action,
+              target: "1 Ally Participant · line of effect Required",
+            },
+          ],
+          legalTargets: [
+            {
+              actionId: "longsword-strike",
+              targetIds: [103],
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: activeCampaign,
+        encounter: {
+          ...encounterWithAction,
           currentActorId: 102,
           board: { ...board, legalMoves: [] },
           actions: [],

@@ -117,10 +117,24 @@ Each encounter authors one bounded ASCII tactical board and a unique starting
 placement for every admitted participant. Rust adapts that board into direct
 Engine volume, spatial, pathfinding, and collision services. It owns canonical
 positions and occupancy, per-activation movement budgets, legal destination
-routes, range and line-of-effect admission, deterministic opposition movement,
-and bounded forced movement. The browser receives only the immutable board,
-participant coordinates, legal routes, targets, and receipts needed to render
-the overhead view and issue typed commands.
+routes, authored hostile/ally/self/any target-team admission, range and
+line-of-effect admission, deterministic opposition movement, and bounded
+forced movement. Ally excludes the acting participant, self-only admits that
+participant at zero tactical distance, and every projected target must be a
+living encounter participant. The browser receives only the immutable board,
+participant coordinates, legal routes, exact per-action target identities, and
+receipts needed to render the overhead view and issue typed commands.
+
+During a party activation, selecting an action creates only a transient
+presentation targeting mode bound to the Rust projection's campaign,
+encounter, actor, action, legal target identities, and product revision. The
+retained Engine scene highlights those exact participants and suppresses
+movement-route emphasis until the player picks or cancels. Pointer, touch,
+keyboard, and screen-reader alternatives resolve a stable Engine entity/cell
+pick to the existing typed action command; they do not infer faction, range,
+line of effect, or legality. A revision, actor, phase, reaction, action catalog,
+or legal-target change invalidates the mode before another command can be
+issued.
 
 The bounded opposition policy selects from the active encounter participant's
 legal admitted actions using the configured Rust-owned roll source. Party

@@ -173,8 +173,8 @@ export class SessionStore {
     actionId: string,
     actorId: number,
     targetId: number,
-  ): Promise<void> {
-    await this.mutate((expectedRevision) =>
+  ): Promise<boolean> {
+    return this.mutate((expectedRevision) =>
       this.transport.chooseAction({
         expectedRevision,
         actorId,

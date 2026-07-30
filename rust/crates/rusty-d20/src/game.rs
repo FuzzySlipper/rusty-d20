@@ -13,13 +13,14 @@ use crate::adventure::AuthoredAdventureCatalog;
 use crate::compiler::defense_stat_id;
 use crate::{
     AbilityScore, ActionAttackDefinition, ActionDefinition, ActionPreview, ActionResource,
-    ActionResourcesComponent, AdventureDefinition, AffinitySeed, ApplyActionRequest,
-    CharacterAffinityKindDefinition, CharacterSeed, CharacterTemplateDefinition, D20CompileError,
-    D20Id, D20Ruleset, D20Session, D20SessionError, DamageAffinity, DungeonFacingDefinition,
-    EncounterDefinition, EncounterFaction, EncounterFactionDefinition, EncounterParticipationSeed,
-    EquipmentItemSeed, InventorySeed, ItemInstanceDefinition, ItemRarityDefinition,
-    ReactionReceipt, RollSourceConfig, ScheduledEffectsComponent, SessionSaveError, StorageSeed,
-    TacticalBoardDefinition, TacticalPosition, ENGINE_REVISION,
+    ActionResourcesComponent, ActionTargetTeamDefinition, AdventureDefinition, AffinitySeed,
+    ApplyActionRequest, CharacterAffinityKindDefinition, CharacterSeed,
+    CharacterTemplateDefinition, D20CompileError, D20Id, D20Ruleset, D20Session, D20SessionError,
+    DamageAffinity, DungeonFacingDefinition, EncounterDefinition, EncounterFaction,
+    EncounterFactionDefinition, EncounterParticipationSeed, EquipmentItemSeed, InventorySeed,
+    ItemInstanceDefinition, ItemRarityDefinition, ReactionReceipt, RollSourceConfig,
+    ScheduledEffectsComponent, SessionSaveError, StorageSeed, TacticalBoardDefinition,
+    TacticalPosition, ENGINE_REVISION,
 };
 
 const GAME_SAVE_SCHEMA_VERSION: u32 = 10;
@@ -49,6 +50,21 @@ struct PendingAction {
 }
 
 type LegalActionPreview = (D20Id, EntityId, ActionPreview);
+
+fn target_team_allows(
+    team: ActionTargetTeamDefinition,
+    actor: EntityId,
+    actor_faction: EncounterFaction,
+    target: EntityId,
+    target_faction: EncounterFaction,
+) -> bool {
+    match team {
+        ActionTargetTeamDefinition::Hostile => actor_faction != target_faction,
+        ActionTargetTeamDefinition::Ally => actor != target && actor_faction == target_faction,
+        ActionTargetTeamDefinition::SelfOnly => actor == target,
+        ActionTargetTeamDefinition::Any => true,
+    }
+}
 
 #[derive(Debug)]
 struct RestoreData {
@@ -933,21 +949,6 @@ impl GameRuntime {
                 "the selected actor does not own the current activation".to_owned(),
             ));
         }
-        let target_participation = self
-            .session()?
-            .encounter_participation(target)?
-            .ok_or_else(|| {
-                GameRuntimeError::InvalidCommand(
-                    "the selected target is not an encounter participant".to_owned(),
-                )
-            })?;
-        if target_participation.faction() != EncounterFaction::Opposition
-            || self.vitality(target)? == 0
-        {
-            return Err(GameRuntimeError::InvalidCommand(
-                "party actions require a living opposition target".to_owned(),
-            ));
-        }
         let action = id(&request.action_id)?;
         let actor_definition = self
             .rules
@@ -969,6 +970,13 @@ impl GameRuntime {
             .rules
             .action(&action)
             .expect("compiled character action exists");
+        if !self.action_target_team_is_legal(actor, target, action_definition)? {
+            return Err(GameRuntimeError::InvalidCommand(format!(
+                "target {} does not match {}'s authored target team",
+                target.raw(),
+                action
+            )));
+        }
         if !self.action_is_spatially_legal(actor, target, action_definition)? {
             return Err(GameRuntimeError::InvalidCommand(format!(
                 "target {} is outside {} range or line of effect",
@@ -1283,17 +1291,22 @@ impl GameRuntime {
             .clone();
         let serial = self.next_operation;
         let operation = operation(&format!("opposition-action-{serial}"))?;
-        let targets = self
+        let movement_targets = self
             .living_participants()?
             .into_iter()
             .filter(|(_, faction, _)| *faction == EncounterFaction::Party)
+            .map(|(entity, _, _)| entity)
+            .collect::<Vec<_>>();
+        let targets = self
+            .living_participants()?
+            .into_iter()
             .map(|(entity, _, _)| entity)
             .collect::<Vec<_>>();
         let (mut legal_actions, mut unavailable) =
             self.legal_action_previews(actor, &opponent.actions, &targets, &operation)?;
         let mut movement_detail = None;
         if legal_actions.is_empty() {
-            if let Some(route) = self.opposition_movement_route(actor, &targets)? {
+            if let Some(route) = self.opposition_movement_route(actor, &movement_targets)? {
                 let origin = self.participant_position(actor)?;
                 let movement_cost = u16::try_from(route.path.len().saturating_sub(1))
                     .map_err(|_| GameRuntimeError::CounterOverflow)?;
@@ -1848,6 +1861,12 @@ impl GameRuntime {
         target: EntityId,
         action: &ActionDefinition,
     ) -> Result<bool, GameRuntimeError> {
+        if actor == target {
+            return Ok(matches!(
+                action.target.team,
+                ActionTargetTeamDefinition::SelfOnly | ActionTargetTeamDefinition::Any
+            ));
+        }
         action_is_spatially_legal(
             self.tactical_board()?,
             self.participant_position(actor)?,
@@ -1856,6 +1875,42 @@ impl GameRuntime {
             action.target.line_of_effect,
         )
         .map_err(GameRuntimeError::InvalidState)
+    }
+
+    fn action_target_team_is_legal(
+        &self,
+        actor: EntityId,
+        target: EntityId,
+        action: &ActionDefinition,
+    ) -> Result<bool, GameRuntimeError> {
+        let session = self.session()?;
+        let actor_faction = session
+            .encounter_participation(actor)?
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState(format!(
+                    "actor {} is not an encounter participant",
+                    actor.raw()
+                ))
+            })?
+            .faction();
+        let target_faction = session
+            .encounter_participation(target)?
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidCommand(
+                    "the selected target is not an encounter participant".to_owned(),
+                )
+            })?
+            .faction();
+        if self.vitality(target)? == 0 {
+            return Ok(false);
+        }
+        Ok(target_team_allows(
+            action.target.team,
+            actor,
+            actor_faction,
+            target,
+            target_faction,
+        ))
     }
 
     fn legal_tactical_routes(
@@ -1900,6 +1955,11 @@ impl GameRuntime {
                     .rules
                     .action(action)
                     .expect("compiled character action exists");
+                match self.action_target_team_is_legal(actor, target, definition) {
+                    Ok(true) => {}
+                    Ok(false) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
                 match self.action_is_spatially_legal(actor, target, definition) {
                     Ok(true) => {}
                     Ok(false) => {
