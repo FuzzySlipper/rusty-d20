@@ -137,14 +137,31 @@ test.describe.serial("real Rust encounter shell", () => {
       body: await dungeonViewport.screenshot(),
       contentType: "image/png",
     });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator("aui-dungeon-viewport canvas")).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await testInfo.attach("engine-dungeon-corridor-mobile.png", {
+      body: await page.locator("aui-dungeon-viewport").screenshot(),
+      contentType: "image/png",
+    });
+    await page.setViewportSize({ width: 1280, height: 720 });
     for (const facing of ["north", "west", "south", "east"]) {
       await page.getByRole("button", { name: "↶ Left" }).click();
-      await expect(
-        page.getByRole("img", {
-          name: new RegExp(`Warden's Gate Pass, facing ${facing} at cell 1, 1`),
-        }),
-      ).toBeVisible();
+      const rotatedViewport = page.getByRole("img", {
+        name: new RegExp(`Warden's Gate Pass, facing ${facing} at cell 1, 1`),
+      });
+      await expect(rotatedViewport).toBeVisible();
       await expect(page.locator("aui-dungeon-viewport canvas")).toBeVisible();
+      if (facing === "north" || facing === "south") {
+        await testInfo.attach(`engine-dungeon-facing-${facing}.png`, {
+          body: await rotatedViewport.screenshot(),
+          contentType: "image/png",
+        });
+      }
     }
     for (let step = 0; step < 4; step += 1) {
       await page.getByRole("button", { name: "↑ Forward" }).click();

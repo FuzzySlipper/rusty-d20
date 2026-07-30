@@ -55,6 +55,7 @@ export class StatusRendererComponent {
     `
       :host {
         display: block;
+        min-width: 0;
       }
 
       .viewport {
@@ -64,8 +65,10 @@ export class StatusRendererComponent {
         border-radius: var(--rusty-engine-radius);
         box-shadow: inset 0 0 70px rgb(0 0 0 / 0.8);
         min-height: 320px;
+        min-width: 0;
         overflow: hidden;
         position: relative;
+        width: 100%;
       }
 
       .viewport::after {
@@ -81,9 +84,12 @@ export class StatusRendererComponent {
       }
 
       .surface {
+        box-sizing: border-box;
         display: block;
         height: 100%;
         inset: 0;
+        max-width: 100%;
+        min-width: 0;
         position: absolute;
         width: 100%;
       }
