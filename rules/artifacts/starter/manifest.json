@@ -6,49 +6,49 @@
       "domain": "rusty-d20",
       "package": "starter-core",
       "version": 1,
-      "fingerprint": "400147f2ba2f56f17460c5068275ce559443e1bba0dbae04ab7128cca871d578"
+      "fingerprint": "4e1e5c2e0059a33080fe67704b611cc6a4ae3dd238c9061d6a9fcc89db9c96ed"
     },
     {
       "path": "steel-guard.json",
       "domain": "rusty-d20",
       "package": "steel-guard",
       "version": 1,
-      "fingerprint": "64230cda8aa31d3a24778ea55dcb211cd6358f1c3ac01b9192e2dbe5ccb1705c"
+      "fingerprint": "6668167e203993ed6f1a387526f63d1db9f637889e7955deee6993d2be6f32af"
     },
     {
       "path": "ember-ward.json",
       "domain": "rusty-d20",
       "package": "ember-ward",
       "version": 1,
-      "fingerprint": "5c056e109a7127f2917d76d16a1b0d89733d33cd16541d8c93baeef60255c95f"
+      "fingerprint": "e3acaaee56c521da123b6a1d51ab0e58a104cd397cd6a2f3d7c889ca23bc37f9"
     },
     {
       "path": "embers-wake.json",
       "domain": "rusty-d20",
       "package": "embers-wake",
       "version": 1,
-      "fingerprint": "d95e6074d7be50ee47c5cfdbe8ecc593088b572de4650fbe5658ddda78f5b3aa"
+      "fingerprint": "dc0ca0bbfdeb2692e9fcd001f91419ac67864bde8fef79bf6ad5c75950491122"
     },
     {
       "path": "wardens-gate.json",
       "domain": "rusty-d20",
       "package": "wardens-gate",
       "version": 1,
-      "fingerprint": "318eeaeccf9d292a836197df44b4e205fae6cbeb16eb4d49c2222e1728eb7246"
+      "fingerprint": "e5c2089f91fc06d7e71ded21d65565ecf17c930f029ec9e60c62f5efc6857235"
     },
     {
       "path": "catalog-probe.json",
       "domain": "rusty-d20",
       "package": "catalog-probe",
       "version": 1,
-      "fingerprint": "82dd3209ebae6a686603a01461415191bf834753328687e860ccb97fe1e28732"
+      "fingerprint": "87380f217bcff4c46157867ef2f68c96ba5105763f0c9f34dcad1b184047f434"
     },
     {
       "path": "invalid-semantics.json",
       "domain": "rusty-d20",
       "package": "invalid-semantics",
       "version": 1,
-      "fingerprint": "531235db0dcc60b4f230f4840d7a3919ea69d191db8ed697f31a6e7c2ab37a7c"
+      "fingerprint": "79b43683284091d05a065ef7af9430b11c466d55dd00032484056bbd38975d50"
     }
   ]
 }

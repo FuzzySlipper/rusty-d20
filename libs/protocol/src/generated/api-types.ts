@@ -6,6 +6,7 @@ maxAdventureDetails: 64,
 maxCampaignEncounters: 64,
 maxPartyMembers: 4,
 maxEncounterParticipants: 12,
+maxExperience: 1000000000,
 maxTacticalBoardWidth: 16,
 maxTacticalBoardHeight: 16,
 maxTacticalBoardCells: 256,
@@ -25,7 +26,15 @@ export type GameLogEntryDto = { id: number, turn: number, kind: GameLogKindDto, 
 
 export type ResourceDto = { id: string, label: string, current: number, maximum: number, };
 
-export type CharacterDto = { id: number, name: string, title: string, level: number, healthCurrent: number, healthMaximum: number, resources: Array<ResourceDto>, effects: Array<string>, };
+export type AbilityReadoutDto = { id: string, label: string, score: number, modifier: number, };
+
+export type FeatureReadoutDto = { id: string, label: string, description: string, };
+
+export type AffinityReadoutDto = { damageType: string, label: string, affinity: string, };
+
+export type CharacterReactionDto = { id: string, label: string, defense: string, bonus: number, resource: string, cost: number, available: number, activation: Array<string>, effect: string, };
+
+export type CharacterDto = { id: number, name: string, title: string, level: number, experience: number, healthCurrent: number, healthMaximum: number, abilities: Array<AbilityReadoutDto>, defenses: Array<DefenseReadoutDto>, resources: Array<ResourceDto>, effects: Array<string>, features: Array<FeatureReadoutDto>, actions: Array<ActionDto>, reactions: Array<CharacterReactionDto>, affinities: Array<AffinityReadoutDto>, };
 
 export type ActionDto = { id: string, label: string, ability: string, defense: string, damage: string, activation: Array<string>, target: string, range: number, implement: string | null, tags: Array<string>, effect: string | null, forcedMovement: number, };
 

@@ -142,6 +142,13 @@ or TypeScript runtime behavior were copied. The Ruleweaver scenarios remain
 scale witnesses; Asha's CC BY 4.0 clean-room foundation/Crosswind content is the
 attributed adaptation source.
 
+Task 6451 keeps both donor pins unchanged. Its bounded experience values and
+feature labels/descriptions are new Rusty D20-authored presentation content for
+the already attributed party-role adaptation; no Ruleweaver class/talent data,
+feature prose, progression table, or executable rule behavior was copied. Rust
+schema 6 seals those definitions and selected identities before the browser can
+inspect them.
+
 Neither donor repository is a build/runtime dependency or sibling fallback.
 The committed canonical artifacts contain only the selected Rusty D20-owned
 translation and their exact local source provenance.

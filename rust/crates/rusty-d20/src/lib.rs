@@ -31,9 +31,9 @@ pub use candidate::{
     DungeonCheckpointCandidate, DungeonDoorCandidate, DungeonEncounterCandidate,
     DungeonFacingCandidate, DungeonLandmarkCandidate, DungeonTreasureCandidate, EffectCandidate,
     EncounterCandidate, EncounterFactionCandidate, EncounterOutcomeCandidate,
-    EncounterParticipantCandidate, EquipmentReferenceCandidate, ImplementCandidate,
-    ItemInstanceCandidate, ItemRarityCandidate, ReactionCandidate, ResourceCandidate,
-    StorageCandidate, TacticalBoardCandidate, TacticalPlacementCandidate,
+    EncounterParticipantCandidate, EquipmentReferenceCandidate, FeatureCandidate,
+    ImplementCandidate, ItemInstanceCandidate, ItemRarityCandidate, ReactionCandidate,
+    ResourceCandidate, StorageCandidate, TacticalBoardCandidate, TacticalPlacementCandidate,
     D20_CANDIDATE_SCHEMA_VERSION,
 };
 pub use compiler::{
@@ -47,16 +47,17 @@ pub use compiler::{
     DungeonEncounterDefinition, DungeonFacingDefinition, DungeonLandmarkDefinition,
     DungeonTreasureDefinition, EffectDefinition, EncounterDefinition, EncounterFactionDefinition,
     EncounterOutcomeDefinition, EncounterParticipantDefinition, EquipmentReferenceDefinition,
-    ImplementDefinition, ItemInstanceDefinition, ItemRarityDefinition, ReactionDefinition,
-    ResourceDefinition, StorageDefinition, TacticalBoardDefinition, TacticalPlacementDefinition,
-    TacticalPositionDefinition, MAX_D20_ACTION_TAGS, MAX_D20_ACTION_TARGETS,
-    MAX_D20_ACTIVATION_COSTS, MAX_D20_ADVENTURES_PER_PACKAGE, MAX_D20_ADVENTURE_ENTRIES,
-    MAX_D20_AUTHORED_TEXT_BYTES, MAX_D20_CONDITION_CLAUSES, MAX_D20_DAMAGE_DICE,
-    MAX_D20_DAMAGE_DIE_SIDES, MAX_D20_DEFINITIONS_PER_KIND, MAX_D20_DUNGEON_CELLS,
-    MAX_D20_DUNGEON_HEIGHT, MAX_D20_DUNGEON_WIDTH, MAX_D20_EFFECT_DURATION_TURNS,
-    MAX_D20_ENCOUNTER_PARTICIPANTS, MAX_D20_FORCED_MOVEMENT, MAX_D20_IMPLEMENT_TAGS,
-    MAX_D20_PARTY_MEMBERS, MAX_D20_TACTICAL_BOARD_CELLS, MAX_D20_TACTICAL_BOARD_HEIGHT,
-    MAX_D20_TACTICAL_BOARD_WIDTH, MAX_D20_TACTICAL_RANGE,
+    FeatureDefinition, ImplementDefinition, ItemInstanceDefinition, ItemRarityDefinition,
+    ReactionDefinition, ResourceDefinition, StorageDefinition, TacticalBoardDefinition,
+    TacticalPlacementDefinition, TacticalPositionDefinition, MAX_D20_ACTION_TAGS,
+    MAX_D20_ACTION_TARGETS, MAX_D20_ACTIVATION_COSTS, MAX_D20_ADVENTURES_PER_PACKAGE,
+    MAX_D20_ADVENTURE_ENTRIES, MAX_D20_AUTHORED_TEXT_BYTES, MAX_D20_CONDITION_CLAUSES,
+    MAX_D20_DAMAGE_DICE, MAX_D20_DAMAGE_DIE_SIDES, MAX_D20_DEFINITIONS_PER_KIND,
+    MAX_D20_DUNGEON_CELLS, MAX_D20_DUNGEON_HEIGHT, MAX_D20_DUNGEON_WIDTH,
+    MAX_D20_EFFECT_DURATION_TURNS, MAX_D20_ENCOUNTER_PARTICIPANTS, MAX_D20_EXPERIENCE,
+    MAX_D20_FORCED_MOVEMENT, MAX_D20_IMPLEMENT_TAGS, MAX_D20_PARTY_MEMBERS,
+    MAX_D20_TACTICAL_BOARD_CELLS, MAX_D20_TACTICAL_BOARD_HEIGHT, MAX_D20_TACTICAL_BOARD_WIDTH,
+    MAX_D20_TACTICAL_RANGE,
 };
 pub use component::{
     d20_component_registry, register_d20_components, AbilityScore, AbilityScoresComponent,
@@ -72,20 +73,21 @@ pub use component::{
     SCHEDULED_EFFECTS_COMPONENT_CODEC_VERSION, SCHEDULED_EFFECTS_COMPONENT_TYPE_ID,
 };
 pub use game::{
-    ActionDto, ActionTargetsDto, AdventureChoiceDto, AdventureCompletionDto, ApiErrorDto,
-    ApiErrorKindDto, ApplyReactionRequestDto, CampaignDto, CampaignOutcomeDto, CampaignPhaseDto,
-    CharacterDto, ChooseActionRequestDto, CompletedEncounterDto, DeclineReactionRequestDto,
-    DefenseReadoutDto, DiscoveredCellDto, EncounterChoiceDto, EncounterDto, EncounterFactionDto,
+    AbilityReadoutDto, ActionDto, ActionTargetsDto, AdventureChoiceDto, AdventureCompletionDto,
+    AffinityReadoutDto, ApiErrorDto, ApiErrorKindDto, ApplyReactionRequestDto, CampaignDto,
+    CampaignOutcomeDto, CampaignPhaseDto, CharacterDto, CharacterReactionDto,
+    ChooseActionRequestDto, CompletedEncounterDto, DeclineReactionRequestDto, DefenseReadoutDto,
+    DiscoveredCellDto, EncounterChoiceDto, EncounterDto, EncounterFactionDto,
     EncounterOutcomeKindDto, EncounterParticipantDto, EnterEncounterRequestDto,
     EquipItemRequestDto, EquipmentSlotDto, ExpectedRevisionDto, ExplorationCheckpointDto,
     ExplorationCommandKindDto, ExplorationCommandRequestDto, ExplorationDepthDto,
     ExplorationDoorDto, ExplorationDto, ExplorationFacingDto, ExplorationLandmarkDto,
-    ExplorationTreasureDto, GameLogEntryDto, GameLogKindDto, GameRuntime, GameRuntimeError,
-    GameSnapshotDto, LoadoutCapacityDto, LoadoutDto, LoadoutItemDto, LoadoutRarityDto,
-    MoveActorRequestDto, MoveLoadoutItemRequestDto, NewAdventureRequestDto, PartyMemberDto,
-    ReactionDto, ReactionPromptDto, ResetSessionRequestDto, ResourceDto, SaveStateDto,
-    SaveStatusDto, TacticalBoardDto, TacticalCellDto, TacticalMoveDto, TransferItemRequestDto,
-    UnequipItemRequestDto,
+    ExplorationTreasureDto, FeatureReadoutDto, GameLogEntryDto, GameLogKindDto, GameRuntime,
+    GameRuntimeError, GameSnapshotDto, LoadoutCapacityDto, LoadoutDto, LoadoutItemDto,
+    LoadoutRarityDto, MoveActorRequestDto, MoveLoadoutItemRequestDto, NewAdventureRequestDto,
+    PartyMemberDto, ReactionDto, ReactionPromptDto, ResetSessionRequestDto, ResourceDto,
+    SaveStateDto, SaveStatusDto, TacticalBoardDto, TacticalCellDto, TacticalMoveDto,
+    TransferItemRequestDto, UnequipItemRequestDto,
 };
 pub use identity::{D20Id, D20IdentityError, D20_ID_PATTERN, MAX_D20_ID_BYTES};
 pub use session::{
@@ -146,6 +148,10 @@ pub fn generated_typescript() -> String {
         GameLogKindDto::decl(),
         GameLogEntryDto::decl(),
         ResourceDto::decl(),
+        AbilityReadoutDto::decl(),
+        FeatureReadoutDto::decl(),
+        AffinityReadoutDto::decl(),
+        CharacterReactionDto::decl(),
         CharacterDto::decl(),
         ActionDto::decl(),
         ReactionDto::decl(),
@@ -208,6 +214,7 @@ export const D20_PROTOCOL_LIMITS = Object.freeze({{\n\
   maxCampaignEncounters: {MAX_D20_ADVENTURE_ENTRIES},\n\
   maxPartyMembers: {MAX_D20_PARTY_MEMBERS},\n\
   maxEncounterParticipants: {MAX_D20_ENCOUNTER_PARTICIPANTS},\n\
+  maxExperience: {MAX_D20_EXPERIENCE},\n\
   maxTacticalBoardWidth: {MAX_D20_TACTICAL_BOARD_WIDTH},\n\
   maxTacticalBoardHeight: {MAX_D20_TACTICAL_BOARD_HEIGHT},\n\
   maxTacticalBoardCells: {MAX_D20_TACTICAL_BOARD_CELLS},\n\

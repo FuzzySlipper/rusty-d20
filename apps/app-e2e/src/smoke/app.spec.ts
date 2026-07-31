@@ -572,6 +572,116 @@ test.describe.serial("real Rust encounter shell", () => {
     await expect(dungeonCanvas).toHaveAttribute("data-camera-motion", "none");
     await installCameraTransitionWitness(dungeonCanvas);
     await expectRendererCanvasAtPoint(page, 640, 400);
+
+    const partyTrigger = page.getByRole("button", { name: "Party" });
+    const beforePartyInspection = await (
+      await request.get("/api/v1/session")
+    ).json();
+    await partyTrigger.click();
+    const partySheet = page.getByRole("dialog", { name: "Party" });
+    await expect(partySheet).toBeVisible();
+    expect(
+      await partySheet.evaluate((dialog) => dialog.matches(":modal")),
+    ).toBe(true);
+    await expect(
+      partySheet.getByRole("tab", { name: "Mara Venn" }),
+    ).toBeFocused();
+    const maraSheet = partySheet.getByRole("tabpanel", {
+      name: "Mara Venn",
+    });
+    await expect(maraSheet).toContainText("Level 1 · 900 XP");
+    await expect(
+      maraSheet.getByRole("region", { name: "Abilities" }),
+    ).toContainText("Might 18 (+4)");
+    await expect(
+      maraSheet.getByRole("region", { name: "Defenses" }),
+    ).toContainText("Armor 18");
+    await expect(
+      maraSheet.getByRole("region", { name: "Features and feats" }),
+    ).toContainText("Hold the Line");
+    await expect(
+      maraSheet.getByRole("region", { name: "Features and feats" }),
+    ).toContainText("controlling a threatened position");
+    await expect(
+      maraSheet.getByRole("region", { name: "Actions", exact: true }),
+    ).toContainText("Longsword Strike");
+    await expect(
+      maraSheet.getByRole("region", { name: "Reactions" }),
+    ).toContainText("Parry");
+    await expect(
+      maraSheet.getByRole("region", { name: "Current loadout" }),
+    ).toContainText("Mara's chain armor");
+    await testInfo.attach("exploration-party-sheet-desktop.png", {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
+
+    await page.keyboard.press("w");
+    await expect(
+      (await request.get("/api/v1/session")).json(),
+    ).resolves.toEqual(beforePartyInspection);
+    const maraTab = partySheet.getByRole("tab", { name: "Mara Venn" });
+    await maraTab.press("ArrowRight");
+    const ilyraTab = partySheet.getByRole("tab", { name: "Ilyra Fen" });
+    await expect(ilyraTab).toBeFocused();
+    await expect(ilyraTab).toHaveAttribute("aria-selected", "true");
+    const ilyraSheet = partySheet.getByRole("tabpanel", {
+      name: "Ilyra Fen",
+    });
+    await expect(ilyraSheet).toContainText("Level 1 · 760 XP");
+    await expect(
+      ilyraSheet.getByRole("region", { name: "Features and feats" }),
+    ).toContainText("Pathfinder Instinct");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const partySheetBox = await partySheet.boundingBox();
+    expect(partySheetBox).not.toBeNull();
+    expect(partySheetBox?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect(partySheetBox?.y ?? -1).toBeGreaterThanOrEqual(0);
+    expect(
+      (partySheetBox?.x ?? 0) + (partySheetBox?.width ?? 0),
+    ).toBeLessThanOrEqual(390);
+    expect(
+      (partySheetBox?.y ?? 0) + (partySheetBox?.height ?? 0),
+    ).toBeLessThanOrEqual(844);
+    expect(
+      await partySheet.evaluate(
+        (dialog) => dialog.scrollWidth <= dialog.clientWidth,
+      ),
+    ).toBe(true);
+    await testInfo.attach("exploration-party-sheet-mobile.png", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
+    await partySheet.getByRole("tab", { name: "Mara Venn" }).click();
+    await page.keyboard.press("Escape");
+    await expect(partySheet).toHaveCount(0);
+    await expect(partyTrigger).toBeFocused();
+
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+    const reopenedPage = await page.context().newPage();
+    await reopenedPage.goto("/");
+    await continueIfNeeded(reopenedPage);
+    await reopenedPage.getByRole("button", { name: "Party" }).click();
+    const reopenedPartySheet = reopenedPage.getByRole("dialog", {
+      name: "Party",
+    });
+    await expect(reopenedPartySheet).toBeVisible();
+    await reopenedPartySheet
+      .getByRole("tab", { name: "Ilyra Fen" })
+      .click();
+    await expect(
+      reopenedPartySheet.getByRole("tabpanel", { name: "Ilyra Fen" }),
+    ).toContainText("Level 1 · 760 XP");
+    await reopenedPartySheet
+      .getByRole("tab", { name: "Mara Venn" })
+      .click();
+    await reopenedPartySheet.getByRole("button", { name: "Close" }).click();
+    await expect(reopenedPartySheet).toHaveCount(0);
+    await reopenedPage.close();
+
     const beforeExplorationInventory = await (
       await request.get("/api/v1/session")
     ).json();

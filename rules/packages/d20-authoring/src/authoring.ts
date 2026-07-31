@@ -1,16 +1,16 @@
-import { Buffer } from 'node:buffer';
+import { Buffer } from "node:buffer";
 
 import {
   authorRulePackage,
   type CanonicalRuleArtifact,
   type RulePackageDependencyDraft,
-} from '@rusty-engine/gameplay-rules-authoring';
+} from "@rusty-engine/gameplay-rules-authoring";
 import {
   RuleContractError,
   type JsonValue,
   type RuleDiagnostic,
   type RulePackage,
-} from '@rusty-engine/gameplay-rules-contracts';
+} from "@rusty-engine/gameplay-rules-contracts";
 
 import {
   D20_CANDIDATE_SCHEMA_VERSION,
@@ -28,12 +28,13 @@ import {
   type DefenseCandidate,
   type EffectCandidate,
   type EncounterCandidate,
+  type FeatureCandidate,
   type ImplementCandidate,
   type ItemInstanceCandidate,
   type ReactionCandidate,
   type ResourceCandidate,
   type StorageCandidate,
-} from './generated.js';
+} from "./generated.js";
 
 const d20IdRegex = new RegExp(D20_ID_PATTERN);
 
@@ -60,6 +61,7 @@ export interface D20Module {
   readonly effects: readonly Located<EffectCandidate>[];
   readonly reactions: readonly Located<ReactionCandidate>[];
   readonly actions: readonly Located<ActionCandidate>[];
+  readonly features: readonly Located<FeatureCandidate>[];
   readonly characterTemplates: readonly Located<CharacterTemplateCandidate>[];
   readonly storage: readonly Located<StorageCandidate>[];
   readonly itemInstances: readonly Located<ItemInstanceCandidate>[];
@@ -78,6 +80,7 @@ export interface D20ModuleDraft {
   readonly effects?: readonly Located<EffectCandidate>[];
   readonly reactions?: readonly Located<ReactionCandidate>[];
   readonly actions?: readonly Located<ActionCandidate>[];
+  readonly features?: readonly Located<FeatureCandidate>[];
   readonly characterTemplates?: readonly Located<CharacterTemplateCandidate>[];
   readonly storage?: readonly Located<StorageCandidate>[];
   readonly itemInstances?: readonly Located<ItemInstanceCandidate>[];
@@ -136,6 +139,11 @@ export interface D20ModuleBuilder {
     value: ActionCandidate,
     column?: number,
   ): Located<ActionCandidate>;
+  feature(
+    line: number,
+    value: FeatureCandidate,
+    column?: number,
+  ): Located<FeatureCandidate>;
   characterTemplate(
     line: number,
     value: CharacterTemplateCandidate,
@@ -174,7 +182,7 @@ export interface D20PackageDraft {
 type CandidateJson = D20RulesCandidate & JsonValue;
 
 export interface D20CanonicalArtifact
-  extends Omit<CanonicalRuleArtifact<JsonValue>, 'package'> {
+  extends Omit<CanonicalRuleArtifact<JsonValue>, "package"> {
   readonly package: RulePackage<JsonValue> & {
     readonly payload: CandidateJson;
   };
@@ -182,7 +190,7 @@ export interface D20CanonicalArtifact
 
 export interface D20MappedDiagnostic {
   readonly code: string;
-  readonly severity: RuleDiagnostic['severity'];
+  readonly severity: RuleDiagnostic["severity"];
   readonly logicalPath: string;
   readonly message: string;
   readonly source?: {
@@ -194,14 +202,14 @@ export interface D20MappedDiagnostic {
 
 export class D20AuthoringError extends Error {
   public constructor(
-    public readonly code: 'invalid-d20-identity' | 'conflicting-source',
+    public readonly code: "invalid-d20-identity" | "conflicting-source",
     public readonly source: D20Source,
     public readonly line: number,
     public readonly column: number,
     message: string,
   ) {
     super(`${source.path}:${String(line)}:${String(column)}: ${message}`);
-    this.name = 'D20AuthoringError';
+    this.name = "D20AuthoringError";
   }
 }
 
@@ -224,6 +232,7 @@ export function defineD20Module(
     effects: [...(draft.effects ?? [])],
     reactions: [...(draft.reactions ?? [])],
     actions: [...(draft.actions ?? [])],
+    features: [...(draft.features ?? [])],
     characterTemplates: [...(draft.characterTemplates ?? [])],
     storage: [...(draft.storage ?? [])],
     itemInstances: [...(draft.itemInstances ?? [])],
@@ -234,36 +243,37 @@ export function defineD20Module(
 
 export function authorD20Package(draft: D20PackageDraft): D20CanonicalArtifact {
   const sources = collectSources(draft.modules);
-  const abilities = collect<AbilityCandidate>(draft.modules, 'abilities');
-  const defenses = collect<DefenseCandidate>(draft.modules, 'defenses');
+  const abilities = collect<AbilityCandidate>(draft.modules, "abilities");
+  const defenses = collect<DefenseCandidate>(draft.modules, "defenses");
   const activationBudgets = collect<ActivationBudgetCandidate>(
     draft.modules,
-    'activationBudgets',
+    "activationBudgets",
   );
   const damageTypes = collect<DamageTypeCandidate>(
     draft.modules,
-    'damageTypes',
+    "damageTypes",
   );
-  const resources = collect<ResourceCandidate>(draft.modules, 'resources');
-  const armors = collect<ArmorCandidate>(draft.modules, 'armors');
+  const resources = collect<ResourceCandidate>(draft.modules, "resources");
+  const armors = collect<ArmorCandidate>(draft.modules, "armors");
   const implementDefinitions = collect<ImplementCandidate>(
     draft.modules,
-    'implements',
+    "implements",
   );
-  const effects = collect<EffectCandidate>(draft.modules, 'effects');
-  const reactions = collect<ReactionCandidate>(draft.modules, 'reactions');
-  const actions = collect<ActionCandidate>(draft.modules, 'actions');
+  const effects = collect<EffectCandidate>(draft.modules, "effects");
+  const reactions = collect<ReactionCandidate>(draft.modules, "reactions");
+  const actions = collect<ActionCandidate>(draft.modules, "actions");
+  const features = collect<FeatureCandidate>(draft.modules, "features");
   const characterTemplates = collect<CharacterTemplateCandidate>(
     draft.modules,
-    'characterTemplates',
+    "characterTemplates",
   );
-  const storage = collect<StorageCandidate>(draft.modules, 'storage');
+  const storage = collect<StorageCandidate>(draft.modules, "storage");
   const itemInstances = collect<ItemInstanceCandidate>(
     draft.modules,
-    'itemInstances',
+    "itemInstances",
   );
-  const encounters = collect<EncounterCandidate>(draft.modules, 'encounters');
-  const adventures = collect<AdventureCandidate>(draft.modules, 'adventures');
+  const encounters = collect<EncounterCandidate>(draft.modules, "encounters");
+  const adventures = collect<AdventureCandidate>(draft.modules, "adventures");
   const payload = deepFreeze({
     schemaVersion: D20_CANDIDATE_SCHEMA_VERSION,
     abilities: values(abilities),
@@ -276,6 +286,7 @@ export function authorD20Package(draft: D20PackageDraft): D20CanonicalArtifact {
     effects: values(effects),
     reactions: values(reactions),
     actions: values(actions),
+    features: values(features),
     characterTemplates: values(characterTemplates),
     storage: values(storage),
     itemInstances: values(itemInstances),
@@ -283,21 +294,22 @@ export function authorD20Package(draft: D20PackageDraft): D20CanonicalArtifact {
     adventures: values(adventures),
   }) as CandidateJson;
   const provenance = [
-    ...provenanceFor('ability', abilities),
-    ...provenanceFor('defense', defenses),
-    ...provenanceFor('activation-budget', activationBudgets),
-    ...provenanceFor('damage-type', damageTypes),
-    ...provenanceFor('resource', resources),
-    ...provenanceFor('armor', armors),
-    ...provenanceFor('implement', implementDefinitions),
-    ...provenanceFor('effect', effects),
-    ...provenanceFor('reaction', reactions),
-    ...provenanceFor('action', actions),
-    ...provenanceFor('character-template', characterTemplates),
-    ...provenanceFor('storage', storage),
-    ...provenanceFor('item-instance', itemInstances),
-    ...provenanceFor('encounter', encounters),
-    ...provenanceFor('adventure', adventures),
+    ...provenanceFor("ability", abilities),
+    ...provenanceFor("defense", defenses),
+    ...provenanceFor("activation-budget", activationBudgets),
+    ...provenanceFor("damage-type", damageTypes),
+    ...provenanceFor("resource", resources),
+    ...provenanceFor("armor", armors),
+    ...provenanceFor("implement", implementDefinitions),
+    ...provenanceFor("effect", effects),
+    ...provenanceFor("reaction", reactions),
+    ...provenanceFor("action", actions),
+    ...provenanceFor("feature", features),
+    ...provenanceFor("character-template", characterTemplates),
+    ...provenanceFor("storage", storage),
+    ...provenanceFor("item-instance", itemInstances),
+    ...provenanceFor("encounter", encounters),
+    ...provenanceFor("adventure", adventures),
   ];
 
   return authorRulePackage<JsonValue>({
@@ -357,7 +369,7 @@ export function mapD20Diagnostic(
 function moduleBuilder(source: D20Source): D20ModuleBuilder {
   const builder: D20ModuleBuilder = {
     ability: (line, value, column = 1) =>
-      locate(source, line, column, value, [['id', value.id]]),
+      locate(source, line, column, value, [["id", value.id]]),
     defense: (line, value, column = 1) =>
       locate(
         source,
@@ -365,21 +377,21 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
         column,
         { ...value, abilities: [...value.abilities] },
         [
-          ['id', value.id],
-          ...value.abilities.map((ability) => ['abilities', ability] as const),
+          ["id", value.id],
+          ...value.abilities.map((ability) => ["abilities", ability] as const),
         ],
       ),
     activationBudget: (line, value, column = 1) =>
-      locate(source, line, column, value, [['id', value.id]]),
+      locate(source, line, column, value, [["id", value.id]]),
     damageType: (line, value, column = 1) =>
-      locate(source, line, column, value, [['id', value.id]]),
+      locate(source, line, column, value, [["id", value.id]]),
     resource: (line, value, column = 1) =>
-      locate(source, line, column, value, [['id', value.id]]),
+      locate(source, line, column, value, [["id", value.id]]),
     armor: (line, value, column = 1) =>
       locate(source, line, column, value, [
-        ['id', value.id],
-        ['defense', value.defense],
-        ['slot', value.slot],
+        ["id", value.id],
+        ["defense", value.defense],
+        ["slot", value.slot],
       ]),
     implement: (line, value, column = 1) =>
       locate(
@@ -388,12 +400,12 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
         column,
         { ...value, tags: [...value.tags], damage: { ...value.damage } },
         [
-          ['id', value.id],
-          ['slot', value.slot],
-          ...value.tags.map((tag) => ['tags', tag] as const),
-          ['ability', value.ability],
-          ['defense', value.defense],
-          ['damage.kind', value.damage.kind],
+          ["id", value.id],
+          ["slot", value.slot],
+          ...value.tags.map((tag) => ["tags", tag] as const),
+          ["ability", value.ability],
+          ["defense", value.defense],
+          ["damage.kind", value.damage.kind],
         ],
       ),
     effect: (line, value, column = 1) =>
@@ -406,21 +418,21 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
           conditions: value.conditions.map((condition) => ({ ...condition })),
         },
         value.defense === null
-          ? [['id', value.id]]
+          ? [["id", value.id]]
           : [
-              ['id', value.id],
-              ['defense', value.defense],
+              ["id", value.id],
+              ["defense", value.defense],
             ],
       ),
     reaction: (line, value, column = 1) =>
       locate(source, line, column, value, [
-        ['id', value.id],
-        ['defense', value.defense],
-        ['resource', value.resource],
+        ["id", value.id],
+        ["defense", value.defense],
+        ["resource", value.resource],
         ...value.activationCosts.map(
-          (entry) => ['activationCosts.budget', entry.budget] as const,
+          (entry) => ["activationCosts.budget", entry.budget] as const,
         ),
-        ['effect', value.effect],
+        ["effect", value.effect],
       ]),
     action: (line, value, column = 1) =>
       locate(
@@ -433,45 +445,48 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
           activationCosts: value.activationCosts.map((cost) => ({ ...cost })),
           target: { ...value.target },
           attack:
-            value.attack.kind === 'fixed'
+            value.attack.kind === "fixed"
               ? { ...value.attack, damage: { ...value.attack.damage } }
               : { ...value.attack },
         },
         [
-          ['id', value.id],
-          ...value.tags.map((tag) => ['tags', tag] as const),
+          ["id", value.id],
+          ...value.tags.map((tag) => ["tags", tag] as const),
           ...value.activationCosts.map(
-            (cost) => ['activationCosts.budget', cost.budget] as const,
+            (cost) => ["activationCosts.budget", cost.budget] as const,
           ),
-          ...(value.attack.kind === 'fixed'
+          ...(value.attack.kind === "fixed"
             ? ([
-                ['attack.ability', value.attack.ability],
-                ['attack.defense', value.attack.defense],
-                ['attack.damage.kind', value.attack.damage.kind],
+                ["attack.ability", value.attack.ability],
+                ["attack.defense", value.attack.defense],
+                ["attack.damage.kind", value.attack.damage.kind],
               ] as const)
-            : ([['attack.implement', value.attack.implement]] as const)),
+            : ([["attack.implement", value.attack.implement]] as const)),
           ...(value.effect === null
             ? []
-            : ([['effect', value.effect]] as const)),
+            : ([["effect", value.effect]] as const)),
         ],
       ),
+    feature: (line, value, column = 1) =>
+      locate(source, line, column, value, [["id", value.id]]),
     characterTemplate: (line, value, column = 1) =>
       locate(source, line, column, value, [
-        ['id', value.id],
+        ["id", value.id],
         ...value.abilities.map(
-          (entry) => ['abilities.ability', entry.ability] as const,
+          (entry) => ["abilities.ability", entry.ability] as const,
         ),
         ...value.resources.map(
-          (entry) => ['resources.resource', entry.resource] as const,
+          (entry) => ["resources.resource", entry.resource] as const,
         ),
-        ...value.actions.map((id) => ['actions', id] as const),
-        ...value.reactions.map((id) => ['reactions', id] as const),
+        ...value.actions.map((id) => ["actions", id] as const),
+        ...value.reactions.map((id) => ["reactions", id] as const),
         ...value.affinities.map(
-          (entry) => ['affinities.damageType', entry.damageType] as const,
+          (entry) => ["affinities.damageType", entry.damageType] as const,
         ),
+        ...value.features.map((id) => ["features", id] as const),
       ]),
     storage: (line, value, column = 1) =>
-      locate(source, line, column, value, [['id', value.id]]),
+      locate(source, line, column, value, [["id", value.id]]),
     itemInstance: (line, value, column = 1) =>
       locate(
         source,
@@ -479,39 +494,39 @@ function moduleBuilder(source: D20Source): D20ModuleBuilder {
         column,
         { ...value, equipment: { ...value.equipment } },
         [
-          ['id', value.id],
-          value.equipment.kind === 'armor'
-            ? ['equipment.armor', value.equipment.armor]
-            : ['equipment.implement', value.equipment.implement],
-          ['owner', value.owner],
+          ["id", value.id],
+          value.equipment.kind === "armor"
+            ? ["equipment.armor", value.equipment.armor]
+            : ["equipment.implement", value.equipment.implement],
+          ["owner", value.owner],
         ],
       ),
     encounter: (line, value, column = 1) =>
       locate(source, line, column, value, [
-        ['id', value.id],
+        ["id", value.id],
         ...value.roster.map(
-          (participant) => ['roster.character', participant.character] as const,
+          (participant) => ["roster.character", participant.character] as const,
         ),
         ...value.board.placements.map(
           (placement) =>
-            ['board.placements.character', placement.character] as const,
+            ["board.placements.character", placement.character] as const,
         ),
         ...(value.victory.rewardItem === null
           ? []
-          : ([['victory.rewardItem', value.victory.rewardItem]] as const)),
+          : ([["victory.rewardItem", value.victory.rewardItem]] as const)),
         ...(value.defeat.rewardItem === null
           ? []
-          : ([['defeat.rewardItem', value.defeat.rewardItem]] as const)),
+          : ([["defeat.rewardItem", value.defeat.rewardItem]] as const)),
       ]),
     adventure: (line, value, column = 1) =>
       locate(source, line, column, value, [
-        ['id', value.id],
-        ...value.party.map((id) => ['party', id] as const),
-        ['campStorage', value.campStorage],
-        ...value.characters.map((id) => ['characters', id] as const),
-        ...value.storage.map((id) => ['storage', id] as const),
-        ...value.items.map((id) => ['items', id] as const),
-        ...value.encounters.map((id) => ['encounters', id] as const),
+        ["id", value.id],
+        ...value.party.map((id) => ["party", id] as const),
+        ["campStorage", value.campStorage],
+        ...value.characters.map((id) => ["characters", id] as const),
+        ...value.storage.map((id) => ["storage", id] as const),
+        ...value.items.map((id) => ["items", id] as const),
+        ...value.encounters.map((id) => ["encounters", id] as const),
       ]),
   };
   return Object.freeze(builder);
@@ -539,9 +554,9 @@ function requireLocation(line: number, column: number): void {
     column <= 0
   ) {
     throw new RuleContractError(
-      'invalid-source-location',
-      '$/provenance',
-      'source line and column must be positive safe integers',
+      "invalid-source-location",
+      "$/provenance",
+      "source line and column must be positive safe integers",
     );
   }
 }
@@ -555,11 +570,11 @@ function requireD20Id(
 ): void {
   if (
     value.length === 0 ||
-    Buffer.byteLength(value, 'utf8') > D20_LIMITS.maxIdBytes ||
+    Buffer.byteLength(value, "utf8") > D20_LIMITS.maxIdBytes ||
     !d20IdRegex.test(value)
   ) {
     throw new D20AuthoringError(
-      'invalid-d20-identity',
+      "invalid-d20-identity",
       source,
       line,
       column,
@@ -574,7 +589,7 @@ function collectSources(modules: readonly D20Module[]): readonly D20Source[] {
     const previous = sources.get(module.source.id);
     if (previous !== undefined && previous.path !== module.source.path) {
       throw new D20AuthoringError(
-        'conflicting-source',
+        "conflicting-source",
         module.source,
         1,
         1,
@@ -603,21 +618,22 @@ function collect<T extends { readonly id: D20Id }>(
 }
 
 type DefinitionKey =
-  | 'abilities'
-  | 'defenses'
-  | 'activationBudgets'
-  | 'damageTypes'
-  | 'resources'
-  | 'armors'
-  | 'implements'
-  | 'effects'
-  | 'reactions'
-  | 'actions'
-  | 'characterTemplates'
-  | 'storage'
-  | 'itemInstances'
-  | 'encounters'
-  | 'adventures';
+  | "abilities"
+  | "defenses"
+  | "activationBudgets"
+  | "damageTypes"
+  | "resources"
+  | "armors"
+  | "implements"
+  | "effects"
+  | "reactions"
+  | "actions"
+  | "features"
+  | "characterTemplates"
+  | "storage"
+  | "itemInstances"
+  | "encounters"
+  | "adventures";
 
 type Collected<T> = Located<T> & { readonly source: D20Source };
 
@@ -645,13 +661,13 @@ function provenanceFor<T extends { readonly id: D20Id }>(
 }
 
 function compareUtf8(left: string, right: string): number {
-  return Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8'));
+  return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
 }
 
 function deepFreeze<T>(value: T): T {
   if (Array.isArray(value)) {
     for (const entry of value) deepFreeze(entry);
-  } else if (value !== null && typeof value === 'object') {
+  } else if (value !== null && typeof value === "object") {
     for (const entry of Object.values(value)) deepFreeze(entry);
   }
   return Object.freeze(value);

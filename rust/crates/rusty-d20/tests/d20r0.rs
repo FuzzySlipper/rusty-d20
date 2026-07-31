@@ -21,10 +21,10 @@ use rusty_d20::{
     DungeonCheckpointCandidate, DungeonDoorCandidate, DungeonEncounterCandidate,
     DungeonFacingCandidate, DungeonTreasureCandidate, EffectCandidate, EncounterCandidate,
     EncounterFactionCandidate, EncounterOutcomeCandidate, EncounterParticipantCandidate,
-    EquipmentItemSeed, EquipmentReferenceCandidate, ImplementCandidate, ItemInstanceCandidate,
-    ItemRarityCandidate, ReactionCandidate, ResourceCandidate, RollSourceConfig, SessionSaveError,
-    StaticActionRoll, StorageCandidate, TacticalBoardCandidate, TacticalPlacementCandidate,
-    D20_CANDIDATE_SCHEMA_VERSION,
+    EquipmentItemSeed, EquipmentReferenceCandidate, FeatureCandidate, ImplementCandidate,
+    ItemInstanceCandidate, ItemRarityCandidate, ReactionCandidate, ResourceCandidate,
+    RollSourceConfig, SessionSaveError, StaticActionRoll, StorageCandidate, TacticalBoardCandidate,
+    TacticalPlacementCandidate, D20_CANDIDATE_SCHEMA_VERSION, MAX_D20_EXPERIENCE,
 };
 use serde_json::json;
 use svc_rng::RngSeed;
@@ -121,6 +121,7 @@ fn base_character_template(id_value: &str, entity_id: u64) -> CharacterTemplateC
         name: id_value.to_owned(),
         title: "Test combatant".to_owned(),
         level: 1,
+        experience: 0,
         vitality: 100,
         inventory_capacity: 4,
         abilities: vec![
@@ -140,6 +141,7 @@ fn base_character_template(id_value: &str, entity_id: u64) -> CharacterTemplateC
         actions: vec![id("strike")],
         reactions: vec![id("parry")],
         affinities: vec![],
+        features: vec![],
     }
 }
 
@@ -711,7 +713,99 @@ fn compiler_rejects_strict_shape_duplicates_and_d20_quotas() {
 }
 
 #[test]
+fn character_features_and_experience_are_bounded_canonical_and_resolved() {
+    let feature = |id_value: &str, label: &str| FeatureCandidate {
+        id: id(id_value),
+        label: label.to_owned(),
+        description: format!("{label} description"),
+    };
+    let mut valid = base_candidate();
+    valid.features = vec![
+        feature("coordinated-flanker", "Coordinated Flanker"),
+        feature("hold-the-line", "Hold the Line"),
+    ];
+    for character in &mut valid.character_templates {
+        character.experience = 900;
+        character.features = vec![id("coordinated-flanker"), id("hold-the-line")];
+    }
+    let rules = D20Ruleset::compile(vec![admit_d20_candidate(
+        envelope(
+            "character-features",
+            vec![],
+            &[
+                "feature:coordinated-flanker",
+                "feature:hold-the-line",
+                "character-template:attacker",
+                "character-template:target",
+            ],
+        ),
+        valid.clone(),
+    )
+    .unwrap()])
+    .unwrap();
+    assert_eq!(
+        rules
+            .feature(&id("coordinated-flanker"))
+            .unwrap()
+            .description,
+        "Coordinated Flanker description"
+    );
+    assert_eq!(
+        rules
+            .character_template(&id("attacker"))
+            .unwrap()
+            .experience,
+        900
+    );
+
+    let compile_codes = |package: &str, candidate: D20RulesCandidate| {
+        let package = admit_d20_candidate(envelope(package, vec![], &[]), candidate).unwrap();
+        let D20CompileError::Diagnostics(report) = D20Ruleset::compile(vec![package]).unwrap_err()
+        else {
+            panic!("invalid feature candidate must produce diagnostics");
+        };
+        report
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| diagnostic.code().to_owned())
+            .collect::<Vec<_>>()
+    };
+
+    let mut unknown = valid.clone();
+    unknown.character_templates[0].features = vec![id("missing-feature")];
+    assert!(compile_codes("unknown-feature", unknown)
+        .iter()
+        .any(|code| code == "D20_UNKNOWN_FEATURE"));
+
+    let mut noncanonical = valid.clone();
+    noncanonical.character_templates[0].features =
+        vec![id("hold-the-line"), id("coordinated-flanker")];
+    assert!(compile_codes("noncanonical-features", noncanonical)
+        .iter()
+        .any(|code| code == "D20_NONCANONICAL_CHARACTER_FEATURES"));
+
+    let mut oversized_experience = valid.clone();
+    oversized_experience.character_templates[0].experience = MAX_D20_EXPERIENCE.saturating_add(1);
+    assert!(compile_codes("oversized-experience", oversized_experience)
+        .iter()
+        .any(|code| code == "D20_INVALID_CHARACTER_TEMPLATE"));
+
+    let mut blank_presentation = valid;
+    blank_presentation.features[0].label.clear();
+    assert!(compile_codes("blank-feature", blank_presentation)
+        .iter()
+        .any(|code| code == "D20_AUTHORED_TEXT_BOUNDS"));
+}
+
+#[test]
 fn tagged_candidate_variants_reject_unknown_fields_before_semantic_admission() {
+    assert!(serde_json::from_value::<FeatureCandidate>(json!({
+        "id": "hold-the-line",
+        "label": "Hold the Line",
+        "description": "A sealed authored feature.",
+        "browserRuleBonus": 4
+    }))
+    .is_err());
     assert!(serde_json::from_value::<ActionAttackCandidate>(json!({
         "kind": "implement",
         "implement": "training-blade",
@@ -773,6 +867,7 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
         name: "Hero".to_owned(),
         title: "Tester".to_owned(),
         level: 1,
+        experience: 0,
         vitality: 20,
         inventory_capacity: 2,
         abilities: vec![
@@ -792,6 +887,7 @@ fn authored_adventure_failures_are_bounded_and_source_correlated() {
         actions: vec![id("strike")],
         reactions: vec![id("parry")],
         affinities: vec![],
+        features: vec![],
     };
     let outcome =
         |reward_item: Option<D20Id>, recovery_vitality: Option<u32>| EncounterOutcomeCandidate {
@@ -929,6 +1025,7 @@ fn otherwise_valid_adventure_candidate(
         name: id_value.to_owned(),
         title: "Combatant".to_owned(),
         level: 1,
+        experience: 0,
         vitality: 20,
         inventory_capacity: 2,
         abilities: vec![
@@ -948,6 +1045,7 @@ fn otherwise_valid_adventure_candidate(
         actions,
         reactions: vec![],
         affinities: vec![],
+        features: vec![],
     };
     let outcome = |recovery_vitality| EncounterOutcomeCandidate {
         title: "Outcome".to_owned(),

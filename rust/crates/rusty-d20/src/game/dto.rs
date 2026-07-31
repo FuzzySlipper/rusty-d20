@@ -39,18 +39,68 @@ pub struct ResourceDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
+pub struct AbilityReadoutDto {
+    pub id: String,
+    pub label: String,
+    pub score: i16,
+    pub modifier: i16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct FeatureReadoutDto {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct AffinityReadoutDto {
+    pub damage_type: String,
+    pub label: String,
+    pub affinity: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct CharacterReactionDto {
+    pub id: String,
+    pub label: String,
+    pub defense: String,
+    pub bonus: i16,
+    pub resource: String,
+    pub cost: u16,
+    pub available: u16,
+    pub activation: Vec<String>,
+    pub effect: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct CharacterDto {
     #[ts(type = "number")]
     pub id: u64,
     pub name: String,
     pub title: String,
     pub level: u16,
+    pub experience: u32,
     #[ts(type = "number")]
     pub health_current: i64,
     #[ts(type = "number")]
     pub health_maximum: i64,
+    pub abilities: Vec<AbilityReadoutDto>,
+    pub defenses: Vec<DefenseReadoutDto>,
     pub resources: Vec<ResourceDto>,
     pub effects: Vec<String>,
+    pub features: Vec<FeatureReadoutDto>,
+    pub actions: Vec<ActionDto>,
+    pub reactions: Vec<CharacterReactionDto>,
+    pub affinities: Vec<AffinityReadoutDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

@@ -276,7 +276,6 @@ pub(crate) struct ResolvedActionDefinition {
     pub ability: D20Id,
     pub defense: D20Id,
     pub damage: DamageDefinition,
-    pub range: u16,
     pub implement: Option<D20Id>,
 }
 
@@ -1133,17 +1132,6 @@ impl D20Session {
         })
     }
 
-    pub(crate) fn action_definition_profile(
-        &self,
-        action: &D20Id,
-    ) -> Result<ResolvedActionDefinition, D20SessionError> {
-        let definition = self
-            .rules
-            .action(action)
-            .ok_or_else(|| D20SessionError::UnknownAction(action.clone()))?;
-        Ok(self.static_action_definition(definition))
-    }
-
     fn resolve_action_definition(
         &self,
         actor: EntityId,
@@ -1182,12 +1170,11 @@ impl D20Session {
                 ability,
                 defense,
                 damage,
-                range,
+                ..
             } => ResolvedActionDefinition {
                 ability: ability.clone(),
                 defense: defense.clone(),
                 damage: damage.clone(),
-                range: *range,
                 implement: None,
             },
             ActionAttackDefinition::Implement { implement } => {
@@ -1199,7 +1186,6 @@ impl D20Session {
                     ability: definition.ability.clone(),
                     defense: definition.defense.clone(),
                     damage: definition.damage.clone(),
-                    range: definition.range,
                     implement: Some(definition.id.clone()),
                 }
             }

@@ -76,9 +76,12 @@ identity syntax errors fail at the supplied source location. Valid identities
 with invalid references, bounds, dice, durations, or cross-definition meaning
 reach the Rust compiler and retain package/subject/source correlation.
 
-The Ruleweaver foundation additionally exposes `activationBudget`,
-`implement`, and tagged equipment references. An implement-bound action names
-only its implement:
+The Ruleweaver foundation additionally exposes `activationBudget`, `feature`,
+`implement`, and tagged equipment references. Feature definitions carry only a
+stable identity plus bounded presentation label and description; a character
+template selects a sorted, unique list of those identities and supplies bounded
+experience. Rust rejects unknown, duplicated, or noncanonical selections. An
+implement-bound action names only its implement:
 
 ```ts
 action(20, {

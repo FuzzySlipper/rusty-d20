@@ -77,7 +77,7 @@ reactions, one player/opposition round, save, and desktop/mobile presentation.
 The ordinary real-host smoke additionally requires exactly one
 `aui-game-viewport` canvas while the scene mode changes from catalog to camp,
 exploration, and encounter. Its artifacts include the full-window catalog,
-camp, all-facing corridor, mobile corridor, and desktop/mobile rendered
+camp, desktop/mobile exploration party sheets, all-facing corridor, mobile corridor, and desktop/mobile rendered
 encounter HUD states. Renderer frame tests separately prove that abstract phase
 backdrops have no gameplay source identities, exploration still delegates to
 the occlusion-safe dungeon adapter, the public Engine camera sampler is bounded
@@ -105,6 +105,11 @@ placement without changing the snapshot. The fresh-process case uses the
 click/touch-compatible preparation path, reopens that exact loadout, and also
 proves a non-durable reaction prompt rejects saving without changing either
 authoritative in-memory state or the last durable save.
+The same exploration run opens the native modal Party surface, proves it blocks
+movement input, switches character tabs with the keyboard, inspects level/XP,
+abilities, Engine-attributed defenses, features, actions, reactions, affinities,
+effects, and loadout, checks mobile containment, restores trigger focus, and
+reopens the same Rust-owned facts after a save and fresh page load.
 A two-page scenario proves a stale optimistic revision is rejected through a
 normal action control. Dedicated real-host scenarios complete Warden victory
 and defeat plus an Ember victory through ordinary controls. The Ember scenario

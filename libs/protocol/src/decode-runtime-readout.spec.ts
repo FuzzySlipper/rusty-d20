@@ -134,10 +134,63 @@ describe("decodeGameSnapshot", () => {
       name: "Mara Venn",
       title: "Steel Adept",
       level: 1,
+      experience: 900,
       healthCurrent: 24,
       healthMaximum: 24,
+      abilities: [{ id: "might", label: "Might", score: 18, modifier: 4 }],
+      defenses: [
+        {
+          id: "armor",
+          label: "Armor",
+          value: 16,
+          sources: ["Equipped item 202: +4 defense (applied)"],
+        },
+      ],
       resources: [],
       effects: [],
+      features: [
+        {
+          id: "hold-the-line",
+          label: "Hold the Line",
+          description: "Control a threatened position.",
+        },
+      ],
+      actions: [
+        {
+          id: "longsword-strike",
+          label: "Longsword Strike",
+          ability: "Might",
+          defense: "Armor",
+          damage: "1d8+2 Impact",
+          activation: ["1 Standard Action"],
+          target: "1 Hostile Participant · line of effect Required",
+          range: 1,
+          implement: "Training Blade",
+          tags: ["Attack", "Melee"],
+          effect: null,
+          forcedMovement: 0,
+        },
+      ],
+      reactions: [
+        {
+          id: "parry",
+          label: "Parry",
+          defense: "Armor",
+          bonus: 2,
+          resource: "Guard",
+          cost: 1,
+          available: 2,
+          activation: ["1 Reaction"],
+          effect: "Parry Guard",
+        },
+      ],
+      affinities: [
+        {
+          damageType: "impact",
+          label: "Impact",
+          affinity: "resistant",
+        },
+      ],
     };
     const loadout = {
       ownerId: 101,
@@ -209,6 +262,40 @@ describe("decodeGameSnapshot", () => {
     expect(decodeGameSnapshot({ ...empty, campaign })).toMatchObject({
       ok: true,
     });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          party: [
+            {
+              character: {
+                ...hero,
+                features: [{ ...hero.features[0], browserRuleBonus: 2 }],
+              },
+              loadout,
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      decodeGameSnapshot({
+        ...empty,
+        campaign: {
+          ...campaign,
+          party: [
+            {
+              character: {
+                ...hero,
+                experience: D20_PROTOCOL_LIMITS.maxExperience + 1,
+              },
+              loadout,
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ ok: false });
     const ally = {
       ...hero,
       id: 102,

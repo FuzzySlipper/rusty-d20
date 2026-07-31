@@ -66,6 +66,115 @@
   overflow: hidden;
 }
 
+.party-sheet {
+  background: rgb(10 16 19 / 0.98);
+  border: 1px solid var(--rusty-engine-border-strong);
+  border-radius: var(--rusty-engine-radius);
+  color: var(--rusty-engine-text);
+  margin: auto;
+  max-height: min(88dvh, 900px);
+  max-width: 1040px;
+  overflow: auto;
+  padding: clamp(14px, 2vw, 24px);
+  width: min(calc(100vw - 32px), 1040px);
+}
+
+.party-sheet::backdrop {
+  backdrop-filter: blur(5px);
+  background: rgb(2 6 8 / 0.72);
+}
+
+.party-sheet__header,
+.party-sheet__summary,
+.party-sheet__tabs {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.party-sheet__tabs {
+  justify-content: flex-start;
+  margin: 14px 0;
+}
+
+.party-sheet__tabs [role="tab"][aria-selected="true"] {
+  background: var(--rusty-engine-accent-strong);
+  border-color: var(--rusty-engine-accent);
+}
+
+.party-sheet__body,
+.party-sheet__section,
+.party-sheet__facts,
+.party-sheet__cards,
+.party-sheet__loadout {
+  display: grid;
+  gap: 12px;
+}
+
+.party-sheet__body {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.party-sheet__section {
+  align-content: start;
+  background: rgb(255 255 255 / 0.035);
+  border: 1px solid var(--rusty-engine-border);
+  border-radius: var(--rusty-engine-radius-sm);
+  padding: 12px;
+}
+
+.party-sheet__section--wide {
+  grid-column: 1 / -1;
+}
+
+.party-sheet__facts {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.party-sheet__fact,
+.party-sheet__card {
+  background: rgb(255 255 255 / 0.035);
+  border: 1px solid var(--rusty-engine-border);
+  border-radius: var(--rusty-engine-radius-sm);
+  padding: 9px 10px;
+}
+
+.party-sheet__fact strong,
+.party-sheet__card strong {
+  color: var(--rusty-engine-accent);
+  display: block;
+}
+
+.party-sheet__cards {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.party-sheet__card p,
+.party-sheet__card ul,
+.party-sheet__section h3,
+.party-sheet__section h4 {
+  margin: 0;
+}
+
+.party-sheet__card ul,
+.party-sheet__sources {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.party-sheet__loadout {
+  grid-template-columns: minmax(180px, 0.7fr) minmax(300px, 1.3fr);
+}
+
+@media (max-width: 760px) {
+  .party-sheet__body,
+  .party-sheet__loadout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .game-shell[data-scene-mode="encounter"] .topbar__identity,
 .game-shell[data-scene-mode="outcome"] .topbar__identity {
   display: none;

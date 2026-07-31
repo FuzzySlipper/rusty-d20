@@ -10,12 +10,13 @@ use crate::{
     D20Id, D20_ID_PATTERN, MAX_D20_ACTION_TAGS, MAX_D20_ACTION_TARGETS, MAX_D20_ACTIVATION_COSTS,
     MAX_D20_ADVENTURES_PER_PACKAGE, MAX_D20_ADVENTURE_ENTRIES, MAX_D20_AUTHORED_TEXT_BYTES,
     MAX_D20_CONDITION_CLAUSES, MAX_D20_DAMAGE_DICE, MAX_D20_DAMAGE_DIE_SIDES,
-    MAX_D20_DEFINITIONS_PER_KIND, MAX_D20_EFFECT_DURATION_TURNS, MAX_D20_FORCED_MOVEMENT,
-    MAX_D20_ID_BYTES, MAX_D20_IMPLEMENT_TAGS, MAX_D20_TACTICAL_BOARD_CELLS,
-    MAX_D20_TACTICAL_BOARD_HEIGHT, MAX_D20_TACTICAL_BOARD_WIDTH, MAX_D20_TACTICAL_RANGE,
+    MAX_D20_DEFINITIONS_PER_KIND, MAX_D20_EFFECT_DURATION_TURNS, MAX_D20_EXPERIENCE,
+    MAX_D20_FORCED_MOVEMENT, MAX_D20_ID_BYTES, MAX_D20_IMPLEMENT_TAGS,
+    MAX_D20_TACTICAL_BOARD_CELLS, MAX_D20_TACTICAL_BOARD_HEIGHT, MAX_D20_TACTICAL_BOARD_WIDTH,
+    MAX_D20_TACTICAL_RANGE,
 };
 
-pub const D20_CANDIDATE_SCHEMA_VERSION: u32 = 5;
+pub const D20_CANDIDATE_SCHEMA_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -42,6 +43,8 @@ pub struct D20RulesCandidate {
     pub reactions: Vec<ReactionCandidate>,
     #[serde(default)]
     pub actions: Vec<ActionCandidate>,
+    #[serde(default)]
+    pub features: Vec<FeatureCandidate>,
     #[serde(default)]
     pub character_templates: Vec<CharacterTemplateCandidate>,
     #[serde(default)]
@@ -338,6 +341,15 @@ pub struct CharacterAffinityCandidate {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
+pub struct FeatureCandidate {
+    pub id: D20Id,
+    pub label: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct CharacterTemplateCandidate {
     pub id: D20Id,
     #[ts(type = "number")]
@@ -345,6 +357,7 @@ pub struct CharacterTemplateCandidate {
     pub name: String,
     pub title: String,
     pub level: u16,
+    pub experience: u32,
     pub vitality: u32,
     #[ts(type = "number")]
     pub inventory_capacity: u64,
@@ -353,6 +366,7 @@ pub struct CharacterTemplateCandidate {
     pub actions: Vec<D20Id>,
     pub reactions: Vec<D20Id>,
     pub affinities: Vec<CharacterAffinityCandidate>,
+    pub features: Vec<D20Id>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -661,6 +675,7 @@ pub fn generated_d20_candidate_typescript() -> String {
         CharacterResourceCandidate::decl(),
         CharacterAffinityKindCandidate::decl(),
         CharacterAffinityCandidate::decl(),
+        FeatureCandidate::decl(),
         CharacterTemplateCandidate::decl(),
         StorageCandidate::decl(),
         ItemRarityCandidate::decl(),
@@ -698,6 +713,7 @@ export const D20_LIMITS = Object.freeze({{\n\
   maxDamageDice: {MAX_D20_DAMAGE_DICE},\n\
   maxDamageDieSides: {MAX_D20_DAMAGE_DIE_SIDES},\n\
   maxEffectDurationTurns: {MAX_D20_EFFECT_DURATION_TURNS},\n\
+  maxExperience: {MAX_D20_EXPERIENCE},\n\
   maxActionTags: {MAX_D20_ACTION_TAGS},\n\
   maxActivationCosts: {MAX_D20_ACTIVATION_COSTS},\n\
   maxConditionClauses: {MAX_D20_CONDITION_CLAUSES},\n\

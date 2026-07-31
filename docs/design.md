@@ -24,7 +24,7 @@ exact package catalog from a Rust-generated d20 contract; committed canonical
 artifacts are decoded and compiled by Rust without Node. Rust projects the
 selectable catalog entries, validates one optimistic selection before
 mutation, and admits only that adventure's immutable dependency closure. The
-closure supplies character templates, item instances, storage, encounters,
+closure supplies character templates, sealed feature descriptions, item instances, storage, encounters,
 authored dungeon topology and placements, presentation, availability, outcomes,
 and rewards. The product runtime
 constructs canonical Engine-backed entities from those definitions and
@@ -225,7 +225,9 @@ and limits are generated from Rust. It provides source-aware definition
 builders, module composition, deterministic definition ordering, exact package
 dependencies, and canonical artifact emission.
 
-`rules/packages/starter-ruleset` owns concrete content. The checked starter
+`rules/packages/starter-ruleset` owns concrete content. Candidate schema 6
+adds bounded experience plus sealed feature definitions and canonical selected
+feature identities to the existing Rust-owned contract. The checked starter
 artifacts contain a shared Ruleweaver foundation, distinct steel/armor and
 ember/Nerve rule
 packages, the multi-file Warden's Gate and Ember's Wake adventures, and a
@@ -249,7 +251,8 @@ There is no
 browser-facing command that names an encounter; reaching an authored dungeon
 trigger is the only product transport path into combat. The host also exposes
 a Rust-generated save-status contract and an
-identity/revision/adventure-guarded destructive reset. A malformed save keeps
+identity/revision/adventure-guarded destructive reset. Character readouts
+include complete bounded party-inspection facts. A malformed save keeps
 the host alive in a recovery-only state; ordinary session commands fail closed
 until the exact save is discarded. Rust DTOs generate
 `libs/protocol/src/generated/api-types.ts`. The protocol layer strictly decodes
@@ -265,6 +268,16 @@ published entries and exposes each receipt on hover, keyboard focus, or touch
 without recalculating rolls, modifiers, defenses, damage decisions, or effects.
 It observes committed facts and is not a second authority, persistence replay
 mechanism, or command source.
+
+Exploration also exposes a modal party inspection surface over the current
+strict Rust projection. The projection resolves each party member's authored
+level, bounded experience, ability scores and Rust-computed modifiers, Engine
+stat-service defense decisions, selected sealed features, actions, reactions,
+affinities, vitality, resources, effects, and canonical loadout. Angular only
+groups and labels those facts in accessible character tabs. It does not derive
+a modifier, defense, feature selection, action rule, or save fact. The native
+modal suppresses exploration input until it closes and the loadout remains
+read-only outside camp.
 
 ## Dependencies
 

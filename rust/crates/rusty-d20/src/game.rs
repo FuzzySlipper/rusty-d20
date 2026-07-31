@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 use crate::adventure::AuthoredAdventureCatalog;
 use crate::compiler::defense_stat_id;
 use crate::{
-    AbilityScore, ActionAttackDefinition, ActionDefinition, ActionPreview, ActionResource,
-    ActionResourcesComponent, ActionTargetTeamDefinition, AdventureDefinition, AffinitySeed,
-    ApplyActionRequest, CharacterAffinityKindDefinition, CharacterSeed,
+    AbilityScore, AbilityScoresComponent, ActionAttackDefinition, ActionDefinition, ActionPreview,
+    ActionResource, ActionResourcesComponent, ActionTargetTeamDefinition, AdventureDefinition,
+    AffinitySeed, ApplyActionRequest, CharacterAffinityKindDefinition, CharacterSeed,
     CharacterTemplateDefinition, D20CompileError, D20Id, D20Ruleset, D20Session, D20SessionError,
     DamageAffinity, DungeonFacingDefinition, EncounterDefinition, EncounterFaction,
     EncounterFactionDefinition, EncounterParticipationSeed, EquipmentItemSeed, InventorySeed,

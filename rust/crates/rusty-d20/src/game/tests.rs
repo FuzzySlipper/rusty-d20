@@ -944,6 +944,57 @@ fn dungeon_exploration_is_authoritative_atomic_persistent_and_triggers_encounter
             .collect::<Vec<_>>(),
         vec![(1, 1)]
     );
+    let mara = &exploring.campaign.as_ref().unwrap().party[0].character;
+    assert_eq!(
+        (mara.name.as_str(), mara.level, mara.experience),
+        ("Mara Venn", 1, 900)
+    );
+    assert_eq!(
+        mara.abilities
+            .iter()
+            .find(|ability| ability.id == "might")
+            .map(|ability| (ability.score, ability.modifier)),
+        Some((18, 4))
+    );
+    let armor = mara
+        .defenses
+        .iter()
+        .find(|defense| defense.id == "armor")
+        .unwrap();
+    assert_eq!(armor.value, 18);
+    assert!(
+        armor
+            .sources
+            .iter()
+            .any(|source| source.contains("202") && source.contains("applied")),
+        "{:?}",
+        armor.sources
+    );
+    assert!(armor
+        .sources
+        .iter()
+        .any(|source| source.contains("203") && source.contains("suppressed")));
+    assert_eq!(
+        mara.features
+            .iter()
+            .map(|feature| feature.label.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Coordinated Flanker", "Hold the Line"]
+    );
+    assert_eq!(
+        mara.actions
+            .iter()
+            .map(|action| action.id.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "longsword-strike",
+            "precise-shot",
+            "pin-in-place",
+            "disrupt"
+        ]
+    );
+    assert_eq!(mara.reactions[0].id, "parry");
+    assert!(mara.affinities.is_empty());
 
     exploring = runtime
         .exploration_command(ExplorationCommandRequestDto {

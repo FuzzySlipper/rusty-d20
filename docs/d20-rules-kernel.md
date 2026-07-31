@@ -19,7 +19,7 @@ twin.
 
 ## Package and candidate
 
-`D20RulesCandidate` is the strict `schemaVersion: 2` payload of a
+`D20RulesCandidate` is the strict `schemaVersion: 6` payload of a
 `gameplay-rules` package. It contains bounded lists of:
 
 - abilities with score bounds;
@@ -27,6 +27,7 @@ twin.
 - activation budgets with action/reaction timing and bounded initial amounts;
 - damage types;
 - action resources;
+- sealed presentation features with stable identity, label, and description;
 - armor definitions and equipment slots;
 - implement definitions with slot, tags, attack ability/defense, damage, and
   range;
@@ -36,8 +37,8 @@ twin.
 - actions with tags, activation costs, participant/cell target shape, team,
   target count, line-of-effect policy, a fixed or implement-bound attack, and
   an optional effect;
-- character templates with abilities, resources, actions, reactions, and
-  damage affinities;
+- character templates with level, bounded experience, abilities, resources,
+  canonical selected features, actions, reactions, and damage affinities;
 - storage and concrete item instances with authored containment/equipment;
 - encounters with availability, presentation, terminal consequences, and
   rewards;

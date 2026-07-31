@@ -229,38 +229,7 @@ impl GameRuntime {
         let stash_maximum = stash_capacity.maximum.ok_or_else(|| {
             GameRuntimeError::InvalidState("camp stash carried-items maximum is missing".to_owned())
         })?;
-        let defenses = self
-            .rules
-            .defenses()
-            .map(|definition| {
-                let defense = StatService::evaluate(
-                    session.entities(),
-                    self.rules.mechanics(),
-                    owner,
-                    &defense_stat_id(&definition.id),
-                    &operation(&format!("project-loadout-{}", definition.id))?,
-                    &[],
-                )
-                .map_err(D20SessionError::from)?;
-                Ok(DefenseReadoutDto {
-                    id: definition.id.to_string(),
-                    label: humanize(definition.id.as_str()),
-                    value: defense.value.get(),
-                    sources: defense
-                        .decisions
-                        .iter()
-                        .map(|decision| {
-                            format!(
-                                "{}: {} ({})",
-                                source_label(&decision.source),
-                                stat_contribution_label(decision.contribution.as_ref()),
-                                outcome_label(decision.outcome)
-                            )
-                        })
-                        .collect(),
-                })
-            })
-            .collect::<Result<Vec<_>, GameRuntimeError>>()?;
+        let defenses = self.project_defenses(session, owner)?;
         Ok(LoadoutDto {
             owner_id: owner.raw(),
             stash_owner_id: stash.raw(),
@@ -345,6 +314,112 @@ impl GameRuntime {
             quantity: 1,
             equipment_slot_id: slot.to_string(),
             equipped_slot_id,
+        })
+    }
+
+    fn project_defenses(
+        &self,
+        session: &D20Session,
+        owner: EntityId,
+    ) -> Result<Vec<DefenseReadoutDto>, GameRuntimeError> {
+        self.rules
+            .defenses()
+            .map(|definition| {
+                let defense = StatService::evaluate(
+                    session.entities(),
+                    self.rules.mechanics(),
+                    owner,
+                    &defense_stat_id(&definition.id),
+                    &operation(&format!(
+                        "project-character-{}-defense-{}",
+                        owner.raw(),
+                        definition.id
+                    ))?,
+                    &[],
+                )
+                .map_err(D20SessionError::from)?;
+                Ok(DefenseReadoutDto {
+                    id: definition.id.to_string(),
+                    label: humanize(definition.id.as_str()),
+                    value: defense.value.get(),
+                    sources: defense
+                        .decisions
+                        .iter()
+                        .map(|decision| {
+                            format!(
+                                "{}: {} ({})",
+                                source_label(&decision.source),
+                                stat_contribution_label(decision.contribution.as_ref()),
+                                outcome_label(decision.outcome)
+                            )
+                        })
+                        .collect(),
+                })
+            })
+            .collect()
+    }
+
+    fn project_action(&self, action: &ActionDefinition) -> Result<ActionDto, GameRuntimeError> {
+        let (ability, defense, damage, range, implement) = match &action.attack {
+            ActionAttackDefinition::Fixed {
+                ability,
+                defense,
+                damage,
+                range,
+            } => (ability, defense, damage, *range, None),
+            ActionAttackDefinition::Implement { implement } => {
+                let definition = self.rules.implement(implement).ok_or_else(|| {
+                    GameRuntimeError::InvalidState(format!(
+                        "action {} implement {implement} is missing",
+                        action.id
+                    ))
+                })?;
+                (
+                    &definition.ability,
+                    &definition.defense,
+                    &definition.damage,
+                    definition.range,
+                    Some(humanize(definition.id.as_str())),
+                )
+            }
+        };
+        Ok(ActionDto {
+            id: action.id.to_string(),
+            label: humanize(action.id.as_str()),
+            ability: humanize(ability.as_str()),
+            defense: humanize(defense.as_str()),
+            damage: format!(
+                "{}d{}{}{} {}",
+                damage.dice,
+                damage.sides,
+                if damage.bonus >= 0 { "+" } else { "" },
+                damage.bonus,
+                humanize(damage.kind.as_str())
+            ),
+            activation: action
+                .activation_costs
+                .iter()
+                .map(|cost| format!("{} {}", cost.amount, humanize(cost.budget.as_str())))
+                .collect(),
+            target: format!(
+                "{} {} {} · line of effect {}",
+                action.target.maximum_targets,
+                humanize(&format!("{:?}", action.target.team).to_lowercase()),
+                humanize(&format!("{:?}", action.target.kind).to_lowercase()),
+                humanize(&format!("{:?}", action.target.line_of_effect).to_lowercase())
+            ),
+            range,
+            implement,
+            tags: action
+                .tags
+                .iter()
+                .map(|tag| humanize(tag.as_str()))
+                .collect(),
+            effect: action
+                .effect
+                .as_ref()
+                .map(|effect| humanize(effect.as_str())),
+            forced_movement: action.forced_movement,
         })
     }
 
@@ -462,48 +537,7 @@ impl GameRuntime {
                     action_id: action.id.to_string(),
                     target_ids: admitted_targets,
                 });
-                let resolved = session.action_definition_profile(&action.id)?;
-                actions.push(ActionDto {
-                    id: action.id.to_string(),
-                    label: humanize(action.id.as_str()),
-                    ability: humanize(resolved.ability.as_str()),
-                    defense: humanize(resolved.defense.as_str()),
-                    damage: format!(
-                        "{}d{}{}{} {}",
-                        resolved.damage.dice,
-                        resolved.damage.sides,
-                        if resolved.damage.bonus >= 0 { "+" } else { "" },
-                        resolved.damage.bonus,
-                        humanize(resolved.damage.kind.as_str())
-                    ),
-                    activation: action
-                        .activation_costs
-                        .iter()
-                        .map(|cost| format!("{} {}", cost.amount, humanize(cost.budget.as_str())))
-                        .collect(),
-                    target: format!(
-                        "{} {} {} · line of effect {}",
-                        action.target.maximum_targets,
-                        humanize(&format!("{:?}", action.target.team).to_lowercase()),
-                        humanize(&format!("{:?}", action.target.kind).to_lowercase()),
-                        humanize(&format!("{:?}", action.target.line_of_effect).to_lowercase())
-                    ),
-                    range: resolved.range,
-                    implement: resolved
-                        .implement
-                        .as_ref()
-                        .map(|implement| humanize(implement.as_str())),
-                    tags: action
-                        .tags
-                        .iter()
-                        .map(|tag| humanize(tag.as_str()))
-                        .collect(),
-                    effect: action
-                        .effect
-                        .as_ref()
-                        .map(|effect| humanize(effect.as_str())),
-                    forced_movement: action.forced_movement,
-                });
+                actions.push(self.project_action(action)?);
             }
         }
         let encounter = current_encounter_definition(&self.rules, self.adventure()?, campaign)?;
@@ -572,12 +606,29 @@ impl GameRuntime {
             .ok_or_else(|| {
                 GameRuntimeError::InvalidState("vitality track is missing".to_owned())
             })?;
-        let resources = session
+        let ability_scores = session
+            .entities()
+            .component::<AbilityScoresComponent>(entity)?
+            .ok_or_else(|| {
+                GameRuntimeError::InvalidState("ability scores component is missing".to_owned())
+            })?;
+        let abilities = ability_scores
+            .scores()
+            .iter()
+            .map(|ability| AbilityReadoutDto {
+                id: ability.id().to_string(),
+                label: humanize(ability.id().as_str()),
+                score: ability.score(),
+                modifier: crate::ability_modifier(ability.score()),
+            })
+            .collect();
+        let resource_state = session
             .entities()
             .component::<ActionResourcesComponent>(entity)?
             .ok_or_else(|| {
                 GameRuntimeError::InvalidState("resources component is missing".to_owned())
-            })?
+            })?;
+        let resources = resource_state
             .resources()
             .iter()
             .map(|resource| {
@@ -599,6 +650,78 @@ impl GameRuntime {
                 })
             })
             .collect::<Result<Vec<_>, GameRuntimeError>>()?;
+        let defenses = self.project_defenses(session, entity)?;
+        let features = definition
+            .features
+            .iter()
+            .map(|feature_id| {
+                let feature = self.rules.feature(feature_id).ok_or_else(|| {
+                    GameRuntimeError::InvalidState(format!(
+                        "character feature {feature_id} is missing"
+                    ))
+                })?;
+                Ok(FeatureReadoutDto {
+                    id: feature.id.to_string(),
+                    label: feature.label.clone(),
+                    description: feature.description.clone(),
+                })
+            })
+            .collect::<Result<Vec<_>, GameRuntimeError>>()?;
+        let actions = definition
+            .actions
+            .iter()
+            .map(|action_id| {
+                let action = self.rules.action(action_id).ok_or_else(|| {
+                    GameRuntimeError::InvalidState(format!(
+                        "character action {action_id} is missing"
+                    ))
+                })?;
+                self.project_action(action)
+            })
+            .collect::<Result<Vec<_>, GameRuntimeError>>()?;
+        let reactions = definition
+            .reactions
+            .iter()
+            .map(|reaction_id| {
+                let reaction = self.rules.reaction(reaction_id).ok_or_else(|| {
+                    GameRuntimeError::InvalidState(format!(
+                        "character reaction {reaction_id} is missing"
+                    ))
+                })?;
+                Ok(CharacterReactionDto {
+                    id: reaction.id.to_string(),
+                    label: humanize(reaction.id.as_str()),
+                    defense: humanize(reaction.defense.as_str()),
+                    bonus: reaction.bonus,
+                    resource: humanize(reaction.resource.as_str()),
+                    cost: reaction.cost,
+                    available: resource_state.current(&reaction.resource).ok_or_else(|| {
+                        GameRuntimeError::InvalidState(format!(
+                            "character reaction {} resource {} is missing",
+                            reaction.id, reaction.resource
+                        ))
+                    })?,
+                    activation: reaction
+                        .activation_costs
+                        .iter()
+                        .map(|cost| format!("{} {}", cost.amount, humanize(cost.budget.as_str())))
+                        .collect(),
+                    effect: humanize(reaction.effect.as_str()),
+                })
+            })
+            .collect::<Result<Vec<_>, GameRuntimeError>>()?;
+        let affinities = definition
+            .affinities
+            .iter()
+            .map(|affinity| AffinityReadoutDto {
+                damage_type: affinity.damage_type.to_string(),
+                label: humanize(affinity.damage_type.as_str()),
+                affinity: match affinity.affinity {
+                    CharacterAffinityKindDefinition::Resistant => "resistant".to_owned(),
+                    CharacterAffinityKindDefinition::Vulnerable => "vulnerable".to_owned(),
+                },
+            })
+            .collect();
         let effects: Vec<String> = session
             .entities()
             .component::<ScheduledEffectsComponent>(entity)?
@@ -629,10 +752,17 @@ impl GameRuntime {
             name: core.name.clone(),
             title: definition.title.clone(),
             level: definition.level,
+            experience: definition.experience,
             health_current: vitality.current().get(),
             health_maximum: i64::from(definition.vitality),
+            abilities,
+            defenses,
             resources,
             effects,
+            features,
+            actions,
+            reactions,
+            affinities,
         })
     }
 

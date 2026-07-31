@@ -2,15 +2,18 @@ export * from "./generated/api-types";
 
 import { D20_PROTOCOL_LIMITS } from "./generated/api-types";
 import type {
+  AbilityReadoutDto,
   ActionDto,
   ActionTargetsDto,
   AdventureCompletionDto,
   AdventureChoiceDto,
+  AffinityReadoutDto,
   ApiErrorDto,
   ApiErrorKindDto,
   CampaignDto,
   CampaignOutcomeDto,
   CharacterDto,
+  CharacterReactionDto,
   CompletedEncounterDto,
   DefenseReadoutDto,
   EncounterChoiceDto,
@@ -25,6 +28,7 @@ import type {
   ExplorationDto,
   ExplorationLandmarkDto,
   ExplorationTreasureDto,
+  FeatureReadoutDto,
   GameLogEntryDto,
   GameLogKindDto,
   GameSnapshotDto,
@@ -1244,29 +1248,58 @@ function isEncounterOutcomeKind(
 function decodeCharacter(value: unknown): CharacterDto | undefined {
   if (
     !hasExactKeys(value, [
+      "abilities",
+      "actions",
+      "affinities",
+      "defenses",
       "effects",
+      "experience",
+      "features",
       "healthCurrent",
       "healthMaximum",
       "id",
       "level",
       "name",
       "resources",
+      "reactions",
       "title",
     ])
   ) {
     return undefined;
   }
+  const abilities = decodeArray(value["abilities"], 64, decodeAbilityReadout);
+  const defenses = decodeArray(value["defenses"], 64, decodeDefenseReadout);
   const resources = decodeArray(value["resources"], 64, decodeResource);
   const effects = decodeStrings(value["effects"], 64);
+  const features = decodeArray(value["features"], 64, decodeFeatureReadout);
+  const actions = decodeArray(value["actions"], 64, decodeAction);
+  const reactions = decodeArray(
+    value["reactions"],
+    64,
+    decodeCharacterReaction,
+  );
+  const affinities = decodeArray(
+    value["affinities"],
+    64,
+    decodeAffinityReadout,
+  );
   if (
     !isSafePositiveInteger(value["id"]) ||
     typeof value["name"] !== "string" ||
     typeof value["title"] !== "string" ||
     !isSafeNonNegativeInteger(value["level"]) ||
+    !isSafeNonNegativeInteger(value["experience"]) ||
+    value["experience"] > D20_PROTOCOL_LIMITS.maxExperience ||
     !isSafeInteger(value["healthCurrent"]) ||
     !isSafeNonNegativeInteger(value["healthMaximum"]) ||
+    abilities === undefined ||
+    defenses === undefined ||
     resources === undefined ||
-    effects === undefined
+    effects === undefined ||
+    features === undefined ||
+    actions === undefined ||
+    reactions === undefined ||
+    affinities === undefined
   ) {
     return undefined;
   }
@@ -1275,11 +1308,101 @@ function decodeCharacter(value: unknown): CharacterDto | undefined {
     name: value["name"],
     title: value["title"],
     level: value["level"],
+    experience: value["experience"],
     healthCurrent: value["healthCurrent"],
     healthMaximum: value["healthMaximum"],
+    abilities,
+    defenses,
     resources,
     effects,
+    features,
+    actions,
+    reactions,
+    affinities,
   };
+}
+
+function decodeAbilityReadout(value: unknown): AbilityReadoutDto | undefined {
+  return hasExactKeys(value, ["id", "label", "modifier", "score"]) &&
+    typeof value["id"] === "string" &&
+    typeof value["label"] === "string" &&
+    isSafeInteger(value["score"]) &&
+    isSafeInteger(value["modifier"])
+    ? {
+        id: value["id"],
+        label: value["label"],
+        score: value["score"],
+        modifier: value["modifier"],
+      }
+    : undefined;
+}
+
+function decodeFeatureReadout(value: unknown): FeatureReadoutDto | undefined {
+  return hasExactKeys(value, ["description", "id", "label"]) &&
+    typeof value["id"] === "string" &&
+    typeof value["label"] === "string" &&
+    typeof value["description"] === "string"
+    ? {
+        id: value["id"],
+        label: value["label"],
+        description: value["description"],
+      }
+    : undefined;
+}
+
+function decodeAffinityReadout(value: unknown): AffinityReadoutDto | undefined {
+  return hasExactKeys(value, ["affinity", "damageType", "label"]) &&
+    typeof value["damageType"] === "string" &&
+    typeof value["label"] === "string" &&
+    (value["affinity"] === "resistant" || value["affinity"] === "vulnerable")
+    ? {
+        damageType: value["damageType"],
+        label: value["label"],
+        affinity: value["affinity"],
+      }
+    : undefined;
+}
+
+function decodeCharacterReaction(
+  value: unknown,
+): CharacterReactionDto | undefined {
+  if (
+    !hasExactKeys(value, [
+      "activation",
+      "available",
+      "bonus",
+      "cost",
+      "defense",
+      "effect",
+      "id",
+      "label",
+      "resource",
+    ])
+  ) {
+    return undefined;
+  }
+  const activation = decodeStrings(value["activation"], 4);
+  return typeof value["id"] === "string" &&
+    typeof value["label"] === "string" &&
+    typeof value["defense"] === "string" &&
+    isSafeInteger(value["bonus"]) &&
+    typeof value["resource"] === "string" &&
+    isSafeNonNegativeInteger(value["cost"]) &&
+    isSafeNonNegativeInteger(value["available"]) &&
+    activation !== undefined &&
+    typeof value["effect"] === "string"
+    ? {
+        id: value["id"],
+        label: value["label"],
+        defense: value["defense"],
+        bonus: value["bonus"],
+        resource: value["resource"],
+        cost: value["cost"],
+        available: value["available"],
+        activation,
+        effect: value["effect"],
+      }
+    : undefined;
 }
 
 function decodeResource(value: unknown): ResourceDto | undefined {

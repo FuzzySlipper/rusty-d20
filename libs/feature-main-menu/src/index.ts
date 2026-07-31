@@ -132,6 +132,7 @@ interface LoadoutItemLocation {
       }
 
       .game-overlay > .topbar,
+      .game-overlay > .party-sheet,
       .game-overlay > .reset-dialog,
       .game-overlay__stage .rusty-engine-panel,
       .game-overlay__stage .command-error,
@@ -809,6 +810,14 @@ interface LoadoutItemLocation {
                 @if (snapshot.campaign.phase === "exploration") {
                   <button
                     type="button"
+                    [attr.aria-expanded]="partySheetOpen()"
+                    [disabled]="store.busy()"
+                    (click)="openPartySheet($event)"
+                  >
+                    Party
+                  </button>
+                  <button
+                    type="button"
                     [attr.aria-expanded]="explorationInventoryOpen()"
                     [disabled]="store.busy()"
                     (click)="openExplorationInventory($event)"
@@ -898,6 +907,254 @@ interface LoadoutItemLocation {
             </button>
           </div>
         </dialog>
+
+        @if (partySheetOpen() && game()?.campaign?.phase === "exploration") {
+          <dialog
+            #partyDialog
+            class="party-sheet"
+            aria-labelledby="party-sheet-title"
+            aria-modal="true"
+            (close)="partySheetClosed()"
+          >
+            <header class="party-sheet__header">
+              <div>
+                <p class="eyebrow">Expedition roster</p>
+                <h2 id="party-sheet-title">Party</h2>
+              </div>
+              <button type="button" (click)="closePartySheet()">Close</button>
+            </header>
+            <nav
+              class="party-sheet__tabs"
+              role="tablist"
+              aria-label="Party characters"
+            >
+              @for (
+                member of game()!.campaign!.party;
+                track member.character.id
+              ) {
+                <button
+                  type="button"
+                  role="tab"
+                  [attr.id]="'party-tab-' + member.character.id"
+                  [attr.data-party-tab-id]="member.character.id"
+                  [attr.aria-controls]="'party-panel-' + member.character.id"
+                  [attr.aria-selected]="
+                    activePartyMember()?.character?.id === member.character.id
+                  "
+                  [attr.tabindex]="
+                    activePartyMember()?.character?.id === member.character.id
+                      ? 0
+                      : -1
+                  "
+                  (click)="selectPartyMember(member.character.id)"
+                  (keydown)="handlePartyTabKeydown($event, member.character.id)"
+                >
+                  {{ member.character.name }}
+                </button>
+              }
+            </nav>
+            @if (activePartyMember(); as member) {
+              <article
+                class="party-sheet__body"
+                role="tabpanel"
+                [id]="'party-panel-' + member.character.id"
+                [attr.aria-labelledby]="'party-tab-' + member.character.id"
+              >
+                <header class="party-sheet__section party-sheet__section--wide">
+                  <div class="party-sheet__summary">
+                    <div>
+                      <p class="eyebrow">{{ member.character.title }}</p>
+                      <h3>{{ member.character.name }}</h3>
+                    </div>
+                    <strong>
+                      Level {{ member.character.level }} ·
+                      {{ member.character.experience }} XP
+                    </strong>
+                  </div>
+                  <div class="party-sheet__facts">
+                    <span class="party-sheet__fact">
+                      <strong>Vitality</strong>
+                      {{ member.character.healthCurrent }}/{{
+                        member.character.healthMaximum
+                      }}
+                    </span>
+                    @for (
+                      resource of member.character.resources;
+                      track resource.id
+                    ) {
+                      <span class="party-sheet__fact">
+                        <strong>{{ resource.label }}</strong>
+                        {{ resource.current }}/{{ resource.maximum }}
+                      </span>
+                    }
+                  </div>
+                </header>
+
+                <section class="party-sheet__section" aria-label="Abilities">
+                  <h3>Abilities</h3>
+                  <div class="party-sheet__facts">
+                    @for (
+                      ability of member.character.abilities;
+                      track ability.id
+                    ) {
+                      <span class="party-sheet__fact">
+                        <strong>{{ ability.label }}</strong>
+                        {{ ability.score }} ({{ signed(ability.modifier) }})
+                      </span>
+                    }
+                  </div>
+                </section>
+
+                <section class="party-sheet__section" aria-label="Defenses">
+                  <h3>Defenses</h3>
+                  <div class="party-sheet__cards">
+                    @for (
+                      defense of member.character.defenses;
+                      track defense.id
+                    ) {
+                      <article class="party-sheet__card">
+                        <strong>{{ defense.label }} {{ defense.value }}</strong>
+                        <ul class="party-sheet__sources">
+                          @for (source of defense.sources; track source) {
+                            <li>{{ source }}</li>
+                          }
+                        </ul>
+                      </article>
+                    }
+                  </div>
+                </section>
+
+                <section
+                  class="party-sheet__section party-sheet__section--wide"
+                  aria-label="Features and feats"
+                >
+                  <h3>Features &amp; feats</h3>
+                  <div class="party-sheet__cards">
+                    @for (
+                      feature of member.character.features;
+                      track feature.id
+                    ) {
+                      <article class="party-sheet__card">
+                        <strong>{{ feature.label }}</strong>
+                        <p>{{ feature.description }}</p>
+                      </article>
+                    }
+                  </div>
+                </section>
+
+                <section
+                  class="party-sheet__section party-sheet__section--wide"
+                  aria-label="Actions"
+                >
+                  <h3>Actions</h3>
+                  <div class="party-sheet__cards">
+                    @for (action of member.character.actions; track action.id) {
+                      <article class="party-sheet__card">
+                        <strong>{{ action.label }}</strong>
+                        <p>
+                          {{ action.ability }} vs {{ action.defense }} ·
+                          {{ action.damage }} · range {{ action.range }}
+                        </p>
+                        <p>{{ action.target }}</p>
+                        <p>Activation: {{ action.activation.join(" · ") }}</p>
+                        @if (action.implement !== null) {
+                          <p>Implement: {{ action.implement }}</p>
+                        }
+                        @if (action.effect !== null) {
+                          <p>Effect: {{ action.effect }}</p>
+                        }
+                        @if (action.forcedMovement > 0) {
+                          <p>Forced movement {{ action.forcedMovement }}</p>
+                        }
+                        <p>Tags: {{ action.tags.join(", ") }}</p>
+                      </article>
+                    }
+                  </div>
+                </section>
+
+                <section class="party-sheet__section" aria-label="Reactions">
+                  <h3>Reactions</h3>
+                  <div class="party-sheet__cards">
+                    @for (
+                      reaction of member.character.reactions;
+                      track reaction.id
+                    ) {
+                      <article class="party-sheet__card">
+                        <strong>{{ reaction.label }}</strong>
+                        <p>
+                          {{ signed(reaction.bonus) }}
+                          {{ reaction.defense }} · costs {{ reaction.cost }}
+                          {{ reaction.resource }} ({{ reaction.available }}
+                          available)
+                        </p>
+                        <p>
+                          {{ reaction.activation.join(" · ") }} ·
+                          {{ reaction.effect }}
+                        </p>
+                      </article>
+                    }
+                  </div>
+                </section>
+
+                <section
+                  class="party-sheet__section"
+                  aria-label="Affinities and effects"
+                >
+                  <h3>Affinities &amp; effects</h3>
+                  @if (member.character.affinities.length === 0) {
+                    <p class="muted">No damage affinities.</p>
+                  } @else {
+                    <ul>
+                      @for (
+                        affinity of member.character.affinities;
+                        track affinity.damageType
+                      ) {
+                        <li>{{ affinity.label }} · {{ affinity.affinity }}</li>
+                      }
+                    </ul>
+                  }
+                  @if (member.character.effects.length === 0) {
+                    <p class="muted">No active effects.</p>
+                  } @else {
+                    <ul>
+                      @for (effect of member.character.effects; track effect) {
+                        <li>{{ effect }}</li>
+                      }
+                    </ul>
+                  }
+                </section>
+
+                <section
+                  class="party-sheet__section party-sheet__section--wide"
+                  aria-label="Current loadout"
+                >
+                  <h3>Current loadout</h3>
+                  <p class="capacity">
+                    Pack {{ member.loadout.capacity.used }}/{{
+                      member.loadout.capacity.maximum
+                    }}
+                    · read-only during exploration
+                  </p>
+                  <div class="party-sheet__loadout">
+                    <aui-inventory-grid
+                      [columns]="2"
+                      [label]="member.character.name + ' pack'"
+                      instructions="Read-only during exploration."
+                      [readOnly]="true"
+                      [slots]="inventorySlots()"
+                    />
+                    <aui-equipment-panel
+                      [label]="member.character.name + ' equipment'"
+                      instructions="Read-only during exploration."
+                      [readOnly]="true"
+                      [slots]="equipmentSlots()"
+                    />
+                  </div>
+                </section>
+              </article>
+            }
+          </dialog>
+        }
 
         <div class="game-overlay__stage">
           @switch (store.session().kind) {
@@ -2101,6 +2358,7 @@ export class MainMenuScreenComponent implements OnInit {
   private readonly selectedLoadoutItem = signal<number | null>(null);
   private readonly selectedPartyMember = signal<number | null>(null);
   protected readonly explorationInventoryOpen = signal(false);
+  protected readonly partySheetOpen = signal(false);
   protected readonly loadoutAnnouncement = signal(
     "Choose an item, then choose its highlighted equipment slot.",
   );
@@ -2120,11 +2378,14 @@ export class MainMenuScreenComponent implements OnInit {
   private readonly explorationInventoryClose = viewChild<
     ElementRef<HTMLButtonElement>
   >("explorationInventoryClose");
+  private readonly partyDialog =
+    viewChild<ElementRef<HTMLDialogElement>>("partyDialog");
   private readonly injector = inject(Injector);
   private readonly animationFrame = browserAnimationFrame;
   private readonly clock = browserClock;
   private resetDialogTrigger: HTMLElement | null = null;
   private explorationInventoryTrigger: HTMLElement | null = null;
+  private partySheetTrigger: HTMLElement | null = null;
   protected readonly compassMarkers: readonly CompassMarkerView[] = [];
 
   protected readonly game = computed(() => {
@@ -2882,6 +3143,7 @@ export class MainMenuScreenComponent implements OnInit {
     if (this.game()?.campaign?.phase !== "exploration") {
       this.explorationInventoryOpen.set(false);
       this.explorationInventoryTrigger = null;
+      this.closePartySheet();
     }
   }
 
@@ -2917,6 +3179,9 @@ export class MainMenuScreenComponent implements OnInit {
       return;
     }
     if (this.game()?.campaign?.phase !== "exploration") {
+      return;
+    }
+    if (this.partySheetOpen()) {
       return;
     }
     if (event.key === "Escape" && this.explorationInventoryOpen()) {
@@ -3093,6 +3358,97 @@ export class MainMenuScreenComponent implements OnInit {
     );
   }
 
+  protected openPartySheet(event: Event): void {
+    this.explorationInventoryOpen.set(false);
+    this.explorationInventoryTrigger = null;
+    this.partySheetTrigger =
+      event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    const active = this.activePartyMember();
+    if (active !== null) {
+      this.selectedPartyMember.set(active.character.id);
+    }
+    this.partySheetOpen.set(true);
+    afterNextRender(
+      () => {
+        const dialog = this.partyDialog()?.nativeElement;
+        if (dialog === undefined) {
+          return;
+        }
+        if (!dialog.open) {
+          dialog.showModal();
+        }
+        this.focusPartyTab(this.activePartyMember()?.character.id ?? null);
+      },
+      { injector: this.injector },
+    );
+  }
+
+  protected closePartySheet(): void {
+    const dialog = this.partyDialog()?.nativeElement;
+    if (dialog?.open) {
+      dialog.close();
+      return;
+    }
+    if (this.partySheetOpen()) {
+      this.partySheetClosed();
+    }
+  }
+
+  protected partySheetClosed(): void {
+    this.partySheetOpen.set(false);
+    const trigger = this.partySheetTrigger;
+    this.partySheetTrigger = null;
+    afterNextRender(
+      () => {
+        this.clock.setTimeout(() => {
+          if (trigger?.isConnected) {
+            trigger.focus();
+          }
+        }, 0);
+      },
+      { injector: this.injector },
+    );
+  }
+
+  protected handlePartyTabKeydown(
+    event: KeyboardEvent,
+    memberId: number,
+  ): void {
+    if (
+      event.key !== "ArrowLeft" &&
+      event.key !== "ArrowRight" &&
+      event.key !== "Home" &&
+      event.key !== "End"
+    ) {
+      return;
+    }
+    const members = this.game()?.campaign?.party ?? [];
+    if (members.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    const current = Math.max(
+      0,
+      members.findIndex((member) => member.character.id === memberId),
+    );
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? members.length - 1
+          : event.key === "ArrowRight"
+            ? (current + 1) % members.length
+            : (current - 1 + members.length) % members.length;
+    const nextId = members[next]?.character.id;
+    if (nextId === undefined) {
+      return;
+    }
+    this.selectPartyMember(nextId);
+    afterNextRender(() => this.focusPartyTab(nextId), {
+      injector: this.injector,
+    });
+  }
+
   protected closeExplorationInventory(): void {
     this.explorationInventoryOpen.set(false);
     const trigger = this.explorationInventoryTrigger;
@@ -3107,6 +3463,17 @@ export class MainMenuScreenComponent implements OnInit {
       },
       { injector: this.injector },
     );
+  }
+
+  private focusPartyTab(memberId: number | null): void {
+    if (memberId === null) {
+      return;
+    }
+    this.partyDialog()
+      ?.nativeElement.querySelector<HTMLElement>(
+        `[data-party-tab-id="${memberId}"]`,
+      )
+      ?.focus();
   }
 
   protected applyReaction(token: string, reactionId: string): void {

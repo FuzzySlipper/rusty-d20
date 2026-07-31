@@ -23,8 +23,8 @@ use crate::{
     CharacterAffinityKindCandidate, CharacterTemplateCandidate, ConditionClauseCandidate, D20Id,
     D20RulesCandidate, DamageCandidate, DungeonCandidate, DungeonFacingCandidate, EffectCandidate,
     EncounterCandidate, EncounterFactionCandidate, EncounterOutcomeCandidate,
-    EquipmentReferenceCandidate, ImplementCandidate, ItemInstanceCandidate, ItemRarityCandidate,
-    ReactionCandidate, StorageCandidate, D20_CANDIDATE_SCHEMA_VERSION,
+    EquipmentReferenceCandidate, FeatureCandidate, ImplementCandidate, ItemInstanceCandidate,
+    ItemRarityCandidate, ReactionCandidate, StorageCandidate, D20_CANDIDATE_SCHEMA_VERSION,
 };
 
 pub const MAX_D20_DEFINITIONS_PER_KIND: usize = 64;
@@ -38,6 +38,7 @@ pub const MAX_D20_DUNGEON_CELLS: usize =
 pub const MAX_D20_DAMAGE_DICE: u8 = 32;
 pub const MAX_D20_DAMAGE_DIE_SIDES: u16 = 1_000;
 pub const MAX_D20_EFFECT_DURATION_TURNS: u16 = 10_000;
+pub const MAX_D20_EXPERIENCE: u32 = 1_000_000_000;
 pub const MAX_D20_ACTION_TAGS: usize = 16;
 pub const MAX_D20_ACTIVATION_COSTS: usize = 4;
 pub const MAX_D20_CONDITION_CLAUSES: usize = 8;
@@ -211,12 +212,20 @@ pub struct CharacterAffinityDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureDefinition {
+    pub id: D20Id,
+    pub label: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CharacterTemplateDefinition {
     pub id: D20Id,
     pub entity_id: u64,
     pub name: String,
     pub title: String,
     pub level: u16,
+    pub experience: u32,
     pub vitality: u32,
     pub inventory_capacity: u64,
     pub abilities: BTreeMap<D20Id, i16>,
@@ -224,6 +233,7 @@ pub struct CharacterTemplateDefinition {
     pub actions: Vec<D20Id>,
     pub reactions: Vec<D20Id>,
     pub affinities: Vec<CharacterAffinityDefinition>,
+    pub features: Vec<D20Id>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -476,6 +486,7 @@ pub struct D20Ruleset {
     effects: BTreeMap<D20Id, EffectDefinition>,
     reactions: BTreeMap<D20Id, ReactionDefinition>,
     actions: BTreeMap<D20Id, ActionDefinition>,
+    features: BTreeMap<D20Id, FeatureDefinition>,
     character_templates: BTreeMap<D20Id, CharacterTemplateDefinition>,
     storage: BTreeMap<D20Id, StorageDefinition>,
     item_instances: BTreeMap<D20Id, ItemInstanceDefinition>,
@@ -567,6 +578,10 @@ impl D20Ruleset {
         self.actions.get(id)
     }
 
+    pub fn feature(&self, id: &D20Id) -> Option<&FeatureDefinition> {
+        self.features.get(id)
+    }
+
     pub fn character_template(&self, id: &D20Id) -> Option<&CharacterTemplateDefinition> {
         self.character_templates.get(id)
     }
@@ -617,6 +632,10 @@ impl D20Ruleset {
 
     pub fn actions(&self) -> impl Iterator<Item = &ActionDefinition> {
         self.actions.values()
+    }
+
+    pub fn features(&self) -> impl Iterator<Item = &FeatureDefinition> {
+        self.features.values()
     }
 
     pub fn character_templates(&self) -> impl Iterator<Item = &CharacterTemplateDefinition> {
@@ -690,6 +709,7 @@ struct DefinitionCollector {
     effects: BTreeMap<D20Id, (EffectDefinition, RulePackageIdentity)>,
     reactions: BTreeMap<D20Id, (ReactionDefinition, RulePackageIdentity)>,
     actions: BTreeMap<D20Id, (ActionDefinition, RulePackageIdentity)>,
+    features: BTreeMap<D20Id, (FeatureDefinition, RulePackageIdentity)>,
     character_templates: BTreeMap<D20Id, (CharacterTemplateDefinition, RulePackageIdentity)>,
     storage: BTreeMap<D20Id, (StorageDefinition, RulePackageIdentity)>,
     item_instances: BTreeMap<D20Id, (ItemInstanceDefinition, RulePackageIdentity)>,
@@ -731,6 +751,7 @@ impl DefinitionCollector {
         self.enforce_quota(package, "effects", candidate.effects.len());
         self.enforce_quota(package, "reactions", candidate.reactions.len());
         self.enforce_quota(package, "actions", candidate.actions.len());
+        self.enforce_quota(package, "features", candidate.features.len());
         self.enforce_quota(
             package,
             "characterTemplates",
@@ -1159,6 +1180,26 @@ impl DefinitionCollector {
                 &mut self.diagnostics,
             );
         }
+        for value in candidate.features {
+            let subject = subject("feature", &value.id);
+            self.validate_text(package, &subject, "features/label", &value.id, &value.label);
+            self.validate_text(
+                package,
+                &subject,
+                "features/description",
+                &value.id,
+                &value.description,
+            );
+            let definition = feature_definition(value);
+            insert_unique(
+                &mut self.features,
+                definition.id.clone(),
+                definition,
+                package,
+                "feature",
+                &mut self.diagnostics,
+            );
+        }
         for value in candidate.character_templates {
             let subject = subject("character-template", &value.id);
             self.validate_character_candidate(package, &subject, &value);
@@ -1265,6 +1306,7 @@ impl DefinitionCollector {
     ) {
         if value.entity_id == 0
             || value.level == 0
+            || value.experience > MAX_D20_EXPERIENCE
             || value.vitality == 0
             || value.vitality > 1_000_000
             || value.inventory_capacity == 0
@@ -1274,7 +1316,7 @@ impl DefinitionCollector {
                 Some(subject),
                 "D20_INVALID_CHARACTER_TEMPLATE",
                 format!("$/payload/characterTemplates/{}", value.id),
-                "character requires nonzero entity, level, vitality, and inventory capacity"
+                "character requires nonzero entity, level, vitality, and inventory capacity with bounded experience"
                     .to_owned(),
             );
         }
@@ -1296,6 +1338,7 @@ impl DefinitionCollector {
             ("actions", value.actions.len()),
             ("reactions", value.reactions.len()),
             ("affinities", value.affinities.len()),
+            ("features", value.features.len()),
         ] {
             self.validate_adventure_list(
                 package,
@@ -2266,6 +2309,27 @@ impl DefinitionCollector {
                 "reactions",
                 &definition.reactions,
             );
+            self.validate_unique_ids(
+                &package,
+                &correlation,
+                "characterTemplates",
+                &id,
+                "features",
+                &definition.features,
+            );
+            if definition
+                .features
+                .windows(2)
+                .any(|pair| pair[0] >= pair[1])
+            {
+                self.push_for_identity(
+                    &package,
+                    Some(&correlation),
+                    "D20_NONCANONICAL_CHARACTER_FEATURES",
+                    format!("$/payload/characterTemplates/{id}/features"),
+                    "selected feature identities must be unique and sorted".to_owned(),
+                );
+            }
             if definition.abilities.len() != self.abilities.len()
                 || definition.abilities.iter().any(|(ability, score)| {
                     self.abilities.get(ability).is_none_or(|definition| {
@@ -2317,6 +2381,17 @@ impl DefinitionCollector {
                         "D20_UNKNOWN_REACTION",
                         format!("$/payload/characterTemplates/{id}/reactions"),
                         format!("unknown reaction {reaction}"),
+                    );
+                }
+            }
+            for feature in &definition.features {
+                if !self.features.contains_key(feature) {
+                    self.push_for_identity(
+                        &package,
+                        Some(&correlation),
+                        "D20_UNKNOWN_FEATURE",
+                        format!("$/payload/characterTemplates/{id}/features"),
+                        format!("unknown feature {feature}"),
                     );
                 }
             }
@@ -2795,6 +2870,7 @@ impl DefinitionCollector {
         let effects = strip_origins(self.effects);
         let reactions = strip_origins(self.reactions);
         let actions = strip_origins(self.actions);
+        let features = strip_origins(self.features);
         let character_templates = strip_origins(self.character_templates);
         let storage = strip_origins(self.storage);
         let item_instances = strip_origins(self.item_instances);
@@ -2817,6 +2893,7 @@ impl DefinitionCollector {
             effects,
             reactions,
             actions,
+            features,
             character_templates,
             storage,
             item_instances,
@@ -3093,6 +3170,14 @@ fn damage_definition(value: DamageCandidate) -> DamageDefinition {
     }
 }
 
+fn feature_definition(value: FeatureCandidate) -> FeatureDefinition {
+    FeatureDefinition {
+        id: value.id,
+        label: value.label,
+        description: value.description,
+    }
+}
+
 fn character_template_definition(value: CharacterTemplateCandidate) -> CharacterTemplateDefinition {
     CharacterTemplateDefinition {
         id: value.id,
@@ -3100,6 +3185,7 @@ fn character_template_definition(value: CharacterTemplateCandidate) -> Character
         name: value.name,
         title: value.title,
         level: value.level,
+        experience: value.experience,
         vitality: value.vitality,
         inventory_capacity: value.inventory_capacity,
         abilities: value
@@ -3129,6 +3215,7 @@ fn character_template_definition(value: CharacterTemplateCandidate) -> Character
                 },
             })
             .collect(),
+        features: value.features,
     }
 }
 
