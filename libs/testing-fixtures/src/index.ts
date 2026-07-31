@@ -90,7 +90,6 @@ export function createFakeRustyD20Transport(
     chooseAction: async () => sessionResult,
     applyReaction: async () => sessionResult,
     declineReaction: async () => sessionResult,
-    beginOppositionTurn: async () => sessionResult,
     endActivation: async () => sessionResult,
     returnToCamp: async () => sessionResult,
     save: async () => sessionResult,

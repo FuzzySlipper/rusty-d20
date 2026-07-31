@@ -856,20 +856,6 @@ interface LoadoutItemLocation {
                     Choose or decline the reaction before saving.
                   </span>
                 }
-                @if (
-                  snapshot.campaign.phase === "encounter" &&
-                  snapshot.encounter?.currentFaction === "opposition" &&
-                  snapshot.encounter.reactionPrompt === null
-                ) {
-                  <button
-                    class="primary"
-                    type="button"
-                    [disabled]="store.busy()"
-                    (click)="beginOppositionTurn()"
-                  >
-                    Begin {{ opponentName() }} turn
-                  </button>
-                }
               </div>
             }
           }
@@ -2044,22 +2030,6 @@ interface LoadoutItemLocation {
                               </div>
                             }
                           </div>
-                        } @else if (encounter().reactionPrompt === null) {
-                          <p class="lede">
-                            Begin the explicit opposition phase to let Rust
-                            choose and resolve {{ opponentName() }}'s action
-                            from admitted definitions. If a reaction is
-                            available, Rust will pause for that gameplay choice
-                            before resolving the roll.
-                          </p>
-                          <button
-                            class="primary resolve"
-                            type="button"
-                            [disabled]="store.busy()"
-                            (click)="beginOppositionTurn()"
-                          >
-                            Begin {{ opponentName() }} turn
-                          </button>
                         }
                       </section>
 
@@ -3192,11 +3162,6 @@ export class MainMenuScreenComponent implements OnInit {
   protected declineReaction(token: string): void {
     this.cancelTargeting();
     void this.store.declineReaction(token);
-  }
-
-  protected beginOppositionTurn(): void {
-    this.cancelTargeting();
-    void this.store.beginOppositionTurn();
   }
 
   protected endActivation(): void {

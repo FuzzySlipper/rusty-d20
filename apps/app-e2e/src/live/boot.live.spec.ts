@@ -206,10 +206,9 @@ liveScenario(
       },
     });
 
-    await page
-      .getByRole("button", { name: /^Begin .+ turn$/ })
-      .first()
-      .click();
+    await expect(
+      page.getByRole("button", { name: /^Begin .+ turn$/ }),
+    ).toHaveCount(0);
     const reaction = page.getByRole("region", {
       name: "Available reaction",
       exact: true,

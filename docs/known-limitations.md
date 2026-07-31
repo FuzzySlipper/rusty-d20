@@ -41,8 +41,9 @@ native storage policy, or native accessibility implementation is claimed.
   reactions, physical/control actions, and its Warden reward; Ember's Wake
   uses Nerve equipment, Focus reactions, energy/resolve actions, and its Ash
   Seer reward. Both expose vitality, attributed affinities,
-  scheduled effects, explicit player/opposition turns, deterministic opponent
-  policy, Engine-routed combat movement, range and line of effect, conditions,
+  scheduled effects, explicit player decisions with bounded automatic
+  opposition turns, deterministic opponent policy, Engine-routed combat
+  movement, range and line of effect, conditions,
   forced movement, terminal outcomes, bounded defeat recovery, ordered
   terminal adventure completion, and exactly-once rewards. It does not yet define
   spellcasting, advancement, branching/repeatable campaign graphs, generated
@@ -74,16 +75,18 @@ native storage policy, or native accessibility implementation is claimed.
 - The host uses one explicit local save path, defaulting to
   `target/rusty-d20/save.json`. There is no save-slot UI, cloud/storage policy,
   authentication, TLS, multi-user coordination, or general migration between
-  Engine or ruleset revisions. Product schemas 1 through 9 and session schemas
-  before 5 are rejected; this is not a general migration framework. Schema 10
+  Engine or ruleset revisions. Product schemas 1 through 10 and session schemas
+  before 5 are rejected; this is not a general migration framework. Schema 11
   binds saves to the exact authored adventure package composition, dungeon
   events/progress, tactical positions, completed encounter prefix, and terminal
-  ending. The host can
+  ending, and permits encounter saves only at a party decision boundary. The
+  host can
   discard one malformed or obsolete save through a guarded visible reset, but
   it cannot repair arbitrary content.
 - Opaque reaction prompts are process-local and intentionally not saved. Save
   is unavailable until the player chooses or declines that reaction; either
-  command then resolves the roll atomically. Completed entity state, turn,
+  command then resolves the roll and resumes bounded automatic opposition
+  progression atomically. Completed entity state, turn,
   seeded/static roll-source configuration and position, operation/log
   identities, and bounded receipt explanations persist.
 - The default camp inventory/equipment path proves a four-item active-character

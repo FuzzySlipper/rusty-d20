@@ -78,7 +78,6 @@ fn router_with_recovery(
         .route("/api/v1/session/action", post(choose_action))
         .route("/api/v1/session/reaction", post(reaction))
         .route("/api/v1/session/reaction/decline", post(decline_reaction))
-        .route("/api/v1/session/opposition", post(begin_opposition_turn))
         .route("/api/v1/session/activation/end", post(end_activation))
         .route("/api/v1/session/camp", post(return_to_camp))
         .route("/api/v1/session/save", post(save))
@@ -360,15 +359,6 @@ async fn decline_reaction(
     mutate(&state, |runtime| runtime.decline_reaction(request))
 }
 
-async fn begin_opposition_turn(
-    State(state): State<HostState>,
-    Json(request): Json<ExpectedRevisionDto>,
-) -> ApiResult {
-    mutate(&state, |runtime| {
-        runtime.begin_opposition_turn(request.expected_revision)
-    })
-}
-
 async fn end_activation(
     State(state): State<HostState>,
     Json(request): Json<ExpectedRevisionDto>,
@@ -647,10 +637,25 @@ mod tests {
         )
         .unwrap();
 
-        let stale = app
+        let removed_acknowledgement = app
             .clone()
             .oneshot(
                 Request::post("/api/v1/session/opposition")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"expectedRevision":{}}}"#,
+                        start.revision
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(removed_acknowledgement.status(), StatusCode::NOT_FOUND);
+
+        let stale = app
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/session/activation/end")
                     .header("content-type", "application/json")
                     .body(Body::from(r#"{"expectedRevision":0}"#))
                     .unwrap(),
@@ -884,14 +889,10 @@ mod tests {
                 .find(|participant| participant.character.id == current_actor)
                 .unwrap()
                 .faction;
-            let path = if faction == crate::EncounterFactionDto::Party {
-                "/api/v1/session/activation/end"
-            } else {
-                "/api/v1/session/opposition"
-            };
+            assert_eq!(faction, crate::EncounterFactionDto::Party);
             let (_, body) = post_json(
                 &app,
-                path,
+                "/api/v1/session/activation/end",
                 &format!(r#"{{"expectedRevision":{}}}"#, before.revision),
             )
             .await;

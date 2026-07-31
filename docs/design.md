@@ -167,11 +167,16 @@ issued.
 
 The bounded opposition policy selects from the active encounter participant's
 legal admitted actions using the configured Rust-owned roll source. Party
-actions and opposition actions without player reactions resolve atomically in
-the command that selected them. When an opposition action offers a player
-reaction, Rust exposes only that gameplay decision; choosing or declining it
-immediately resolves the action and roll. After the opposition resolves, Rusty
-D20 advances the caller-owned round and expires due
+commands that yield initiative automatically advance consecutive opposition
+activations inside the same clone-staged Rust transaction. Each opposition
+actor may move through Engine pathfinding, select only an admitted legal
+action/target pair, or explicitly advance when none exists. The loop is bounded
+by the admitted encounter-participant limit and never publishes an idle
+opposition activation for a browser acknowledgement. When an opposition action
+offers a player reaction, Rust exposes only that gameplay decision; choosing or
+declining it immediately resolves the action and resumes the same automatic
+progression. After the opposition resolves, Rusty D20 advances the caller-owned
+round and expires due
 Engine effect instances before publishing the next player turn. Authoritative
 vitality selects victory or defeat exactly once. Victory unequips and
 transfers the active encounter's authored reward through Engine equipment and
@@ -239,7 +244,7 @@ dependencies. See
 typed adventure selection, atomic loadout placement plus the narrower
 equip/unequip/transfer operations, begin-exploration, exploration-command,
 tactical-move, action, reaction/decline-reaction,
-begin-opposition, continue-after-outcome, and save commands from one origin.
+end-activation, continue-after-outcome, and save commands from one origin.
 There is no
 browser-facing command that names an encounter; reaching an authored dungeon
 trigger is the only product transport path into combat. The host also exposes
@@ -272,7 +277,7 @@ in `boundaries.json`; production code cannot import testing fixtures.
 tagged roll-source configuration and position, caller-owned turn, and canonical
 entity snapshot. Session save schema 5 includes the catalog-v2 inventory/equipment state together with
 the registered party roster, encounter participation facts, and per-character
-activation budgets and canonical tactical positions. Product save schema 10
+activation budgets and canonical tactical positions. Product save schema 11
 wraps it with the authored adventure identity, exact composition fingerprint,
 phase, dungeon position/facing/discovery/inspection state, opened doors,
 collected treasures, active checkpoint, active and resolved encounter
@@ -280,7 +285,7 @@ identities, ordered completed-encounter history, encounter turn owner, terminal
 adventure result, product revision, next operation/log identities, and the
 bounded explanatory log.
 
-Product schemas 1 through 9 and session schemas before 5 are rejected rather
+Product schemas 1 through 10 and session schemas before 5 are rejected rather
 than migrated. Unknown schemas, partial loadouts, missing or extra registered
 party/participation/budget facts, unknown budget identities, above-initial
 budgets, inconsistent phase/turn/outcome pairs, unreachable discoveries,
@@ -288,6 +293,8 @@ unknown event IDs, unmet door prerequisites, and treasure ownership that
 contradicts the collected-event set also reject rather than defaulting or
 discarding state. New saves never infer a missing adventure, composition,
 roster, action economy, or exploration event.
+An encounter save is valid only at a living party activation; an idle
+opposition owner is a transient automatic-progression state and is rejected.
 Opaque reaction prompts are intentionally not durable, so save rejects before
 file mutation while a player reaction decision is pending. Choosing or
 declining the reaction resolves the roll atomically, leaving no reacted-pending
@@ -312,9 +319,10 @@ configuration must match an existing save, and guarded reset retains the
 configured source for the next adventure.
 
 Round advancement is an explicit downstream consequence of resolving the
-opposition action and expires recorded effect instances atomically before the
-next player decision. There is no clock callback, tick subscription, event
-bus, or persisted closure.
+opposition action. The bounded Rust loop expires recorded effect instances and
+settles every deterministic opposition activation atomically before the next
+player decision. There is no acknowledgement command, clock callback, tick
+subscription, event bus, or persisted closure.
 
 ## Native-host boundary
 

@@ -30,6 +30,16 @@ fn start_test_encounter(runtime: &mut GameRuntime) -> GameSnapshotDto {
         .unwrap()
 }
 
+fn projected_current_faction(encounter: &EncounterDto) -> Option<EncounterFactionDto> {
+    encounter.current_actor_id.and_then(|actor| {
+        encounter
+            .participants
+            .iter()
+            .find(|participant| participant.character.id == actor)
+            .map(|participant| participant.faction)
+    })
+}
+
 fn defense_value(loadout: &LoadoutDto, defense: &str) -> i64 {
     loadout
         .defenses
@@ -402,9 +412,19 @@ fn multi_party_roster_initiative_and_activation_budgets_are_canonical() {
     );
     assert_eq!(
         applied.encounter.as_ref().unwrap().current_actor_id,
-        Some(107)
+        Some(104)
     );
-    assert!(applied.encounter.as_ref().unwrap().actions.is_empty());
+    assert_eq!(
+        projected_current_faction(applied.encounter.as_ref().unwrap()),
+        Some(EncounterFactionDto::Party)
+    );
+    assert!(applied
+        .encounter
+        .as_ref()
+        .unwrap()
+        .log
+        .iter()
+        .any(|entry| entry.source == "Opposition"));
 }
 
 #[test]
@@ -671,10 +691,12 @@ fn encounter_projection_rejects_a_current_actor_without_canonical_participation(
 }
 
 #[test]
-fn schema_ten_fresh_save_round_trips_and_old_product_or_session_schemas_reject() {
+fn schema_eleven_rejects_old_or_idle_opposition_saves_and_reopens_party_boundaries() {
     let mut runtime = GameRuntime::empty().unwrap();
     start_test_encounter(&mut runtime);
     let encoded = runtime.encode_save().unwrap();
+    let fresh: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(fresh["schemaVersion"], json!(11));
     assert_eq!(
         GameRuntime::decode_save(&encoded)
             .unwrap()
@@ -684,10 +706,18 @@ fn schema_ten_fresh_save_round_trips_and_old_product_or_session_schemas_reject()
     );
 
     let mut old_product: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    old_product["schemaVersion"] = json!(9);
+    old_product["schemaVersion"] = json!(10);
     assert!(matches!(
         GameRuntime::decode_save(&serde_json::to_string(&old_product).unwrap()),
-        Err(GameRuntimeError::UnsupportedSaveSchema { actual: 9 })
+        Err(GameRuntimeError::UnsupportedSaveSchema { actual: 10 })
+    ));
+
+    let mut idle_opposition: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    idle_opposition["campaign"]["currentActorId"] = json!(107);
+    assert!(matches!(
+        GameRuntime::decode_save(&serde_json::to_string(&idle_opposition).unwrap()),
+        Err(GameRuntimeError::InvalidSave(message))
+            if message.contains("campaign phase/outcome contradicts canonical factions")
     ));
 
     let mut old_session: serde_json::Value = serde_json::from_str(&encoded).unwrap();
@@ -1512,66 +1542,53 @@ fn opposition_filters_condition_forbidden_actions_without_retry_deadlock() {
     for _ in 0..96 {
         let current = runtime.snapshot().unwrap();
         let encounter = current.encounter.as_ref().unwrap();
+        if let Some(pending) = encounter.reaction_prompt.as_ref() {
+            let opponent_unsettled = encounter
+                .participants
+                .iter()
+                .find(|participant| participant.character.id == OPPONENT.raw())
+                .unwrap()
+                .character
+                .effects
+                .iter()
+                .any(|effect| effect.starts_with("Unsettled"));
+            if pending.actor_id == OPPONENT.raw() && opponent_unsettled {
+                assert!(
+                    matches!(
+                        pending.action_id.as_str(),
+                        "longsword-strike" | "precise-shot"
+                    ),
+                    "Unsettled forbids the opponent's control-tagged Pin In Place and Disrupt actions"
+                );
+                return;
+            }
+            runtime
+                .decline_reaction(DeclineReactionRequestDto {
+                    expected_revision: current.revision,
+                    prompt_token: pending.token.clone(),
+                })
+                .unwrap();
+            continue;
+        }
         let current_actor = encounter.current_actor_id.unwrap();
         let participant = encounter
             .participants
             .iter()
             .find(|participant| participant.character.id == current_actor)
             .unwrap();
-        let opponent_unsettled = encounter
-            .participants
-            .iter()
-            .find(|participant| participant.character.id == OPPONENT.raw())
-            .unwrap()
-            .character
-            .effects
-            .iter()
-            .any(|effect| effect.starts_with("Unsettled"));
-
-        if participant.faction == EncounterFactionDto::Party {
-            if current_actor == PLAYER.raw() {
-                runtime
-                    .choose_action(ChooseActionRequestDto {
-                        expected_revision: current.revision,
-                        actor_id: PLAYER.raw(),
-                        target_id: OPPONENT.raw(),
-                        action_id: "disrupt".to_owned(),
-                    })
-                    .unwrap();
-            } else {
-                runtime.end_activation(current.revision).unwrap();
-            }
-            continue;
+        assert_eq!(participant.faction, EncounterFactionDto::Party);
+        if current_actor == PLAYER.raw() {
+            runtime
+                .choose_action(ChooseActionRequestDto {
+                    expected_revision: current.revision,
+                    actor_id: PLAYER.raw(),
+                    target_id: OPPONENT.raw(),
+                    action_id: "disrupt".to_owned(),
+                })
+                .unwrap();
+        } else {
+            runtime.end_activation(current.revision).unwrap();
         }
-
-        let opposition = runtime
-            .begin_opposition_turn(current.revision)
-            .expect("a forbidden deterministic choice must not deadlock opposition");
-        let Some(pending) = opposition
-            .encounter
-            .as_ref()
-            .unwrap()
-            .reaction_prompt
-            .as_ref()
-        else {
-            continue;
-        };
-        if current_actor == OPPONENT.raw() && opponent_unsettled {
-            assert!(
-                matches!(
-                    pending.action_id.as_str(),
-                    "longsword-strike" | "precise-shot"
-                ),
-                "Unsettled forbids the opponent's control-tagged Pin In Place and Disrupt actions"
-            );
-            return;
-        }
-        runtime
-            .decline_reaction(DeclineReactionRequestDto {
-                expected_revision: opposition.revision,
-                prompt_token: pending.token.clone(),
-            })
-            .unwrap();
     }
 
     panic!("the deterministic Disrupt sequence never applied Unsettled");
@@ -1586,6 +1603,15 @@ fn disrupt_forces_the_target_without_spending_its_movement_budget() {
     for _ in 0..96 {
         let current = runtime.snapshot().unwrap();
         let encounter = current.encounter.as_ref().unwrap();
+        if let Some(pending) = encounter.reaction_prompt.as_ref() {
+            runtime
+                .decline_reaction(DeclineReactionRequestDto {
+                    expected_revision: current.revision,
+                    prompt_token: pending.token.clone(),
+                })
+                .unwrap();
+            continue;
+        }
         let current_actor = encounter.current_actor_id.unwrap();
         let participant = encounter
             .participants
@@ -1593,80 +1619,63 @@ fn disrupt_forces_the_target_without_spending_its_movement_budget() {
             .find(|participant| participant.character.id == current_actor)
             .unwrap();
 
-        if participant.faction == EncounterFactionDto::Party {
-            if current_actor != PLAYER.raw() {
-                runtime.end_activation(current.revision).unwrap();
-                continue;
-            }
-            let before_position = encounter
-                .participants
-                .iter()
-                .find(|participant| participant.character.id == OPPONENT.raw())
-                .map(|participant| (participant.x, participant.y))
-                .unwrap();
-            let before_budget = runtime
-                .session()
-                .unwrap()
-                .activation_budgets(OPPONENT)
-                .unwrap()
-                .current(&movement);
-            let resolved = runtime
-                .choose_action(ChooseActionRequestDto {
-                    expected_revision: current.revision,
-                    actor_id: PLAYER.raw(),
-                    target_id: OPPONENT.raw(),
-                    action_id: "disrupt".to_owned(),
-                })
-                .unwrap();
-            let after_position = resolved
-                .encounter
-                .as_ref()
-                .unwrap()
-                .participants
-                .iter()
-                .find(|participant| participant.character.id == OPPONENT.raw())
-                .map(|participant| (participant.x, participant.y))
-                .unwrap();
-            if after_position != before_position {
-                assert_eq!(before_position, (8, 4));
-                assert_eq!(after_position, (10, 4));
-                assert_eq!(
-                    runtime
-                        .session()
-                        .unwrap()
-                        .activation_budgets(OPPONENT)
-                        .unwrap()
-                        .current(&movement),
-                    before_budget
-                );
-                assert!(resolved
-                    .encounter
-                    .as_ref()
-                    .unwrap()
-                    .log
-                    .iter()
-                    .flat_map(|entry| &entry.details)
-                    .any(|detail| detail.contains("without spending movement")));
-                return;
-            }
+        assert_eq!(participant.faction, EncounterFactionDto::Party);
+        if current_actor != PLAYER.raw() {
+            runtime.end_activation(current.revision).unwrap();
             continue;
         }
-
-        let opposition = runtime.begin_opposition_turn(current.revision).unwrap();
-        if let Some(pending) = opposition
+        let before_position = encounter
+            .participants
+            .iter()
+            .find(|participant| participant.character.id == OPPONENT.raw())
+            .map(|participant| (participant.x, participant.y))
+            .unwrap();
+        let before_budget = runtime
+            .session()
+            .unwrap()
+            .activation_budgets(OPPONENT)
+            .unwrap()
+            .current(&movement);
+        let resolved = runtime
+            .choose_action(ChooseActionRequestDto {
+                expected_revision: current.revision,
+                actor_id: PLAYER.raw(),
+                target_id: OPPONENT.raw(),
+                action_id: "disrupt".to_owned(),
+            })
+            .unwrap();
+        let after_position = resolved
             .encounter
             .as_ref()
             .unwrap()
-            .reaction_prompt
-            .as_ref()
-        {
-            runtime
-                .decline_reaction(DeclineReactionRequestDto {
-                    expected_revision: opposition.revision,
-                    prompt_token: pending.token.clone(),
-                })
-                .unwrap();
+            .participants
+            .iter()
+            .find(|participant| participant.character.id == OPPONENT.raw())
+            .map(|participant| (participant.x, participant.y))
+            .unwrap();
+        if after_position != before_position {
+            assert_eq!(before_position, (8, 4));
+            assert_eq!(after_position, (10, 4));
+            assert_eq!(
+                runtime
+                    .session()
+                    .unwrap()
+                    .activation_budgets(OPPONENT)
+                    .unwrap()
+                    .current(&movement),
+                before_budget
+            );
+            assert!(resolved
+                .encounter
+                .as_ref()
+                .unwrap()
+                .log
+                .iter()
+                .flat_map(|entry| &entry.details)
+                .any(|detail| detail.contains("without spending movement")));
+            return;
         }
+        continue;
     }
 
     panic!("the deterministic Disrupt sequence never exercised forced movement");
@@ -1676,10 +1685,30 @@ fn disrupt_forces_the_target_without_spending_its_movement_budget() {
 fn opposition_with_no_legal_action_explicitly_advances_the_activation() {
     let mut runtime = GameRuntime::empty().unwrap();
     start_test_encounter(&mut runtime);
+    let mut equipment_removed = false;
 
     for _ in 0..96 {
         let current = runtime.snapshot().unwrap();
         let encounter = current.encounter.as_ref().unwrap();
+        if encounter.log.iter().any(|entry| {
+            entry.details.iter().any(|detail| {
+                detail.contains("no legal authored action")
+                    && detail.contains("16 unavailable choice(s)")
+            })
+        }) {
+            assert_ne!(encounter.current_actor_id, Some(OPPONENT.raw()));
+            assert!(encounter.reaction_prompt.is_none());
+            return;
+        }
+        if let Some(pending) = encounter.reaction_prompt.as_ref() {
+            runtime
+                .decline_reaction(DeclineReactionRequestDto {
+                    expected_revision: current.revision,
+                    prompt_token: pending.token.clone(),
+                })
+                .unwrap();
+            continue;
+        }
         let current_actor = encounter.current_actor_id.unwrap();
         let participant = encounter
             .participants
@@ -1696,23 +1725,8 @@ fn opposition_with_no_legal_action_explicitly_advances_the_activation() {
             .iter()
             .any(|effect| effect.starts_with("Unsettled"));
 
-        if participant.faction == EncounterFactionDto::Party {
-            if current_actor == PLAYER.raw() {
-                runtime
-                    .choose_action(ChooseActionRequestDto {
-                        expected_revision: current.revision,
-                        actor_id: PLAYER.raw(),
-                        target_id: OPPONENT.raw(),
-                        action_id: "disrupt".to_owned(),
-                    })
-                    .unwrap();
-            } else {
-                runtime.end_activation(current.revision).unwrap();
-            }
-            continue;
-        }
-
-        if current_actor == OPPONENT.raw() && opponent_unsettled {
+        assert_eq!(participant.faction, EncounterFactionDto::Party);
+        if opponent_unsettled && !equipment_removed {
             runtime
                 .session_mut()
                 .unwrap()
@@ -1731,38 +1745,20 @@ fn opposition_with_no_legal_action_explicitly_advances_the_activation() {
                     operation("test-unequip-opponent-bow").unwrap(),
                 )
                 .unwrap();
-
-            let progressed = runtime.begin_opposition_turn(current.revision).unwrap();
-            let encounter = progressed.encounter.as_ref().unwrap();
-            assert_ne!(encounter.current_actor_id, Some(OPPONENT.raw()));
-            assert!(encounter.reaction_prompt.is_none());
-            assert!(
-                encounter.log.last().unwrap().details.iter().any(|detail| {
-                    detail.contains("no legal authored action")
-                        && detail.contains("16 unavailable choice(s)")
-                }),
-                "{:?}",
-                encounter.log.last().unwrap()
-            );
-            return;
+            equipment_removed = true;
         }
-
-        let opposition = runtime.begin_opposition_turn(current.revision).unwrap();
-        let Some(pending) = opposition
-            .encounter
-            .as_ref()
-            .unwrap()
-            .reaction_prompt
-            .as_ref()
-        else {
-            continue;
-        };
-        runtime
-            .decline_reaction(DeclineReactionRequestDto {
-                expected_revision: opposition.revision,
-                prompt_token: pending.token.clone(),
-            })
-            .unwrap();
+        if current_actor == PLAYER.raw() {
+            runtime
+                .choose_action(ChooseActionRequestDto {
+                    expected_revision: current.revision,
+                    actor_id: PLAYER.raw(),
+                    target_id: OPPONENT.raw(),
+                    action_id: "disrupt".to_owned(),
+                })
+                .unwrap();
+        } else {
+            runtime.end_activation(current.revision).unwrap();
+        }
     }
 
     panic!("the deterministic Disrupt sequence never exercised no-legal-action progression");
@@ -1811,6 +1807,22 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
         .iter()
         .any(|entry| entry.details.iter().any(|detail| detail.contains("d20"))));
 
+    let settled = if let Some(prompt) = applied.encounter.as_ref().unwrap().reaction_prompt.as_ref()
+    {
+        runtime
+            .decline_reaction(DeclineReactionRequestDto {
+                expected_revision: applied.revision,
+                prompt_token: prompt.token.clone(),
+            })
+            .unwrap()
+    } else {
+        applied
+    };
+    assert_eq!(
+        projected_current_faction(settled.encounter.as_ref().unwrap()),
+        Some(EncounterFactionDto::Party)
+    );
+
     let encoded = runtime.encode_save().unwrap();
     let mut reopened = GameRuntime::decode_save(&encoded).unwrap();
     let mut same_reopened = GameRuntime::decode_save(&encoded).unwrap();
@@ -1823,23 +1835,16 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
         .reaction_prompt
         .is_none());
     assert_eq!(
-        reopened_snapshot
-            .encounter
-            .as_ref()
-            .unwrap()
-            .current_actor_id,
-        Some(107)
+        projected_current_faction(reopened_snapshot.encounter.as_ref().unwrap()),
+        Some(EncounterFactionDto::Party)
     );
-    let opposition = reopened
-        .begin_opposition_turn(reopened_snapshot.revision)
-        .unwrap();
+    let opposition = reopened.end_activation(reopened_snapshot.revision).unwrap();
     let same_opposition = same_reopened
-        .begin_opposition_turn(reopened_snapshot.revision)
+        .end_activation(reopened_snapshot.revision)
         .unwrap();
     assert_eq!(
-        opposition.encounter.as_ref().unwrap().reaction_prompt,
-        same_opposition.encounter.as_ref().unwrap().reaction_prompt,
-        "the exact save and Rust-owned RNG position select the same opposition action"
+        opposition, same_opposition,
+        "the exact save and Rust-owned RNG position select the same automatic opposition progression"
     );
     let advanced = if let Some(prompt) = opposition
         .encounter
@@ -1848,7 +1853,6 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
         .reaction_prompt
         .as_ref()
     {
-        assert_eq!(prompt.actor_id, 107);
         assert!(matches!(prompt.target_id, 101 | 104 | 105 | 106));
         reopened
             .decline_reaction(DeclineReactionRequestDto {
@@ -1860,20 +1864,31 @@ fn product_runtime_is_atomic_stale_safe_and_reopens_deterministically() {
         opposition
     };
     let advanced_encounter = advanced.encounter.as_ref().unwrap();
-    assert_eq!(advanced_encounter.round, 0);
-    assert_eq!(advanced_encounter.current_actor_id, Some(104));
-    assert!(advanced_encounter
-        .log
-        .last()
-        .is_some_and(|entry| entry.source == "Initiative" && entry.text.contains("Ilyra Fen")));
+    assert!(
+        advanced_encounter.reaction_prompt.is_some()
+            || projected_current_faction(advanced_encounter) == Some(EncounterFactionDto::Party)
+    );
+    assert!(advanced_encounter.log.iter().any(|entry| {
+        entry.source == "Opposition"
+            || entry
+                .details
+                .iter()
+                .any(|detail| detail.contains("no legal authored action"))
+    }));
 }
 
 #[test]
 fn product_static_roll_source_resolves_without_a_roll_prompt_and_reopens_exactly() {
-    let roll_source = RollSourceConfig::static_rolls(vec![StaticActionRoll {
-        d20: 20,
-        damage: vec![8],
-    }])
+    let roll_source = RollSourceConfig::static_rolls(vec![
+        StaticActionRoll {
+            d20: 20,
+            damage: vec![8],
+        },
+        StaticActionRoll {
+            d20: 1,
+            damage: vec![1],
+        },
+    ])
     .unwrap();
     let mut runtime = GameRuntime::empty_with_roll_source(roll_source.clone()).unwrap();
     let started = start_test_encounter(&mut runtime);
@@ -1885,6 +1900,22 @@ fn product_static_roll_source_resolves_without_a_roll_prompt_and_reopens_exactly
             action_id: "longsword-strike".to_owned(),
         })
         .unwrap();
+    let resolved = if let Some(prompt) = resolved
+        .encounter
+        .as_ref()
+        .unwrap()
+        .reaction_prompt
+        .as_ref()
+    {
+        runtime
+            .decline_reaction(DeclineReactionRequestDto {
+                expected_revision: resolved.revision,
+                prompt_token: prompt.token.clone(),
+            })
+            .unwrap()
+    } else {
+        resolved
+    };
     let encounter = resolved.encounter.as_ref().unwrap();
     assert!(encounter.reaction_prompt.is_none());
     assert!(encounter.log.iter().any(|entry| {
@@ -1904,6 +1935,31 @@ fn product_static_roll_source_resolves_without_a_roll_prompt_and_reopens_exactly
     let reopened = GameRuntime::decode_save(&encoded).unwrap();
     assert_eq!(reopened.roll_source(), &roll_source);
     assert_eq!(reopened.encode_save().unwrap(), encoded);
+}
+
+#[test]
+fn automatic_opposition_failure_rolls_back_the_originating_player_command() {
+    let roll_source = RollSourceConfig::static_rolls(vec![StaticActionRoll {
+        d20: 20,
+        damage: vec![8],
+    }])
+    .unwrap();
+    let mut runtime = GameRuntime::empty_with_roll_source(roll_source).unwrap();
+    let started = start_test_encounter(&mut runtime);
+    let before = runtime.snapshot().unwrap();
+    let before_save = runtime.encode_save().unwrap();
+
+    let failure = runtime
+        .choose_action(ChooseActionRequestDto {
+            expected_revision: started.revision,
+            actor_id: PLAYER.raw(),
+            target_id: OPPONENT.raw(),
+            action_id: "longsword-strike".to_owned(),
+        })
+        .unwrap_err();
+    assert!(matches!(failure, GameRuntimeError::InvalidState(_)));
+    assert_eq!(runtime.snapshot().unwrap(), before);
+    assert_eq!(runtime.encode_save().unwrap(), before_save);
 }
 
 #[test]
@@ -1939,9 +1995,7 @@ fn complete_encounter_victory_grants_reward_once_and_reopens_exactly() {
     let mut reopened = GameRuntime::decode_save(&encoded_outcome).unwrap();
     assert_eq!(reopened.encode_save().unwrap(), encoded_outcome);
     let before_late = reopened.snapshot().unwrap();
-    let late = reopened
-        .begin_opposition_turn(before_late.revision)
-        .unwrap_err();
+    let late = reopened.end_activation(before_late.revision).unwrap_err();
     assert_eq!(late.api_error().kind, ApiErrorKindDto::Phase);
     assert_eq!(reopened.snapshot().unwrap(), before_late);
 
@@ -2295,6 +2349,28 @@ fn play_to_outcome(
     for _ in 0..512 {
         let before = runtime.snapshot().unwrap();
         let encounter = before.encounter.as_ref().unwrap();
+        if let Some(prompt) = encounter.reaction_prompt.clone() {
+            let resolved = if player_reacts && !prompt.reactions.is_empty() {
+                runtime
+                    .apply_reaction(ApplyReactionRequestDto {
+                        expected_revision: before.revision,
+                        prompt_token: prompt.token.clone(),
+                        reaction_id: prompt.reactions[0].id.clone(),
+                    })
+                    .unwrap()
+            } else {
+                runtime
+                    .decline_reaction(DeclineReactionRequestDto {
+                        expected_revision: before.revision,
+                        prompt_token: prompt.token,
+                    })
+                    .unwrap()
+            };
+            if resolved.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
+                return resolved;
+            }
+            continue;
+        }
         let party_activation = encounter
             .current_actor_id
             .and_then(|actor| {
@@ -2345,32 +2421,7 @@ fn play_to_outcome(
             continue;
         }
 
-        let selected = runtime.begin_opposition_turn(before.revision).unwrap();
-        if selected.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
-            return selected;
-        }
-        let Some(prompt) = selected.encounter.as_ref().unwrap().reaction_prompt.clone() else {
-            continue;
-        };
-        let resolved = if player_reacts && !prompt.reactions.is_empty() {
-            runtime
-                .apply_reaction(ApplyReactionRequestDto {
-                    expected_revision: selected.revision,
-                    prompt_token: prompt.token.clone(),
-                    reaction_id: prompt.reactions[0].id.clone(),
-                })
-                .unwrap()
-        } else {
-            runtime
-                .decline_reaction(DeclineReactionRequestDto {
-                    expected_revision: selected.revision,
-                    prompt_token: prompt.token,
-                })
-                .unwrap()
-        };
-        if resolved.campaign.as_ref().unwrap().phase == CampaignPhaseDto::Outcome {
-            return resolved;
-        }
+        panic!("published encounter state exposed idle opposition progression");
     }
     panic!("deterministic encounter did not reach an outcome within 512 activations");
 }
@@ -2400,11 +2451,8 @@ fn reaction_prompt_save_rejects_without_mutation_and_reaction_resolves_the_roll(
             .find(|participant| participant.character.id == current_actor)
             .unwrap()
             .faction;
-        prompted = if faction == EncounterFactionDto::Party {
-            runtime.end_activation(prompted.revision).unwrap()
-        } else {
-            runtime.begin_opposition_turn(prompted.revision).unwrap()
-        };
+        assert_eq!(faction, EncounterFactionDto::Party);
+        prompted = runtime.end_activation(prompted.revision).unwrap();
     }
     assert!(
         prompted
@@ -2438,6 +2486,10 @@ fn reaction_prompt_save_rejects_without_mutation_and_reaction_resolves_the_roll(
         .unwrap()
         .reaction_prompt
         .is_none());
+    assert_eq!(
+        projected_current_faction(resolved.encounter.as_ref().unwrap()),
+        Some(EncounterFactionDto::Party)
+    );
     assert!(runtime.encode_save_at(resolved.revision).is_ok());
 }
 

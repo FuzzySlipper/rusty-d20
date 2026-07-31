@@ -206,12 +206,6 @@ export class SessionStore {
     );
   }
 
-  async beginOppositionTurn(): Promise<void> {
-    await this.mutate((revision) =>
-      this.transport.beginOppositionTurn(revision),
-    );
-  }
-
   async endActivation(): Promise<void> {
     await this.mutate((revision) => this.transport.endActivation(revision));
   }

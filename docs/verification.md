@@ -70,9 +70,9 @@ BASE_URL=http://127.0.0.1:PORT LIVE_RUN=1 pnpm run e2e:live
 Inspect milestone screenshots, visible text, console output, page errors, and
 the evidence packet under `test-results/`. The opt-in live scenario covers
 empty/new adventure, the durable camp, first-person grid movement, an authored
-landmark, trigger-driven encounter entry, automatic Rust-owned action
-resolution, optional player reactions, one player/opposition round, save, and
-desktop/mobile presentation.
+landmark, trigger-driven encounter entry, automatic Rust-owned action and
+opposition resolution without a turn-acknowledgement control, optional player
+reactions, one player/opposition round, save, and desktop/mobile presentation.
 
 The ordinary real-host smoke additionally requires exactly one
 `aui-game-viewport` canvas while the scene mode changes from catalog to camp,
@@ -141,14 +141,21 @@ keyboard/click preparation, save/fresh-process reopen, exploration inventory,
 all-facing Engine-sampled camera movement, trigger-driven encounter entry,
 action-first pointer/touch/keyboard target picking, explicit hotbar movement
 with keyboard cancellation and two-click route preview/confirmation, reactions,
-tactical movement, victory, defeat recovery, continued expedition, terminal
-completion, guarded reset/malformed-save recovery, and classified stale,
+automatic bounded opposition turns, tactical movement, victory, defeat
+recovery, continued expedition, terminal completion, guarded
+reset/malformed-save recovery, and classified stale,
 transport, and protocol failures. The movement scenario proves an ordinary
 board pick does not mutate, the preview retains the exact Rust-projected route
 without changing the host session, and only a repeated destination issues the
 typed command. It requires one permanent Engine canvas across scene changes and
 uses independent saved-process scenarios where persistence or recovery is the
 behavior under test.
+The combat scenarios assert there is no Begin-turn control or opposition
+transport command: a player action or End Activation settles directly to the
+next party activation, reaction prompt, or outcome. Isolated-host coverage also
+exercises reaction resume, condition-filtered and no-legal-action opposition
+progression, rollback on roll-source exhaustion, schema-11 party-boundary
+reopen, victory/defeat, and desktop/mobile rendering.
 
 Inspect the named Playwright attachments at 1280 by 720 and 390 by 844. The
 representative set is `renderer-root-camp-desktop.png`,

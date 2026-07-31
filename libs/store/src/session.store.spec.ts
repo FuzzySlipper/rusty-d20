@@ -73,7 +73,6 @@ function transport(
     chooseAction: async () => sessionResult,
     applyReaction: async () => sessionResult,
     declineReaction: async () => sessionResult,
-    beginOppositionTurn: async () => sessionResult,
     endActivation: async () => sessionResult,
     returnToCamp: async () => sessionResult,
     save: async () => sessionResult,
@@ -430,7 +429,7 @@ describe("SessionStore", () => {
   it("projects the authoritative session and preserves typed command rejection", async () => {
     const store = new SessionStore(
       transport({
-        beginOppositionTurn: async () => ({
+        endActivation: async () => ({
           ok: false,
           error: {
             kind: "stale",
@@ -445,7 +444,7 @@ describe("SessionStore", () => {
       kind: "data",
       value: { revision: 1, engineRevisionShort: "111111111111" },
     });
-    await store.beginOppositionTurn();
+    await store.endActivation();
     expect(store.session()).toMatchObject({
       kind: "data",
       value: { revision: 1 },

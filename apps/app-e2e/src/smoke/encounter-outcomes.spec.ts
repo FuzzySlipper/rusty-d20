@@ -55,6 +55,63 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
             effect.startsWith("Unsettled"),
           ) ?? false;
 
+        const prompt = encounter.reactionPrompt;
+        if (prompt !== null) {
+          if (actor.character.id === 102 && wardenUnsettled) {
+            expect(prompt.actionId).toMatch(
+              /^(longsword-strike|precise-shot)$/,
+            );
+            await page.reload();
+            await page
+              .getByRole("button", { name: "Continue Adventure" })
+              .click();
+            const reaction = page.getByRole("region", {
+              name: "Available reaction",
+              exact: true,
+            });
+            await expect(reaction).toContainText("Iron Warden");
+            await expect(reaction).toContainText(
+              /Longsword Strike|Precise Shot/,
+            );
+            await expect(reaction).not.toContainText(/Pin In Place|Disrupt/);
+            await expect(
+              page.getByRole("application", {
+                name: /Rendered tactical combat board/,
+              }),
+            ).toBeVisible();
+            expect(
+              encounter.participants.find(
+                (participant) => participant.character.id === 102,
+              ),
+            ).toMatchObject({ x: 10, y: 4 });
+            expect(
+              encounter.log.some((entry) =>
+                entry.details.some((detail) =>
+                  detail.includes(
+                    "Iron Warden was forced from (8, 4) to (10, 4) without spending movement",
+                  ),
+                ),
+              ),
+            ).toBe(true);
+            await testInfo.attach("legal-opposition-after-unsettled.png", {
+              body: await page.screenshot({ fullPage: true }),
+              contentType: "image/png",
+            });
+            expect(browserErrors).toEqual([]);
+            return;
+          }
+          await postSnapshot(
+            request,
+            host.baseUrl,
+            "/api/v1/session/reaction/decline",
+            {
+              expectedRevision: current.revision,
+              promptToken: prompt.token,
+            },
+          );
+          continue;
+        }
+
         if (actor.faction === "party") {
           if (actor.character.id === 101) {
             await postSnapshot(
@@ -80,64 +137,7 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
           }
           continue;
         }
-
-        const selected = await postSnapshot(
-          request,
-          host.baseUrl,
-          "/api/v1/session/opposition",
-          { expectedRevision: current.revision },
-        );
-        const prompt = selected.encounter?.reactionPrompt;
-        if (actor.character.id === 102 && wardenUnsettled) {
-          expect(prompt?.actionId).toMatch(/^(longsword-strike|precise-shot)$/);
-          await page.reload();
-          await page
-            .getByRole("button", { name: "Continue Adventure" })
-            .click();
-          const reaction = page.getByRole("region", {
-            name: "Available reaction",
-            exact: true,
-          });
-          await expect(reaction).toContainText("Iron Warden");
-          await expect(reaction).toContainText(/Longsword Strike|Precise Shot/);
-          await expect(reaction).not.toContainText(/Pin In Place|Disrupt/);
-          await expect(
-            page.getByRole("application", {
-              name: /Rendered tactical combat board/,
-            }),
-          ).toBeVisible();
-          expect(
-            selected.encounter?.participants.find(
-              (participant) => participant.character.id === 102,
-            ),
-          ).toMatchObject({ x: 10, y: 4 });
-          expect(
-            selected.encounter?.log.some((entry) =>
-              entry.details.some((detail) =>
-                detail.includes(
-                  "Iron Warden was forced from (8, 4) to (10, 4) without spending movement",
-                ),
-              ),
-            ),
-          ).toBe(true);
-          await testInfo.attach("legal-opposition-after-unsettled.png", {
-            body: await page.screenshot({ fullPage: true }),
-            contentType: "image/png",
-          });
-          expect(browserErrors).toEqual([]);
-          return;
-        }
-        if (prompt !== null && prompt !== undefined) {
-          await postSnapshot(
-            request,
-            host.baseUrl,
-            "/api/v1/session/reaction/decline",
-            {
-              expectedRevision: selected.revision,
-              promptToken: prompt.token,
-            },
-          );
-        }
+        throw new Error("Rust published an idle opposition activation.");
       }
 
       throw new Error(
@@ -621,6 +621,29 @@ async function playToOutcome(
       throw new Error("Current actor is absent from the encounter roster.");
     }
 
+    const prompt = encounter.reactionPrompt;
+    if (prompt !== null) {
+      const reaction = prompt.reactions[0];
+      await postSnapshot(
+        request,
+        baseUrl,
+        playerReacts && reaction !== undefined
+          ? "/api/v1/session/reaction"
+          : "/api/v1/session/reaction/decline",
+        playerReacts && reaction !== undefined
+          ? {
+              expectedRevision: current.revision,
+              promptToken: prompt.token,
+              reactionId: reaction.id,
+            }
+          : {
+              expectedRevision: current.revision,
+              promptToken: prompt.token,
+            },
+      );
+      continue;
+    }
+
     if (actor.faction === "party") {
       if (passParty) {
         await postSnapshot(request, baseUrl, "/api/v1/session/activation/end", {
@@ -669,34 +692,7 @@ async function playToOutcome(
       }
       continue;
     }
-
-    const selected = await postSnapshot(
-      request,
-      baseUrl,
-      "/api/v1/session/opposition",
-      { expectedRevision: current.revision },
-    );
-    const prompt = selected.encounter?.reactionPrompt;
-    if (prompt !== null && prompt !== undefined) {
-      const reaction = prompt.reactions[0];
-      await postSnapshot(
-        request,
-        baseUrl,
-        playerReacts && reaction !== undefined
-          ? "/api/v1/session/reaction"
-          : "/api/v1/session/reaction/decline",
-        playerReacts && reaction !== undefined
-          ? {
-              expectedRevision: selected.revision,
-              promptToken: prompt.token,
-              reactionId: reaction.id,
-            }
-          : {
-              expectedRevision: selected.revision,
-              promptToken: prompt.token,
-            },
-      );
-    }
+    throw new Error("Rust published an idle opposition activation.");
   }
   throw new Error(
     `Deterministic encounter against ${oppositionName} did not reach an outcome within 512 activations.`,

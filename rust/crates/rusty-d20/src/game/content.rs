@@ -392,7 +392,9 @@ pub(super) fn validate_campaign_vitality(
     let valid = match (campaign.phase, campaign.outcome) {
         (CampaignPhase::Encounter, None) => {
             campaign.current_actor_id.is_some_and(|actor| {
-                actual.contains_key(&EntityId::new(actor))
+                actual
+                    .get(&EntityId::new(actor))
+                    .is_some_and(|(faction, _)| *faction == EncounterFaction::Party)
                     && saved_vitality(session, EntityId::new(actor)).is_ok_and(|value| value > 0)
             }) && party_alive > 0
                 && opposition_alive > 0

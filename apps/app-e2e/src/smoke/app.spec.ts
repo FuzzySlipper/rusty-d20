@@ -1056,9 +1056,21 @@ test.describe.serial("real Rust encounter shell", () => {
     await mobilePage.touchscreen.tap(touchTarget.x, touchTarget.y);
     expect(mobileActionRequests).toBe(1);
     releaseAction?.();
-    await expect(mobilePage.getByLabel("Encounter identity")).toContainText(
-      "Gate Skirmisher acting",
-    );
+    const mobileReaction = mobilePage.getByRole("region", {
+      name: "Available reaction",
+      exact: true,
+    });
+    const mobileNextParty = mobilePage
+      .getByLabel("Encounter identity")
+      .getByText("Ilyra Fen acting", { exact: true });
+    await expect(mobileReaction.or(mobileNextParty)).toBeVisible();
+    if (await mobileReaction.isVisible()) {
+      await mobilePage.getByRole("button", { name: "Do not react" }).click();
+    }
+    await expect(mobileNextParty).toBeVisible();
+    await expect(
+      mobilePage.getByRole("button", { name: /^Begin .+ turn$/ }),
+    ).toHaveCount(0);
     await mobilePage.unroute("**/api/v1/session/action");
     await mobileContext.close();
 
@@ -1083,17 +1095,9 @@ test.describe.serial("real Rust encounter shell", () => {
       ),
     ).toBe(true);
 
-    await page
-      .getByRole("button", { name: "Begin Gate Skirmisher turn" })
-      .first()
-      .click();
-    const reaction = page.getByRole("region", {
-      name: "Available reaction",
-      exact: true,
-    });
-    if (await reaction.isVisible()) {
-      await page.getByRole("button", { name: "Do not react" }).click();
-    }
+    await expect(
+      page.getByRole("button", { name: /^Begin .+ turn$/ }),
+    ).toHaveCount(0);
     await expect(page.getByLabel("Encounter identity")).toContainText(
       "Round 0",
     );
@@ -1117,9 +1121,12 @@ test.describe.serial("real Rust encounter shell", () => {
     await second
       .getByRole("button", { name: "End Ilyra Fen activation" })
       .click();
-    await expect(second.getByLabel("Encounter identity")).toContainText(
-      "Iron Warden acting",
+    await expect(second.getByLabel("Encounter identity")).not.toContainText(
+      "Ilyra Fen acting",
     );
+    await expect(
+      second.getByRole("button", { name: /^Begin .+ turn$/ }),
+    ).toHaveCount(0);
 
     await page
       .getByRole("button", { name: "End Ilyra Fen activation" })
@@ -1140,8 +1147,8 @@ test.describe.serial("real Rust encounter shell", () => {
     await page.goto("/");
     await continueIfNeeded(page);
     await expect(
-      page.getByRole("button", { name: "Begin Iron Warden turn" }).first(),
-    ).toBeVisible();
+      page.getByRole("button", { name: /^Begin .+ turn$/ }),
+    ).toHaveCount(0);
     await expect(page.locator("aui-character-status")).toHaveCount(6);
     expect(
       await page.evaluate(

@@ -20,10 +20,10 @@ use crate::{
     EncounterFactionDefinition, EncounterParticipationSeed, EquipmentItemSeed, InventorySeed,
     ItemInstanceDefinition, ItemRarityDefinition, ReactionReceipt, RollSourceConfig,
     ScheduledEffectsComponent, SessionSaveError, StorageSeed, TacticalBoardDefinition,
-    TacticalPosition, ENGINE_REVISION,
+    TacticalPosition, ENGINE_REVISION, MAX_D20_ENCOUNTER_PARTICIPANTS,
 };
 
-const GAME_SAVE_SCHEMA_VERSION: u32 = 10;
+const GAME_SAVE_SCHEMA_VERSION: u32 = 11;
 const MAX_LOG_ENTRIES: usize = 64;
 const MAX_LOG_DETAILS: usize = 32;
 const MAX_LOG_SOURCE_BYTES: usize = 128;
@@ -597,6 +597,7 @@ impl GameRuntime {
             &encounter.introduction_text,
             introduction_details,
         )?;
+        self.settle_automatic_opposition()?;
         self.snapshot()
     }
 
@@ -1135,6 +1136,15 @@ impl GameRuntime {
         &mut self,
         pending: PendingAction,
     ) -> Result<GameSnapshotDto, GameRuntimeError> {
+        self.resolve_pending_action_once(pending)?;
+        self.settle_automatic_opposition()?;
+        self.snapshot()
+    }
+
+    fn resolve_pending_action_once(
+        &mut self,
+        pending: PendingAction,
+    ) -> Result<(), GameRuntimeError> {
         let (expected_actor, _) = self.current_actor()?;
         if pending.preview.actor() != expected_actor {
             return Err(GameRuntimeError::InvalidCommand(
@@ -1243,24 +1253,10 @@ impl GameRuntime {
         }
         self.bump_revision()?;
         self.saved_revision = None;
-        self.snapshot()
+        Ok(())
     }
 
-    pub fn begin_opposition_turn(
-        &mut self,
-        expected_revision: u64,
-    ) -> Result<GameSnapshotDto, GameRuntimeError> {
-        let mut staged = self.clone();
-        let snapshot = staged.begin_opposition_turn_inner(expected_revision)?;
-        *self = staged;
-        Ok(snapshot)
-    }
-
-    fn begin_opposition_turn_inner(
-        &mut self,
-        expected_revision: u64,
-    ) -> Result<GameSnapshotDto, GameRuntimeError> {
-        self.ensure_revision(expected_revision)?;
+    fn advance_opposition_activation(&mut self) -> Result<(), GameRuntimeError> {
         self.ensure_encounter_phase()?;
         self.ensure_current_faction(EncounterFaction::Opposition)?;
         self.ensure_mutation_capacity(true, true)?;
@@ -1353,7 +1349,7 @@ impl GameRuntime {
             self.advance_activation(details)?;
             self.bump_revision()?;
             self.saved_revision = None;
-            return self.snapshot();
+            return Ok(());
         }
         let upper = u32::try_from(legal_actions.len()).map_err(|_| {
             GameRuntimeError::InvalidState(
@@ -1396,13 +1392,44 @@ impl GameRuntime {
             )]).collect(),
         )?;
         if pending.preview.reactions().is_empty() {
-            self.resolve_pending_action(pending)
+            self.resolve_pending_action_once(pending)
         } else {
             self.pending = Some(pending);
             self.bump_revision()?;
             self.saved_revision = None;
-            self.snapshot()
+            Ok(())
         }
+    }
+
+    fn settle_automatic_opposition(&mut self) -> Result<(), GameRuntimeError> {
+        for _ in 0..MAX_D20_ENCOUNTER_PARTICIPANTS {
+            if self.pending.is_some()
+                || !self
+                    .campaign
+                    .as_ref()
+                    .is_some_and(|campaign| campaign.phase == CampaignPhase::Encounter)
+            {
+                return Ok(());
+            }
+            let (_, faction) = self.current_actor()?;
+            if faction == EncounterFaction::Party {
+                return Ok(());
+            }
+            self.advance_opposition_activation()?;
+        }
+
+        if self.pending.is_none()
+            && self
+                .campaign
+                .as_ref()
+                .is_some_and(|campaign| campaign.phase == CampaignPhase::Encounter)
+            && self.current_actor()?.1 == EncounterFaction::Opposition
+        {
+            return Err(GameRuntimeError::InvalidState(format!(
+                "automatic opposition progression exceeded the admitted {MAX_D20_ENCOUNTER_PARTICIPANTS}-participant bound"
+            )));
+        }
+        Ok(())
     }
 
     pub fn end_activation(
@@ -1426,6 +1453,7 @@ impl GameRuntime {
         )])?;
         staged.bump_revision()?;
         staged.saved_revision = None;
+        staged.settle_automatic_opposition()?;
         let snapshot = staged.snapshot()?;
         *self = staged;
         Ok(snapshot)

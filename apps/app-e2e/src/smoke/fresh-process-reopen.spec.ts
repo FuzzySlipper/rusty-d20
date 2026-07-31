@@ -255,21 +255,7 @@ async function advanceOneActivation(
       participant.character.id === snapshot.encounter.currentActorId,
   );
   expect(current).toBeDefined();
-  if (current?.faction === "opposition") {
-    const selected = await postSnapshot(
-      request,
-      baseUrl,
-      "/api/v1/session/opposition",
-      { expectedRevision: snapshot.revision },
-    );
-    const prompt = selected.encounter.reactionPrompt;
-    if (prompt !== null) {
-      await postSnapshot(request, baseUrl, "/api/v1/session/reaction/decline", {
-        expectedRevision: selected.revision,
-        promptToken: prompt.token,
-      });
-    }
-  } else {
+  if (current?.faction === "party") {
     const action = snapshot.encounter.actions[0];
     if (action === undefined) {
       await postSnapshot(request, baseUrl, "/api/v1/session/activation/end", {
@@ -292,6 +278,8 @@ async function advanceOneActivation(
       targetId: target,
       actionId: action.id,
     });
+  } else {
+    throw new Error("Rust published an idle opposition activation.");
   }
 }
 
@@ -311,12 +299,13 @@ async function advanceToReactionPrompt(
     if (current === undefined) {
       throw new Error("Current actor is absent from the encounter roster.");
     }
+    if (current.faction !== "party") {
+      throw new Error("Rust published an idle opposition activation.");
+    }
     const next = await postSnapshot(
       request,
       baseUrl,
-      current.faction === "party"
-        ? "/api/v1/session/activation/end"
-        : "/api/v1/session/opposition",
+      "/api/v1/session/activation/end",
       { expectedRevision: snapshot.revision },
     );
     if (next.encounter.reactionPrompt !== null) {

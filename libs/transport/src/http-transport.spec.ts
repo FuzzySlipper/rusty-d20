@@ -196,7 +196,7 @@ describe('createHttpRustyD20Transport', () => {
       })),
     );
 
-    await expect(stale.beginOppositionTurn(1)).resolves.toEqual({
+    await expect(stale.endActivation(1)).resolves.toEqual({
       ok: false,
       error: { kind: 'stale', message: 'revision changed', retryable: true },
     });

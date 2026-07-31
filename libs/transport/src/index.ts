@@ -62,9 +62,6 @@ export interface RustyD20Transport {
   readonly declineReaction: (
     request: DeclineReactionRequestDto,
   ) => Promise<Result<GameSnapshotDto>>;
-  readonly beginOppositionTurn: (
-    expectedRevision: number,
-  ) => Promise<Result<GameSnapshotDto>>;
   readonly endActivation: (
     expectedRevision: number,
   ) => Promise<Result<GameSnapshotDto>>;
@@ -116,12 +113,6 @@ export function createHttpRustyD20Transport(http: HttpPort): RustyD20Transport {
       post("/api/v1/session/reaction", body, decodeGameSnapshot),
     declineReaction: (body) =>
       post("/api/v1/session/reaction/decline", body, decodeGameSnapshot),
-    beginOppositionTurn: (expectedRevision) =>
-      post(
-        "/api/v1/session/opposition",
-        { expectedRevision },
-        decodeGameSnapshot,
-      ),
     endActivation: (expectedRevision) =>
       post(
         "/api/v1/session/activation/end",
