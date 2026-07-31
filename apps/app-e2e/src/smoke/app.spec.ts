@@ -287,6 +287,29 @@ test.describe.serial("real Rust encounter shell", () => {
       version: "0.1.0",
     });
 
+    const initialSession = (await (
+      await request.get("/api/v1/session")
+    ).json()) as {
+      campaign: { id: string } | null;
+    };
+    if (initialSession.campaign !== null) {
+      const saveStatus = (await (
+        await request.get("/api/v1/session/save-status")
+      ).json()) as {
+        campaignId: string | null;
+        revision: number | null;
+        saveIdentity: string;
+      };
+      const reset = await request.post("/api/v1/session/reset", {
+        data: {
+          expectedAdventureId: saveStatus.campaignId,
+          expectedRevision: saveStatus.revision,
+          expectedSaveIdentity: saveStatus.saveIdentity,
+        },
+      });
+      expect(reset.ok()).toBe(true);
+    }
+
     await page.goto("/");
     await expect(page.locator("aui-game-viewport canvas")).toHaveCount(1);
     await expect(
@@ -923,6 +946,25 @@ test.describe.serial("real Rust encounter shell", () => {
       contentType: "image/png",
     });
     await clickRenderedTacticalCell(page, 7, 3, 12, 8);
+    await expect
+      .poll(async () => {
+        const snapshot = (await (
+          await request.get("/api/v1/session")
+        ).json()) as {
+          encounter: {
+            participants: Array<{
+              character: { id: number };
+              x: number;
+              y: number;
+            }>;
+          };
+        };
+        const mara = snapshot.encounter.participants.find(
+          (participant) => participant.character.id === 101,
+        );
+        return mara === undefined ? null : { x: mara.x, y: mara.y };
+      })
+      .toEqual({ x: 7, y: 3 });
     const afterMovement = (await (
       await request.get("/api/v1/session")
     ).json()) as {
