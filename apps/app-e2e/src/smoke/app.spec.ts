@@ -137,6 +137,21 @@ async function expectRendererCanvasAtPoint(
   expect(hit).toEqual({ insideRenderer: true, tagName: "CANVAS" });
 }
 
+async function expectCombatLogAtBottom(page: Page): Promise<void> {
+  const entries = page.locator("aui-combat-log .entries");
+  await expect(entries).toBeVisible();
+  await expect
+    .poll(() =>
+      entries.evaluate(
+        (element) =>
+          Math.abs(
+            element.scrollHeight - element.clientHeight - element.scrollTop,
+          ) <= 1,
+      ),
+    )
+    .toBe(true);
+}
+
 async function clickRenderedTacticalCell(
   page: Page,
   x: number,
@@ -1058,6 +1073,11 @@ test.describe.serial("real Rust encounter shell", () => {
     const mobilePage = await mobileContext.newPage();
     await mobilePage.goto("/");
     await continueIfNeeded(mobilePage);
+    const mobileLogEntries = mobilePage.locator("aui-combat-log .entries");
+    await expect(mobileLogEntries).toBeVisible();
+    await mobileLogEntries.evaluate((element) => {
+      element.scrollTop = 0;
+    });
     let releaseAction: (() => void) | undefined;
     const actionRelease = new Promise<void>((resolve) => {
       releaseAction = resolve;
@@ -1110,6 +1130,27 @@ test.describe.serial("real Rust encounter shell", () => {
       await mobilePage.getByRole("button", { name: "Do not react" }).click();
     }
     await expect(mobileNextParty).toBeVisible();
+    await expectCombatLogAtBottom(mobilePage);
+    const mobileReceiptEntry = mobilePage
+      .locator("aui-combat-log .entry")
+      .filter({ hasText: "Roll-source position 0." });
+    const mobileReceiptDetails = mobileReceiptEntry.locator(".entry__details");
+    await mobileReceiptEntry.locator(".entry__summary").tap();
+    await expect(mobileReceiptDetails).toBeVisible();
+    await expect(mobileReceiptDetails).toBeInViewport();
+    await expect(mobileReceiptDetails).toContainText(/d20 \d+ \+ modifier/);
+    await expect(mobileReceiptDetails).toContainText("against defense");
+    await expect(mobileReceiptDetails).toContainText("Roll-source position 0.");
+    const mobileReceiptBox = await mobileReceiptDetails.boundingBox();
+    expect(mobileReceiptBox).not.toBeNull();
+    expect(mobileReceiptBox?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect(
+      (mobileReceiptBox?.x ?? 0) + (mobileReceiptBox?.width ?? 0),
+    ).toBeLessThanOrEqual(390);
+    await testInfo.attach("rules-log-receipt-mobile-touch.png", {
+      body: await mobilePage.screenshot(),
+      contentType: "image/png",
+    });
     await expect(
       mobilePage.getByRole("button", { name: /^Begin .+ turn$/ }),
     ).toHaveCount(0);
@@ -1136,6 +1177,30 @@ test.describe.serial("real Rust encounter shell", () => {
         ),
       ),
     ).toBe(true);
+    await expectCombatLogAtBottom(page);
+    const receiptEntry = page
+      .locator("aui-combat-log .entry")
+      .filter({ hasText: "Roll-source position 0." });
+    const receiptSummary = receiptEntry.locator(".entry__summary");
+    const receiptDetails = receiptEntry.locator(".entry__details");
+    await receiptSummary.hover();
+    await expect(receiptDetails).toBeVisible();
+    await expect(receiptDetails).toContainText(/d20 \d+ \+ modifier/);
+    await expect(receiptDetails).toContainText("against defense");
+    await expect(receiptDetails).toContainText("Roll-source position 0.");
+    await receiptSummary.focus();
+    await expect(receiptSummary).toBeFocused();
+    await expect(receiptDetails).toBeVisible();
+    const desktopReceiptBox = await receiptDetails.boundingBox();
+    expect(desktopReceiptBox).not.toBeNull();
+    expect(desktopReceiptBox?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect(
+      (desktopReceiptBox?.x ?? 0) + (desktopReceiptBox?.width ?? 0),
+    ).toBeLessThanOrEqual(1280);
+    await testInfo.attach("rules-log-receipt-desktop-focus.png", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
 
     await expect(
       page.getByRole("button", { name: /^Begin .+ turn$/ }),

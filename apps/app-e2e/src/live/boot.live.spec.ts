@@ -239,7 +239,7 @@ liveScenario(
     await collector.milestone("opposition action resolved automatically", {
       screenshot: true,
       layerSnapshot: {
-        latest: await page.getByLabel("Latest outcome explanation").innerText(),
+        latest: await page.locator("aui-combat-log .entry").last().innerText(),
       },
     });
     await expect(page.getByLabel("Encounter identity")).toContainText(
@@ -255,7 +255,8 @@ liveScenario(
           route: page.url(),
           encounter: await page.getByLabel("Encounter identity").innerText(),
           latest: await page
-            .getByLabel("Latest outcome explanation")
+            .locator("aui-combat-log .entry")
+            .last()
             .innerText(),
         },
       },

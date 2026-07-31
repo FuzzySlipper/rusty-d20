@@ -259,8 +259,12 @@ by request generation; features render it. Continue is a local presentation
 choice over an already loaded Rust projection; it does not mutate or duplicate
 campaign authority.
 
-The combat log is a bounded receipt explanation. It observes committed facts
-and is not a second authority, persistence replay mechanism, or command source.
+The combat log is a bounded receipt explanation. Every stable Rust log identity
+retains its complete bounded detail list; the presentation follows newly
+published entries and exposes each receipt on hover, keyboard focus, or touch
+without recalculating rolls, modifiers, defenses, damage decisions, or effects.
+It observes committed facts and is not a second authority, persistence replay
+mechanism, or command source.
 
 ## Dependencies
 

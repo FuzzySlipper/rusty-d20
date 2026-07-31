@@ -155,7 +155,11 @@ transport command: a player action or End Activation settles directly to the
 next party activation, reaction prompt, or outcome. Isolated-host coverage also
 exercises reaction resume, condition-filtered and no-legal-action opposition
 progression, rollback on roll-source exhaustion, schema-11 party-boundary
-reopen, victory/defeat, and desktop/mobile rendering.
+reopen, victory/defeat, and desktop/mobile rendering. The primary desktop and
+touch scenarios manually move the rules log away from its end, resolve a new
+action, and require it to follow the new stable entry. They then inspect the
+same Rust-authored d20, modifier, defense, roll-source, damage, and effect
+details through the row's hover/focus/touch disclosure.
 
 Inspect the named Playwright attachments at 1280 by 720 and 390 by 844. The
 representative set is `renderer-root-camp-desktop.png`,

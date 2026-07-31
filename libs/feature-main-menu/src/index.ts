@@ -728,13 +728,6 @@ interface LoadoutItemLocation {
         color: var(--rusty-engine-accent);
       }
 
-      .latest {
-        border-top: 1px solid var(--rusty-engine-border);
-        display: grid;
-        gap: 8px;
-        padding-top: 12px;
-      }
-
       @media (max-width: 760px) {
         .characters,
         .camp__layout,
@@ -1841,23 +1834,6 @@ interface LoadoutItemLocation {
                         data-overlay-region="bottom-right"
                       >
                         <aui-combat-log [entries]="combatLog()" />
-                        @if (latestLog(); as latest) {
-                          <section
-                            class="latest"
-                            aria-label="Latest outcome explanation"
-                          >
-                            <p class="meta-label">
-                              Latest receipt · turn {{ latest.turn }}
-                            </p>
-                            <strong>{{ latest.source }}</strong>
-                            <p>{{ latest.text }}</p>
-                            <ul class="detail-list">
-                              @for (detail of latest.details; track detail) {
-                                <li>{{ detail }}</li>
-                              }
-                            </ul>
-                          </section>
-                        }
                       </aside>
                     </section>
                   }
@@ -2103,23 +2079,6 @@ interface LoadoutItemLocation {
                       data-overlay-region="bottom-right"
                     >
                       <aui-combat-log [entries]="combatLog()" />
-                      @if (latestLog(); as latest) {
-                        <section
-                          class="latest"
-                          aria-label="Latest outcome explanation"
-                        >
-                          <p class="meta-label">
-                            Latest receipt · turn {{ latest.turn }}
-                          </p>
-                          <strong>{{ latest.source }}</strong>
-                          <p>{{ latest.text }}</p>
-                          <ul class="detail-list">
-                            @for (detail of latest.details; track detail) {
-                              <li>{{ detail }}</li>
-                            }
-                          </ul>
-                        </section>
-                      }
                     </aside>
                   </section>
                 }
@@ -2614,6 +2573,7 @@ export class MainMenuScreenComponent implements OnInit {
       id: entry.id,
       source: `T${entry.turn} ${entry.source}`,
       text: entry.text,
+      details: entry.details,
       severity:
         entry.kind === "hit"
           ? "hit"
@@ -2624,11 +2584,6 @@ export class MainMenuScreenComponent implements OnInit {
               : "info",
     })),
   );
-
-  protected readonly latestLog = computed(() => {
-    const log = this.game()?.encounter?.log ?? [];
-    return log.at(-1) ?? null;
-  });
 
   constructor() {
     effect(() => {

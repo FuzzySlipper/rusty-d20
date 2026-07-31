@@ -270,9 +270,12 @@ test.describe.serial("complete deterministic encounter outcomes", () => {
         await stepForward(page, 2);
       }
       await enterWardenReckoning(page);
-      await expect(page.getByLabel("Latest outcome explanation")).toContainText(
-        "bounded vitality track service",
-      );
+      await expect(
+        page
+          .locator("aui-combat-log .entry")
+          .filter({ hasText: "bounded vitality track service" })
+          .last(),
+      ).toBeAttached();
       await playToOutcome(
         page,
         request,
