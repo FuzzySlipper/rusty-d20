@@ -18,6 +18,7 @@ export interface TacticalBoardCellView {
   readonly current: boolean;
   readonly legalActionTarget: boolean;
   readonly legalMoveCost: number | null;
+  readonly movementPreview: boolean;
   readonly route: readonly TacticalCellCoordinate[] | null;
 }
 
@@ -72,6 +73,7 @@ const COLORS = {
   defeated: [0.24, 0.27, 0.27, 1],
   floor: [0.11, 0.15, 0.16, 1],
   legal: [0.12, 0.42, 0.44, 1],
+  movementPreview: [0.18, 0.72, 0.64, 1],
   opposition: [0.66, 0.16, 0.18, 1],
   party: [0.12, 0.47, 0.62, 1],
   route: [0.3, 0.86, 0.8, 1],
@@ -98,9 +100,11 @@ export function createTacticalRenderFrame(
       ? COLORS.wall
       : cell.legalActionTarget
         ? COLORS.targetFloor
-        : cell.legalMoveCost === null
-          ? COLORS.floor
-          : COLORS.legal;
+        : cell.movementPreview
+          ? COLORS.movementPreview
+          : cell.legalMoveCost === null
+            ? COLORS.floor
+            : COLORS.legal;
     handles.push(handle);
     picks.push({
       handle,
@@ -140,6 +144,7 @@ export function createTacticalRenderFrame(
             "tactical-cell",
             cell.terrain,
             cell.legalMoveCost === null ? "static" : "legal-move",
+            cell.movementPreview ? "movement-preview" : "not-movement-preview",
           ],
           label: `tactical-cell-${cell.x}-${cell.y}`,
         },
@@ -351,7 +356,9 @@ function cellLabel(
   }
   return cell.legalMoveCost === null
     ? `Open terrain at ${cell.x}, ${cell.y}`
-    : `Move to ${cell.x}, ${cell.y}, cost ${cell.legalMoveCost}`;
+    : cell.movementPreview
+      ? `Previewed move to ${cell.x}, ${cell.y}, cost ${cell.legalMoveCost}. Activate again to confirm`
+      : `Preview move to ${cell.x}, ${cell.y}, cost ${cell.legalMoveCost}`;
 }
 
 interface RouteEdge {
@@ -363,6 +370,9 @@ interface RouteEdge {
 function collectRouteEdges(view: TacticalBoardView): readonly RouteEdge[] {
   const edges = new Map<string, RouteEdge>();
   for (const cell of view.cells) {
+    if (!cell.movementPreview) {
+      continue;
+    }
     const route = cell.route;
     if (route === null) {
       continue;

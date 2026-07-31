@@ -184,8 +184,8 @@ export class SessionStore {
     );
   }
 
-  async moveActor(actorId: number, x: number, y: number): Promise<void> {
-    await this.mutate((expectedRevision) =>
+  async moveActor(actorId: number, x: number, y: number): Promise<boolean> {
+    return this.mutate((expectedRevision) =>
       this.transport.moveActor({ expectedRevision, actorId, x, y }),
     );
   }

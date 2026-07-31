@@ -411,7 +411,7 @@ export class GameViewportComponent
       return;
     } else if (
       event.key === "Escape" &&
-      tactical.interactionMode === "targeting"
+      tactical.interactionMode !== "readonly"
     ) {
       event.preventDefault();
       this.sceneCancelled.emit();
@@ -478,16 +478,28 @@ export class GameViewportComponent
 
   protected boardAriaLabel(): string {
     const tactical = this.view().tactical;
-    return tactical?.interactionMode === "targeting" &&
+    if (
+      tactical?.interactionMode === "targeting" &&
       tactical.targetingActionLabel !== null
-      ? `Rendered tactical combat board. Targeting ${tactical.targetingActionLabel}. Use arrow keys to inspect cells, Enter to choose a legal target, and Escape to cancel.`
-      : "Rendered tactical combat board. Use arrow keys to inspect cells and Enter to move.";
+    ) {
+      return `Rendered tactical combat board. Targeting ${tactical.targetingActionLabel}. Use arrow keys to inspect cells, Enter to choose a legal target, and Escape to cancel.`;
+    }
+    if (tactical?.interactionMode === "movement") {
+      const preview = tactical.cells.find((cell) => cell.movementPreview);
+      return preview === undefined
+        ? "Rendered tactical combat board. Movement selected. Use arrow keys to inspect Rust-projected destinations, Enter to preview a route, and Escape to cancel."
+        : `Rendered tactical combat board. Previewing movement to ${preview.x}, ${preview.y}. Press Enter on the same destination to confirm, choose another destination to replace the preview, or Escape to cancel.`;
+    }
+    return "Rendered tactical combat board. Choose Move or an action from the hotbar, then use arrow keys to inspect cells.";
   }
 
   protected boardKeyboardInstructions(): string {
-    return this.view().tactical?.interactionMode === "targeting"
+    const mode = this.view().tactical?.interactionMode;
+    return mode === "targeting"
       ? "Arrow keys inspect · Enter targets · Escape cancels"
-      : "Arrow keys inspect · Enter moves";
+      : mode === "movement"
+        ? "Arrow keys inspect · Enter previews/confirms · Escape cancels"
+        : "Choose Move or an action from the hotbar";
   }
 
   private applyCameraForSize(width: number, height: number): void {

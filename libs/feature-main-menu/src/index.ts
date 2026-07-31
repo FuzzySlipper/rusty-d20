@@ -54,6 +54,13 @@ import {
 } from "@rusty-d20/ui-minimap";
 
 import {
+  movementIsCurrent,
+  selectMovementDestination,
+  startMovement,
+  type MovementProjection,
+  type TacticalMovementMode,
+} from "./movement";
+import {
   startTargeting,
   targetingCommand,
   targetingIsCurrent,
@@ -778,6 +785,7 @@ interface LoadoutItemLocation {
       class="game-shell"
       [attr.data-scene-mode]="gameViewport().mode"
       [attr.data-targeting-action]="activeTargeting()?.actionId ?? null"
+      [attr.data-movement-mode]="activeMovement() === null ? null : 'selected'"
     >
       <aui-game-viewport
         class="game-viewport"
@@ -1870,12 +1878,7 @@ interface LoadoutItemLocation {
                 } @else {
                   <section class="workspace combat-workspace">
                     <p class="combat-board-hint" aria-hidden="true">
-                      {{
-                        activeTargeting() === null
-                          ? "Choose an action or click a highlighted movement cell"
-                          : "Choose a highlighted target for " +
-                            activeTargeting()!.actionLabel
-                      }}
+                      {{ combatBoardHint() }}
                     </p>
                     <div class="action-workbench combat-actions">
                       <section
@@ -1925,6 +1928,14 @@ interface LoadoutItemLocation {
                               <button type="button" (click)="cancelTargeting()">
                                 Cancel targeting
                               </button>
+                            } @else if (activeMovement(); as movement) {
+                              <span>
+                                <strong>Move</strong> ·
+                                {{ targetingAnnouncement() }}
+                              </span>
+                              <button type="button" (click)="cancelTargeting()">
+                                Cancel movement
+                              </button>
                             } @else {
                               <span>{{ targetingAnnouncement() }}</span>
                             }
@@ -1958,6 +1969,40 @@ interface LoadoutItemLocation {
                               }
                               <button type="button" (click)="cancelTargeting()">
                                 Cancel targeting
+                              </button>
+                            </nav>
+                          } @else if (activeMovement(); as movement) {
+                            <nav
+                              class="screen-reader-targets"
+                              aria-label="Legal movement destinations"
+                            >
+                              <strong>Legal movement destinations</strong>
+                              @for (
+                                destination of movement.moves;
+                                track destination.x + ":" + destination.y
+                              ) {
+                                <button
+                                  type="button"
+                                  [disabled]="store.busy()"
+                                  (click)="
+                                    chooseMovementDestination(
+                                      destination.x,
+                                      destination.y
+                                    )
+                                  "
+                                >
+                                  {{
+                                    movement.preview?.x === destination.x &&
+                                    movement.preview?.y === destination.y
+                                      ? "Confirm move"
+                                      : "Preview move"
+                                  }}
+                                  to {{ destination.x }}, {{ destination.y }},
+                                  cost {{ destination.cost }}
+                                </button>
+                              }
+                              <button type="button" (click)="cancelTargeting()">
+                                Cancel movement
                               </button>
                             </nav>
                           }
@@ -2118,6 +2163,9 @@ interface LoadoutItemLocation {
 })
 export class MainMenuScreenComponent implements OnInit {
   protected readonly store = inject(SessionStore);
+  private readonly movementSelection = signal<TacticalMovementMode | null>(
+    null,
+  );
   private readonly targetingSelection = signal<TacticalTargetingMode | null>(
     null,
   );
@@ -2128,7 +2176,7 @@ export class MainMenuScreenComponent implements OnInit {
     "Choose an item, then choose its highlighted equipment slot.",
   );
   protected readonly targetingAnnouncement = signal(
-    "Choose an action, then select its highlighted target on the rendered grid.",
+    "Choose Move or an action from the hotbar.",
   );
   protected readonly campaignEntered = signal(false);
   private readonly resetDialog =
@@ -2184,6 +2232,34 @@ export class MainMenuScreenComponent implements OnInit {
     },
   );
 
+  private readonly movementProjection = computed<MovementProjection | null>(
+    () => {
+      const snapshot = this.game();
+      const campaign = snapshot?.campaign;
+      const encounter = snapshot?.encounter;
+      if (
+        snapshot === null ||
+        campaign === null ||
+        campaign === undefined ||
+        encounter === null ||
+        encounter === undefined ||
+        campaign.activeEncounterId === null
+      ) {
+        return null;
+      }
+      return {
+        campaignId: campaign.id,
+        encounterId: campaign.activeEncounterId,
+        phase: campaign.phase,
+        revision: snapshot.revision,
+        currentActorId: encounter.currentActorId,
+        currentFaction: encounter.currentFaction,
+        reactionPending: encounter.reactionPrompt !== null,
+        legalMoves: encounter.board.legalMoves,
+      };
+    },
+  );
+
   protected readonly activeTargeting = computed(() => {
     const selection = this.targetingSelection();
     const projection = this.targetingProjection();
@@ -2192,6 +2268,30 @@ export class MainMenuScreenComponent implements OnInit {
       targetingIsCurrent(selection, projection)
       ? selection
       : null;
+  });
+
+  protected readonly activeMovement = computed(() => {
+    const selection = this.movementSelection();
+    const projection = this.movementProjection();
+    return selection !== null &&
+      projection !== null &&
+      movementIsCurrent(selection, projection)
+      ? selection
+      : null;
+  });
+
+  protected readonly combatBoardHint = computed(() => {
+    const targeting = this.activeTargeting();
+    if (targeting !== null) {
+      return `Choose a highlighted target for ${targeting.actionLabel}`;
+    }
+    const movement = this.activeMovement();
+    if (movement?.preview !== null && movement?.preview !== undefined) {
+      return `Previewing route to ${movement.preview.x}, ${movement.preview.y}; choose it again to move`;
+    }
+    return movement === null
+      ? "Choose Move or an action from the hotbar"
+      : "Choose a highlighted movement destination to preview its route";
   });
 
   protected readonly legalTargetParticipants = computed(() => {
@@ -2367,12 +2467,13 @@ export class MainMenuScreenComponent implements OnInit {
       encounter.board.legalMoves.map((move) => [`${move.x}:${move.y}`, move]),
     );
     const targeting = this.activeTargeting();
+    const movement = this.activeMovement();
+    const movementPreview = movement?.preview ?? null;
     const targetIds = new Set(targeting?.targetIds ?? []);
     const interactionMode =
       targeting !== null
         ? ("targeting" as const)
-        : encounter.currentFaction === "party" &&
-            encounter.reactionPrompt === null
+        : movement !== null
           ? ("movement" as const)
           : ("readonly" as const);
     const cells = encounter.board.rows.flatMap((row, y) =>
@@ -2382,6 +2483,10 @@ export class MainMenuScreenComponent implements OnInit {
           interactionMode === "movement"
             ? legalMoves.get(`${x}:${y}`)
             : undefined;
+        const movementPreviewed =
+          legalMove !== undefined &&
+          movementPreview?.x === x &&
+          movementPreview.y === y;
         return {
           id: `${x}:${y}`,
           x,
@@ -2396,7 +2501,8 @@ export class MainMenuScreenComponent implements OnInit {
             participant !== undefined &&
             targetIds.has(participant.character.id),
           legalMoveCost: legalMove?.cost ?? null,
-          route: legalMove?.route ?? null,
+          movementPreview: movementPreviewed,
+          route: movementPreviewed ? (legalMove?.route ?? null) : null,
         };
       }),
     );
@@ -2505,20 +2611,33 @@ export class MainMenuScreenComponent implements OnInit {
       })),
   );
 
-  protected readonly hotbarSlots = computed<readonly HotbarSlotView[]>(() =>
-    (this.game()?.encounter?.actions ?? []).map((action, index) => ({
-      index,
-      keybind: String(index + 1),
-      label: action.label,
-      icon: index === 0 ? "⚔" : "➶",
-      empty: false,
-      selected: this.activeTargeting()?.actionId === action.id,
-      disabled:
-        this.store.busy() ||
-        this.game()?.encounter?.currentFaction !== "party" ||
-        this.game()?.encounter?.reactionPrompt !== null,
-    })),
-  );
+  protected readonly hotbarSlots = computed<readonly HotbarSlotView[]>(() => {
+    const encounter = this.game()?.encounter;
+    const disabled =
+      this.store.busy() ||
+      encounter?.currentFaction !== "party" ||
+      encounter.reactionPrompt !== null;
+    return [
+      {
+        index: 0,
+        keybind: "1",
+        label: "Move",
+        icon: "✣",
+        empty: false,
+        selected: this.activeMovement() !== null,
+        disabled: disabled || (encounter?.board.legalMoves.length ?? 0) === 0,
+      },
+      ...(encounter?.actions ?? []).map((action, index) => ({
+        index: index + 1,
+        keybind: String(index + 2),
+        label: action.label,
+        icon: index === 0 ? "⚔" : "➶",
+        empty: false,
+        selected: this.activeTargeting()?.actionId === action.id,
+        disabled,
+      })),
+    ];
+  });
 
   protected readonly combatLog = computed<readonly CombatLogEntryView[]>(() =>
     (this.game()?.encounter?.log ?? []).map((entry) => ({
@@ -2542,6 +2661,14 @@ export class MainMenuScreenComponent implements OnInit {
   });
 
   constructor() {
+    effect(() => {
+      if (this.movementSelection() !== null && this.activeMovement() === null) {
+        this.movementSelection.set(null);
+        this.targetingAnnouncement.set(
+          "Movement canceled because the authoritative encounter changed.",
+        );
+      }
+    });
     effect(() => {
       if (
         this.targetingSelection() !== null &&
@@ -2614,7 +2741,6 @@ export class MainMenuScreenComponent implements OnInit {
       );
       return;
     }
-    const encounter = this.encounter();
     if (this.activeTargeting() !== null) {
       if (selection.participantId === null) {
         this.targetingAnnouncement.set(
@@ -2625,28 +2751,18 @@ export class MainMenuScreenComponent implements OnInit {
       await this.chooseTarget(selection.participantId);
       return;
     }
+    if (this.activeMovement() !== null) {
+      await this.chooseMovementDestination(selection.x, selection.y);
+      return;
+    }
     if (selection.participantId !== null) {
       this.targetingAnnouncement.set(
         "Choose an action first, then select a highlighted combatant.",
       );
       return;
     }
-    const actor = encounter.currentActorId;
-    if (
-      actor !== null &&
-      encounter.currentFaction === "party" &&
-      encounter.board.legalMoves.some(
-        (move) => move.x === selection.x && move.y === selection.y,
-      )
-    ) {
-      this.targetingAnnouncement.set(
-        `Moving ${encounter.currentActor?.name ?? "the active character"} to ${selection.x}, ${selection.y}.`,
-      );
-      await this.store.moveActor(actor, selection.x, selection.y);
-      return;
-    }
     this.targetingAnnouncement.set(
-      "That cell is not a legal movement destination.",
+      "Choose Move from the hotbar before selecting a movement destination.",
     );
   }
 
@@ -2657,7 +2773,28 @@ export class MainMenuScreenComponent implements OnInit {
       );
       return;
     }
-    const action = this.encounter().actions[slot.index];
+    if (slot.index === 0) {
+      const projection = this.movementProjection();
+      if (projection === null) {
+        this.targetingAnnouncement.set(
+          "Movement is no longer available in the encounter.",
+        );
+        return;
+      }
+      const started = startMovement(projection);
+      if (!started.ok) {
+        this.movementSelection.set(null);
+        this.targetingAnnouncement.set(started.message);
+        return;
+      }
+      this.targetingSelection.set(null);
+      this.movementSelection.set(started.mode);
+      this.targetingAnnouncement.set(
+        `Move selected. Choose one of ${started.mode.moves.length} Rust-projected destinations to preview its route.`,
+      );
+      return;
+    }
+    const action = this.encounter().actions[slot.index - 1];
     const projection = this.targetingProjection();
     if (action === undefined || projection === null) {
       this.targetingAnnouncement.set(
@@ -2666,6 +2803,7 @@ export class MainMenuScreenComponent implements OnInit {
       return;
     }
     const started = startTargeting(projection, action.id);
+    this.movementSelection.set(null);
     if (!started.ok) {
       this.targetingSelection.set(null);
       this.targetingAnnouncement.set(started.message);
@@ -2675,6 +2813,61 @@ export class MainMenuScreenComponent implements OnInit {
     this.targetingAnnouncement.set(
       `${started.mode.actionLabel} selected. Choose one of ${started.mode.targetIds.length} Rust-projected legal targets.`,
     );
+  }
+
+  protected async chooseMovementDestination(
+    x: number,
+    y: number,
+  ): Promise<void> {
+    if (this.store.busy()) {
+      this.targetingAnnouncement.set(
+        "Wait for the current Rust command to finish before choosing again.",
+      );
+      return;
+    }
+    const mode = this.activeMovement();
+    const projection = this.movementProjection();
+    if (mode === null || projection === null) {
+      this.targetingAnnouncement.set(
+        "Choose Move from the hotbar before selecting a destination.",
+      );
+      return;
+    }
+    const selection = selectMovementDestination(mode, projection, x, y);
+    if (selection.kind === "rejected") {
+      this.targetingAnnouncement.set(selection.message);
+      return;
+    }
+    if (selection.kind === "preview") {
+      this.movementSelection.set(selection.mode);
+      this.targetingAnnouncement.set(
+        `Route previewed to ${x}, ${y} at cost ${selection.destination.cost}. Choose the same destination again to confirm movement.`,
+      );
+      return;
+    }
+
+    this.movementSelection.set(null);
+    this.targetingAnnouncement.set(
+      `Moving ${this.encounter().currentActor?.name ?? "the active character"} to ${x}, ${y}.`,
+    );
+    const admitted = await this.store.moveActor(
+      selection.command.actorId,
+      selection.command.x,
+      selection.command.y,
+    );
+    if (!admitted) {
+      this.targetingAnnouncement.set(
+        "The movement command was not admitted because another command is active.",
+      );
+    } else if (this.store.commandError() !== null) {
+      this.targetingAnnouncement.set(
+        "Movement was rejected without changing the encounter.",
+      );
+    } else {
+      this.targetingAnnouncement.set(
+        `Moved to ${x}, ${y}. Choose Move, another action, or end the activation.`,
+      );
+    }
   }
 
   protected async chooseTarget(targetId: number): Promise<void> {
@@ -2727,10 +2920,15 @@ export class MainMenuScreenComponent implements OnInit {
   }
 
   protected cancelTargeting(): void {
-    if (this.targetingSelection() !== null) {
+    const hadTargeting = this.targetingSelection() !== null;
+    const hadMovement = this.movementSelection() !== null;
+    if (hadTargeting || hadMovement) {
       this.targetingSelection.set(null);
+      this.movementSelection.set(null);
       this.targetingAnnouncement.set(
-        "Targeting canceled. Choose an action to begin again.",
+        hadMovement
+          ? "Movement canceled. Choose Move or another action."
+          : "Targeting canceled. Choose Move or an action to begin again.",
       );
     }
   }
@@ -2767,7 +2965,10 @@ export class MainMenuScreenComponent implements OnInit {
       return;
     }
     if (this.game()?.campaign?.phase === "encounter") {
-      if (event.key === "Escape" && this.activeTargeting() !== null) {
+      if (
+        event.key === "Escape" &&
+        (this.activeTargeting() !== null || this.activeMovement() !== null)
+      ) {
         event.preventDefault();
         this.cancelTargeting();
         return;

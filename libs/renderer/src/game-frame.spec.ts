@@ -112,6 +112,7 @@ describe("createGameRenderFrame", () => {
           current: true,
           legalActionTarget: false,
           legalMoveCost: null,
+          movementPreview: false,
           route: null,
         },
       ],

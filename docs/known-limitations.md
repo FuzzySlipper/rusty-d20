@@ -10,8 +10,12 @@ checkpoint, and a terminal ending; Ember's Wake has one encounter.
 
 The browser now mounts one permanent full-window Rusty Engine renderer and
 places phase UI in named overlay regions. Encounter and outcome modes now render
-the Rust-projected tactical board, occupancy, movement routes, and combat states
-through that shared surface; exploration uses the bounded corridor frame.
+the Rust-projected tactical board, occupancy, selected movement route, and
+combat states through that shared surface; exploration uses the bounded
+corridor frame. Move is an explicit hotbar mode whose first destination
+activation previews the exact projected route and whose second unchanged
+activation confirms the authoritative command; ordinary board picks are
+read-only.
 Catalog, camp, terminal, loading, and failure modes retain abstract
 presentation-only backdrops. Exploration steps and quarter-turns use brief
 latest-projection-wins Engine camera tweens, and combat actions use

@@ -24,6 +24,7 @@ const board: TacticalBoardView = {
       current: false,
       legalActionTarget: false,
       legalMoveCost: null,
+      movementPreview: false,
       route: null,
     },
     {
@@ -38,6 +39,7 @@ const board: TacticalBoardView = {
       current: true,
       legalActionTarget: false,
       legalMoveCost: null,
+      movementPreview: false,
       route: null,
     },
     {
@@ -52,6 +54,7 @@ const board: TacticalBoardView = {
       current: false,
       legalActionTarget: false,
       legalMoveCost: 2,
+      movementPreview: false,
       route: [
         { x: 1, y: 0 },
         { x: 1, y: 1 },
@@ -71,6 +74,7 @@ const board: TacticalBoardView = {
       current: false,
       legalActionTarget: false,
       legalMoveCost: null,
+      movementPreview: false,
       route: null,
     },
     {
@@ -85,6 +89,7 @@ const board: TacticalBoardView = {
       current: false,
       legalActionTarget: true,
       legalMoveCost: null,
+      movementPreview: false,
       route: null,
     },
     {
@@ -99,6 +104,7 @@ const board: TacticalBoardView = {
       current: false,
       legalActionTarget: false,
       legalMoveCost: 1,
+      movementPreview: true,
       route: [
         { x: 1, y: 0 },
         { x: 1, y: 1 },
@@ -123,7 +129,11 @@ describe("createTacticalRenderFrame", () => {
     ).toHaveLength(2);
     expect(
       creates.filter((op) => op.node.metadata.tags.includes("movement-route")),
-    ).toHaveLength(3);
+    ).toHaveLength(2);
+    expect(
+      creates.find((op) => op.node.metadata.label === "tactical-cell-2-1")?.node
+        .metadata.tags,
+    ).toEqual(expect.arrayContaining(["legal-move", "movement-preview"]));
     expect(
       creates.find((op) => op.node.metadata.label === "tactical-entity-101")
         ?.node.metadata,
@@ -152,7 +162,7 @@ describe("createTacticalRenderFrame", () => {
     expect(
       first.picks.find((pick) => pick.identity === "cell:2:1"),
     ).toMatchObject({
-      label: "Move to 2, 1, cost 1",
+      label: "Previewed move to 2, 1, cost 1. Activate again to confirm",
       selection: { x: 2, y: 1, participantId: null },
     });
     expect(

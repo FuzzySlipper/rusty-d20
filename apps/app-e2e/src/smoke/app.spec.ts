@@ -833,20 +833,96 @@ test.describe.serial("real Rust encounter shell", () => {
     await expect(page.getByLabel("Combat actions")).toBeVisible();
     await expect(page.getByLabel("Combat log")).toBeVisible();
     await expectCombatOverlayLayout(page, 44);
+    await page.getByRole("button", { name: "Move", exact: true }).click();
+    await expect(tacticalBoard).toHaveAttribute(
+      "data-interaction-mode",
+      "movement",
+    );
+    await clickRenderedTacticalCell(page, 7, 3, 12, 8);
+    await expect(page.locator(".targeting-status")).toContainText(
+      "Route previewed to 7, 3 at cost 1",
+    );
+    await testInfo.attach("movement-preview-mobile.png", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
+    await page
+      .getByRole("status")
+      .getByRole("button", { name: "Cancel movement" })
+      .click();
     await testInfo.attach("renderer-root-encounter-mobile.png", {
       body: await page.screenshot(),
       contentType: "image/png",
     });
     await page.setViewportSize({ width: 1280, height: 720 });
-    await clickRenderedTacticalCell(page, 7, 4, 12, 8);
+    await clickRenderedTacticalCell(page, 7, 3, 12, 8);
     await expect(tacticalBoard).toHaveAttribute(
       "data-last-pick-identity",
-      "entity:101",
+      "cell:7:3",
     );
+    await expect(page.locator(".targeting-status")).toContainText(
+      "Choose Move from the hotbar",
+    );
+    const beforeMovement = (await (
+      await request.get("/api/v1/session")
+    ).json()) as {
+      encounter: {
+        participants: Array<{
+          character: { id: number };
+          x: number;
+          y: number;
+        }>;
+      };
+    };
+    expect(
+      beforeMovement.encounter.participants.find(
+        (participant) => participant.character.id === 101,
+      ),
+    ).toMatchObject({ x: 7, y: 4 });
+
+    await page.getByRole("button", { name: "Move", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "Move", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByRole("navigation", {
+        name: "Legal movement destinations",
+      }),
+    ).toContainText("Preview move to 7, 3, cost 1");
     await tacticalBoard.focus();
     await page.keyboard.press("ArrowUp");
-    await expect(page.getByText(/Move to 7, 3, cost 1/)).toBeVisible();
     await page.keyboard.press("Enter");
+    await expect(tacticalBoard).toHaveAttribute(
+      "aria-label",
+      /Previewing movement to 7, 3/,
+    );
+    await expect(page.locator(".targeting-status")).toContainText(
+      "Choose the same destination again to confirm movement",
+    );
+    await page.keyboard.press("Escape");
+    await expect(tacticalBoard).toHaveAttribute(
+      "data-interaction-mode",
+      "readonly",
+    );
+
+    await page.getByRole("button", { name: "Move", exact: true }).click();
+    await clickRenderedTacticalCell(page, 7, 3, 12, 8);
+    await expect(page.locator(".targeting-status")).toContainText(
+      "Route previewed to 7, 3 at cost 1",
+    );
+    const previewedMovement = (await (
+      await request.get("/api/v1/session")
+    ).json()) as typeof beforeMovement;
+    expect(
+      previewedMovement.encounter.participants.find(
+        (participant) => participant.character.id === 101,
+      ),
+    ).toMatchObject({ x: 7, y: 4 });
+    await testInfo.attach("movement-preview-desktop.png", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
+    await clickRenderedTacticalCell(page, 7, 3, 12, 8);
     const afterMovement = (await (
       await request.get("/api/v1/session")
     ).json()) as {
@@ -927,7 +1003,7 @@ test.describe.serial("real Rust encounter shell", () => {
     await expect(page.getByRole("alert")).toContainText("stale rejection");
     await expect(tacticalBoard).toHaveAttribute(
       "data-interaction-mode",
-      "movement",
+      "readonly",
     );
     await page.getByRole("button", { name: "Dismiss" }).click();
     await page.unroute("**/api/v1/session/action");

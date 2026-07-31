@@ -95,17 +95,21 @@ catalog, camp, exploration, encounter, outcome, terminal, loading, and failure
 phase changes. Exploration supplies the bounded dungeon frame above. Encounter
 and outcome phases adapt the immutable Rust tactical projection into retained
 floor and wall cells, participant occupancy, active/selected/defeated markers,
-and deduplicated movement-route lines. Stable cell handles and entity metadata
-feed the public Engine surface picker; Angular receives only the resulting
-typed cell identity and sends the same existing Rust commands. It does not
-raycast, reconstruct routes, or decide tactical legality. Catalog, camp,
-terminal, loading, and failure phases use explicit abstract backdrops whose
-retained nodes contain no entity, inventory, target, navigation, or rules
-facts. Angular composes translucent initiative, party/status, action, log,
-modal, and status regions over the surface and keeps pointer/focus ownership
-in those named presentation layers. The aspect-fitted overhead camera and
-canvas keyboard cursor are presentation facts suitable for replacement by a
-later native input host.
+and movement-route lines. Movement is an explicit hotbar mode: the first
+activation of a Rust-projected legal destination retains its exact projected
+route as a revision-bound preview, while a second activation of the unchanged
+destination sends the existing typed Rust command. Selecting another
+destination replaces the preview, and ordinary board picks never imply
+movement. Stable cell handles and entity metadata feed the public Engine
+surface picker; Angular receives only the resulting typed cell identity and
+sends the same existing Rust commands. It does not raycast, reconstruct routes,
+calculate cost, or decide tactical legality. Catalog, camp, terminal, loading,
+and failure phases use explicit abstract backdrops whose retained nodes contain
+no entity, inventory, target, navigation, or rules facts. Angular composes
+translucent initiative, party/status, action, log, modal, and status regions
+over the surface and keeps pointer/focus ownership in those named presentation
+layers. The aspect-fitted overhead camera and canvas keyboard cursor are
+presentation facts suitable for replacement by a later native input host.
 
 The renderer-first product loop is certified as one composition rather than a
 set of isolated scene demos. Adventure selection and camp drag/loadout commands,
