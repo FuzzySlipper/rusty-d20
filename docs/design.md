@@ -54,6 +54,17 @@ restores only its bounded vitality through the Engine track service; resources,
 effects, equipment, rewards, and other prior facts remain authoritative. This
 is explicit Rusty D20 campaign policy, not a generic quest graph.
 
+The Rust implementation keeps those authority boundaries navigable without
+turning Rusty D20 into a reusable RPG facade. `compiler/mod.rs`,
+`session/mod.rs`, and `game/mod.rs` are private cohesive facades behind the
+unchanged crate exports. Their child modules separate candidate collection and
+validation, admitted definitions and mechanics conversion, session seeding and
+resolution, save validation, campaign commands, encounter progression, terminal
+outcomes, projection, and classified errors. This organization does not move
+meaning into TypeScript or Engine, introduce a cross-game abstraction, change a
+persistence schema, or add a second public protocol owner. The exact path-level
+ownership map lives in [the agent code atlas](agent-code-atlas.md).
+
 The authored dungeon is a bounded, enclosed ASCII grid compiled by Rust.
 Semantic admission rejects malformed or excessive topology, blocked or
 overlapping placements, invalid starts/checkpoints/door edges, unreachable
