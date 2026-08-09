@@ -18,6 +18,7 @@ import {
   ACTIVE_CARRIER_PATHS,
   DERIVED_CONSUMER_PATHS,
   checkEngineRevision,
+  regenerateLocks,
   updateEngineRevision,
 } from "./engine-revision-lib.mjs";
 
@@ -294,6 +295,59 @@ test("same-revision dry-run is formatting-neutral", async () => {
   assert.equal(worktreeCount(fixture), 1);
 });
 
+test("production lock regeneration forwards the requested commit without mutating a dry-run caller", async () => {
+  const fixture = gitFixture();
+  const before = carrierSnapshot(fixture);
+  const commands = [];
+  const result = await updateEngineRevision({
+    repoRoot: fixture,
+    commit: NEXT,
+    dryRun: true,
+    provePublic: async () => {},
+    regenerate: async (candidate, previousCommit, commit) =>
+      regenerateLocks(
+        candidate,
+        previousCommit,
+        commit,
+        (program, args, options) => {
+          commands.push({ program, args, cwd: options.cwd });
+          if (program === "pnpm" && args[0] === "--version") {
+            return "11.7.0\n";
+          }
+          if (program === "cargo") {
+            mutateFile(candidate, "Cargo.lock", (content) =>
+              content.replaceAll(previousCommit, commit),
+            );
+          } else if (program === "pnpm" && args[0] === "install") {
+            mutateFile(candidate, "rules/pnpm-lock.yaml", (content) =>
+              content.replaceAll(previousCommit, commit),
+            );
+          }
+          return "";
+        },
+      ),
+    validate: async (candidate) => checkEngineRevision(candidate),
+  });
+
+  assert.deepEqual(
+    commands.map(({ program, args }) => [program, ...args]),
+    [
+      ["pnpm", "--version"],
+      ["cargo", "update", "-p", "rusty-engine", "--precise", NEXT],
+      [
+        "pnpm",
+        "install",
+        "--lockfile-only",
+        "--ignore-scripts",
+        "--frozen-lockfile=false",
+      ],
+    ],
+  );
+  assert.match(result.diff, new RegExp(NEXT, "u"));
+  assert.deepEqual(carrierSnapshot(fixture), before);
+  assert.equal(worktreeCount(fixture), 1);
+});
+
 test("ordinary update and rollback preserve unrelated and historical values", async () => {
   const fixture = gitFixture();
   writeFileSync(resolve(fixture, "unrelated.txt"), "user change\n");
@@ -395,6 +449,7 @@ function copyFixture() {
   for (const relativePath of [
     ...ACTIVE_CARRIER_PATHS,
     ...DERIVED_CONSUMER_PATHS,
+    "rules/package.json",
   ]) {
     const destination = resolve(root, relativePath);
     mkdirSync(dirname(destination), { recursive: true });

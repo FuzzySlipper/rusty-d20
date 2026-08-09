@@ -283,7 +283,14 @@ export async function provePublicCommit(repository, commit) {
   }
 }
 
-async function regenerateLocks(candidate) {
+export async function regenerateLocks(
+  candidate,
+  previousCommit,
+  commit,
+  execute = run,
+) {
+  assertCommit(previousCommit, "previous lock commit");
+  assertCommit(commit, "replacement lock commit");
   for (const relativePath of ["rules/package.json"]) {
     const packageManager = JSON.parse(
       readFileSync(resolve(candidate, relativePath), "utf8"),
@@ -294,17 +301,19 @@ async function regenerateLocks(candidate) {
       );
     }
   }
-  const pnpmVersion = run("pnpm", ["--version"], { cwd: candidate }).trim();
+  const pnpmVersion = execute("pnpm", ["--version"], {
+    cwd: candidate,
+  }).trim();
   if (pnpmVersion !== "11.7.0") {
     throw new Error(
       `pnpm version expected 11.7.0 from packageManager; observed ${pnpmVersion}`,
     );
   }
-  run("cargo", ["update", "-p", "rusty-engine", "--precise", commit], {
+  execute("cargo", ["update", "-p", "rusty-engine", "--precise", commit], {
     cwd: candidate,
   });
   for (const relativeRoot of ["rules"]) {
-    run(
+    execute(
       "pnpm",
       [
         "install",
