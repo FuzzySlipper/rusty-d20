@@ -11,6 +11,16 @@ Rusty Engine owns reusable host-neutral mechanisms. Pin reviewed public Engine
 revisions; do not add sibling path fallbacks or copy Engine implementations
 downstream. Route a genuinely reusable missing mechanism to an Engine task.
 
+## Den Guidance Bootstrap
+
+- Project ID: `rusty-d20`
+- Resolve live guidance with the Den MCP `get_agent_guidance` tool before
+  substantial work.
+- Treat the resolved Den guidance packet and its referenced Den documents as
+  the source of truth.
+- If Den is unreachable, stop and tell the user which Den tool or command
+  failed and what you were about to do. Do not reconstruct Den state from local files.
+
 ## Architecture
 
 Read [docs/design.md](docs/design.md) before changing authority, dependency
