@@ -81,11 +81,11 @@ authored trigger cells, so later traversal can cross them while the next
 unconsumed trigger still follows ordered admission. The fixed three-depth view
 emits neutral all-wall records after the first opaque front wall; the strict
 browser decoder rejects any non-neutral topology behind that occluder.
-The renderer library adapts only those relative records into Rusty Engine's
-retained-frame contract and mounts the exact-pinned Engine Three/WebGL surface.
+Rust adapts those relative records into Rusty Engine's retained-frame contract,
+and the native host mounts the Engine-owned renderer through its Rust adapter.
 Floor, ceiling, side-wall, and front-wall cuboids therefore use the shared
 camera, projection, retained replacement, resize, render loop, and disposal
-process. The browser stops frame construction at the first opaque wall and
+process. Rust stops frame construction at the first opaque wall and
 never reconstructs hidden topology or gameplay state.
 
 After Rust accepts an adjacent step or quarter-turn, the renderer replaces the
@@ -292,10 +292,10 @@ read-only outside camp.
 
 ## Dependencies
 
-`engine-source.json` selects one exact public Rusty Engine Git revision.
-`scripts/engine-revision` transactionally keeps every Rust crate, rules
-package, build policy, and lockfile at that revision; runtime provenance and
-boundary checks derive from the manifest. There is no ordinary sibling
+`engine-source.json` records the public Rusty Engine `main` commit resolved by
+the lockfile. Cargo declares one rolling `rusty-engine` facade and therefore
+imports its complete crate namespace. `scripts/engine-revision` transactionally
+advances that lock closure and the isolated rules packages. There is no ordinary sibling
 checkout dependency. Angular libraries follow the retained Nx boundary graph
 in `boundaries.json`; production code cannot import testing fixtures.
 
@@ -355,8 +355,9 @@ subscription, event bus, or persisted closure.
 ## Native-host boundary
 
 The reusable host boundary is the Rust-owned projection and typed command
-contract plus the public Engine retained-frame, camera, picking, and renderer
-surface processes. The current Angular application still owns DOM overlay
+contract plus Engine's Rust webview adapter. Engine privately owns the
+retained-frame, camera, picking, physical-input, and TypeScript renderer
+relationship. The Angular application owns only DOM overlay
 composition, browser drag/touch/keyboard translation, focus semantics,
 `requestAnimationFrame`, `matchMedia`, `ResizeObserver`, same-origin HTTP, and
 the browser save/reset presentation. A future non-web game must supply its own

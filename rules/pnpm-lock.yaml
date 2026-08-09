@@ -24,11 +24,11 @@ importers:
   packages/d20-authoring:
     dependencies:
       '@rusty-engine/gameplay-rules-authoring':
-        specifier: github:FuzzySlipper/rusty-engine#fb608e323a8b44a55195f5720101224ff37fd5db&path:rules/packages/gameplay-rules-authoring
-        version: https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/fb608e323a8b44a55195f5720101224ff37fd5db#path:rules/packages/gameplay-rules-authoring(@rusty-engine/gameplay-rules-contracts@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/fb608e323a8b44a55195f5720101224ff37fd5db#path:rules/packages/gameplay-rules-contracts)
+        specifier: github:FuzzySlipper/rusty-engine#d0b5e672b83d463bff71d8d35c877f770142ff3c&path:rules/packages/gameplay-rules-authoring
+        version: https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/d0b5e672b83d463bff71d8d35c877f770142ff3c#path:rules/packages/gameplay-rules-authoring(@rusty-engine/gameplay-rules-contracts@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/d0b5e672b83d463bff71d8d35c877f770142ff3c#path:rules/packages/gameplay-rules-contracts)
       '@rusty-engine/gameplay-rules-contracts':
-        specifier: github:FuzzySlipper/rusty-engine#fb608e323a8b44a55195f5720101224ff37fd5db&path:rules/packages/gameplay-rules-contracts
-        version: https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/fb608e323a8b44a55195f5720101224ff37fd5db#path:rules/packages/gameplay-rules-contracts
+        specifier: github:FuzzySlipper/rusty-engine#d0b5e672b83d463bff71d8d35c877f770142ff3c&path:rules/packages/gameplay-rules-contracts
+        version: https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/d0b5e672b83d463bff71d8d35c877f770142ff3c#path:rules/packages/gameplay-rules-contracts
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -104,14 +104,14 @@ packages:
     resolution: {integrity: sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ==}
     engines: {node: '>=18.18'}
 
-  '@rusty-engine/gameplay-rules-authoring@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/fb608e323a8b44a55195f5720101224ff37fd5db#path:rules/packages/gameplay-rules-authoring':
-    resolution: {gitHosted: true, integrity: sha512-8i1BXlbNt3MSe6I1KKBrw2syPygKDp2JvtXt3wA95WsPCd2mExM0sG4foMrVgCVolLqb2iOqn/+io17ridU20g==, path: rules/packages/gameplay-rules-authoring, tarball: https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/fb608e323a8b44a55195f5720101224ff37fd5db}
+  '@rusty-engine/gameplay-rules-authoring@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/d0b5e672b83d463bff71d8d35c877f770142ff3c#path:rules/packages/gameplay-rules-authoring':
+    resolution: {gitHosted: true, integrity: sha512-KuPrjwaW7RhbIsjP6OSmQtdUzN+AxA84fIIwb0H02AaNFgog9M21D3f4To0vSbQnsE1F6fXf4nzxVu9AYeCZ5Q==, path: rules/packages/gameplay-rules-authoring, tarball: https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/d0b5e672b83d463bff71d8d35c877f770142ff3c}
     version: 0.1.0
     peerDependencies:
       '@rusty-engine/gameplay-rules-contracts': 0.1.0
 
-  '@rusty-engine/gameplay-rules-contracts@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/fb608e323a8b44a55195f5720101224ff37fd5db#path:rules/packages/gameplay-rules-contracts':
-    resolution: {gitHosted: true, integrity: sha512-8i1BXlbNt3MSe6I1KKBrw2syPygKDp2JvtXt3wA95WsPCd2mExM0sG4foMrVgCVolLqb2iOqn/+io17ridU20g==, path: rules/packages/gameplay-rules-contracts, tarball: https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/fb608e323a8b44a55195f5720101224ff37fd5db}
+  '@rusty-engine/gameplay-rules-contracts@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/d0b5e672b83d463bff71d8d35c877f770142ff3c#path:rules/packages/gameplay-rules-contracts':
+    resolution: {gitHosted: true, integrity: sha512-KuPrjwaW7RhbIsjP6OSmQtdUzN+AxA84fIIwb0H02AaNFgog9M21D3f4To0vSbQnsE1F6fXf4nzxVu9AYeCZ5Q==, path: rules/packages/gameplay-rules-contracts, tarball: https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/d0b5e672b83d463bff71d8d35c877f770142ff3c}
     version: 0.1.0
 
   '@types/estree@1.0.9':
@@ -582,11 +582,11 @@ snapshots:
 
   '@humanwhocodes/retry@0.4.3': {}
 
-  '@rusty-engine/gameplay-rules-authoring@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/fb608e323a8b44a55195f5720101224ff37fd5db#path:rules/packages/gameplay-rules-authoring(@rusty-engine/gameplay-rules-contracts@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/fb608e323a8b44a55195f5720101224ff37fd5db#path:rules/packages/gameplay-rules-contracts)':
+  '@rusty-engine/gameplay-rules-authoring@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/d0b5e672b83d463bff71d8d35c877f770142ff3c#path:rules/packages/gameplay-rules-authoring(@rusty-engine/gameplay-rules-contracts@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/d0b5e672b83d463bff71d8d35c877f770142ff3c#path:rules/packages/gameplay-rules-contracts)':
     dependencies:
-      '@rusty-engine/gameplay-rules-contracts': https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/fb608e323a8b44a55195f5720101224ff37fd5db#path:rules/packages/gameplay-rules-contracts
+      '@rusty-engine/gameplay-rules-contracts': https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/d0b5e672b83d463bff71d8d35c877f770142ff3c#path:rules/packages/gameplay-rules-contracts
 
-  '@rusty-engine/gameplay-rules-contracts@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/fb608e323a8b44a55195f5720101224ff37fd5db#path:rules/packages/gameplay-rules-contracts': {}
+  '@rusty-engine/gameplay-rules-contracts@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/d0b5e672b83d463bff71d8d35c877f770142ff3c#path:rules/packages/gameplay-rules-contracts': {}
 
   '@types/estree@1.0.9': {}
 

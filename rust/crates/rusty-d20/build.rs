@@ -9,6 +9,7 @@ const ENGINE_REPOSITORY: &str = "https://github.com/FuzzySlipper/rusty-engine";
 struct EngineSource {
     schema_version: u32,
     repository: String,
+    branch: String,
     commit: String,
 }
 
@@ -31,6 +32,7 @@ fn main() {
         source.repository, ENGINE_REPOSITORY,
         "non-canonical Engine repository"
     );
+    assert_eq!(source.branch, "main", "Engine dependency must track main");
     assert!(
         source.commit.len() == 40
             && source

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use gameplay_rules::RulePackageIdentity;
+use rusty_engine::gameplay_rules::RulePackageIdentity;
 
 use crate::*;
 

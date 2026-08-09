@@ -57,7 +57,7 @@ impl ReactionOption {
 ///
 /// ```compile_fail,E0616
 /// fn rewrite_defense(mut preview: rusty_d20::ActionPreview) {
-///     preview.defense.value = gameplay_mechanics::MechanicsScalar::zero();
+///     preview.defense.value = rusty_engine::gameplay_mechanics::MechanicsScalar::zero();
 /// }
 /// ```
 ///
@@ -868,7 +868,9 @@ fn mechanics_revision(
             .component_revision::<ActiveEffectsComponent>(observed.entity)?
             .revision(),
         MechanicsComponentKind::Inventory => state
-            .component_revision::<gameplay_mechanics::InventoryComponent>(observed.entity)?
+            .component_revision::<rusty_engine::gameplay_mechanics::InventoryComponent>(
+                observed.entity,
+            )?
             .revision(),
         MechanicsComponentKind::Item => state
             .component_revision::<ItemComponent>(observed.entity)?

@@ -14,6 +14,7 @@ mod identity;
 mod session;
 
 pub mod host;
+pub mod presentation;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -258,9 +259,9 @@ mod tests {
 
     #[test]
     fn engine_support_crates_are_linked_from_the_reviewed_revision() {
-        let _mechanics_limit = gameplay_mechanics::MAX_TRACKS_PER_ENTITY;
-        let _rules_limit = gameplay_rules::MAX_RULE_PACKAGES_PER_SET;
-        let _rng_seed = svc_rng::RngSeed::new(1);
+        let _mechanics_limit = rusty_engine::gameplay_mechanics::MAX_TRACKS_PER_ENTITY;
+        let _rules_limit = rusty_engine::gameplay_rules::MAX_RULE_PACKAGES_PER_SET;
+        let _rng_seed = rusty_engine::svc_rng::RngSeed::new(1);
         assert_eq!(ENGINE_REVISION.len(), 40);
     }
 }

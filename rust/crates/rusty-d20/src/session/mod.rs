@@ -4,13 +4,13 @@ mod resolution;
 mod runtime;
 mod seed;
 
-use core_ids::EntityId;
-use entity_state::{
+use rusty_engine::core_ids::EntityId;
+use rusty_engine::entity_state::{
     encode_snapshot, ComponentAccessError, ComponentRegistrationError, ComponentRevision,
     EntityAuthoringError, EntityAuthoringService, EntityComponent, EntityDefinition,
     EntityDefinitionError, EntityState,
 };
-use gameplay_mechanics::{
+use rusty_engine::gameplay_mechanics::{
     decode_snapshot_with_catalog_and_registry, ActiveEffectsComponent, DamagePart, DamageReceipt,
     DamageRequest, DamageService, EffectApplyRequest, EffectInstanceId, EffectMutationReceipt,
     EffectRefreshRequest, EffectRemovalRequest, EffectService, EquipmentComponent,
@@ -22,8 +22,8 @@ use gameplay_mechanics::{
     StatEvaluation, StatService, StatValue, StatsComponent, TrackMutationReceipt,
     TrackMutationRequest, TrackService, TrackValue, TracksComponent,
 };
+use rusty_engine::svc_rng::{RngSeed, ScopedRng};
 use serde::{Deserialize, Serialize};
-use svc_rng::{RngSeed, ScopedRng};
 
 use crate::compiler::{
     damage_kind_id, defense_stat_id, equipment_slot_id, loadout_capacity_id, mechanics_effect_id,

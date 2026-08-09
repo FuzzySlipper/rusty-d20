@@ -1,15 +1,15 @@
 use std::collections::BTreeSet;
 
-use core_space::{
+use rusty_engine::core_space::{
     ChunkCoord, ChunkDims, GridId, LocalVoxelCoord, VoxelCoord, VoxelGridSpec, WorldPos,
 };
-use core_voxel::VoxelValue;
-use svc_collision::{CollisionProjection, Ray};
-use svc_pathfinding::{
+use rusty_engine::core_voxel::VoxelValue;
+use rusty_engine::svc_collision::{CollisionProjection, Ray};
+use rusty_engine::svc_pathfinding::{
     build_nav_projection, find_path, NavPathOutcome, NavPathQuery, NavProjectionConfig,
 };
-use svc_spatial::VoxelWorld;
-use svc_volume::VoxelChunk;
+use rusty_engine::svc_spatial::VoxelWorld;
+use rusty_engine::svc_volume::VoxelChunk;
 
 use crate::{
     ActionLineOfEffectDefinition, TacticalBoardDefinition, TacticalPosition,

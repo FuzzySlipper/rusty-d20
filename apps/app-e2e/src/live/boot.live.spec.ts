@@ -62,81 +62,38 @@ liveScenario(
           .getByRole("heading", { name: "Warden's Gate Pass" })
           .first(),
       ).toBeVisible();
-      const dungeonRenderer = page.locator(
-        "aui-game-viewport [data-renderer-backend]",
+      const dungeonBoundary = page.locator(
+        "aui-game-viewport [data-renderer-boundary='native-engine-host']",
       );
       await collector.milestone("first-person dungeon entry", {
         screenshot: true,
         layerSnapshot: {
-          viewport: await dungeonRenderer.getAttribute("aria-label"),
-          renderer: await dungeonRenderer.getAttribute("data-renderer-backend"),
-          rendererErrors: await dungeonRenderer.getByRole("alert").count(),
+          viewport: await dungeonBoundary.getAttribute("aria-label"),
+          rendererBoundary: await dungeonBoundary.getAttribute(
+            "data-renderer-boundary",
+          ),
           status: await page.getByLabel("Party status").innerText(),
         },
       });
-      const dungeonCanvas = dungeonRenderer.locator("canvas");
-      await dungeonCanvas.evaluate((element) => {
-        const target = element as HTMLCanvasElement & {
-          cameraTweenWitness?: string[];
-        };
-        target.cameraTweenWitness = [];
-        new MutationObserver(() => {
-          target.cameraTweenWitness?.push(
-            [
-              target.dataset["cameraMotion"] ?? "none",
-              target.dataset["cameraTransitionState"] ?? "unknown",
-              target.dataset["cameraPose"] ?? "unknown",
-            ].join("|"),
-          );
-        }).observe(target, {
-          attributeFilter: [
-            "data-camera-motion",
-            "data-camera-pose",
-            "data-camera-transition-state",
-          ],
-        });
-      });
       await page.getByRole("button", { name: "↶ Left" }).click();
-      await expect(dungeonRenderer).toHaveAttribute(
+      await expect(dungeonBoundary).toHaveAttribute(
         "aria-label",
         /facing north at cell 1, 1/,
       );
       await page.getByRole("button", { name: "Right ↷" }).click();
-      await expect(dungeonRenderer).toHaveAttribute(
+      await expect(dungeonBoundary).toHaveAttribute(
         "aria-label",
         /facing east at cell 1, 1/,
       );
-      await expect(dungeonCanvas).toHaveAttribute(
-        "data-camera-transition-state",
-        "settled",
-      );
-      const tweenWitness = await dungeonCanvas.evaluate((element) => {
-        const target = element as HTMLCanvasElement & {
-          cameraTweenWitness?: string[];
-        };
-        return target.cameraTweenWitness ?? [];
-      });
-      expect(
-        tweenWitness.some((entry) => entry.startsWith("turn-left|running|")),
-      ).toBe(true);
-      expect(
-        tweenWitness.some((entry) => entry.startsWith("turn-right|running|")),
-      ).toBe(true);
-      expect(
-        new Set(tweenWitness.map((entry) => entry.split("|").at(-1))).size,
-      ).toBeGreaterThan(2);
       await collector.milestone(
-        "Engine camera tween remains projection-bound",
+        "native Engine renderer boundary remains projection-bound",
         {
           screenshot: true,
           layerSnapshot: {
-            cameraMotion:
-              await dungeonCanvas.getAttribute("data-camera-motion"),
-            cameraPose: await dungeonCanvas.getAttribute("data-camera-pose"),
-            transitionState: await dungeonCanvas.getAttribute(
-              "data-camera-transition-state",
+            rendererBoundary: await dungeonBoundary.getAttribute(
+              "data-renderer-boundary",
             ),
-            witness: tweenWitness,
+            rustProjection: await dungeonBoundary.getAttribute("aria-label"),
           },
         },
       );
@@ -196,13 +153,9 @@ liveScenario(
         viewport: await page
           .getByRole("region", { name: /tactical encounter/ })
           .getAttribute("aria-label"),
-        renderer: await page
+        rendererBoundary: await page
           .getByRole("region", { name: /tactical encounter/ })
-          .getAttribute("data-renderer-backend"),
-        rendererErrors: await page
-          .getByRole("region", { name: /tactical encounter/ })
-          .getByRole("alert")
-          .count(),
+          .getAttribute("data-renderer-boundary"),
       },
     });
 

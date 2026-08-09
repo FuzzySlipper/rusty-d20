@@ -1,4 +1,4 @@
-use gameplay_mechanics::{
+use rusty_engine::gameplay_mechanics::{
     CapacityMetricId, DamageKindId, EffectDefinitionId, EquipmentSlotId, ItemClassificationId,
     MechanicsScalar, SourceDefinitionId, StackingGroupId, StatId, TrackId,
 };
@@ -24,13 +24,13 @@ pub(crate) fn mechanics_effect_id(id: &D20Id) -> EffectDefinitionId {
         .expect("validated d20 identity fits mechanics identity")
 }
 
-pub(crate) fn armor_item_id(id: &D20Id) -> gameplay_mechanics::ItemDefinitionId {
-    gameplay_mechanics::ItemDefinitionId::parse(format!("armor.{id}"))
+pub(crate) fn armor_item_id(id: &D20Id) -> rusty_engine::gameplay_mechanics::ItemDefinitionId {
+    rusty_engine::gameplay_mechanics::ItemDefinitionId::parse(format!("armor.{id}"))
         .expect("validated d20 identity fits mechanics identity")
 }
 
-pub(crate) fn implement_item_id(id: &D20Id) -> gameplay_mechanics::ItemDefinitionId {
-    gameplay_mechanics::ItemDefinitionId::parse(format!("implement.{id}"))
+pub(crate) fn implement_item_id(id: &D20Id) -> rusty_engine::gameplay_mechanics::ItemDefinitionId {
+    rusty_engine::gameplay_mechanics::ItemDefinitionId::parse(format!("implement.{id}"))
         .expect("validated d20 identity fits mechanics identity")
 }
 

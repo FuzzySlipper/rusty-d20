@@ -8,8 +8,8 @@ complete saves. Warden's Gate is the first complete bounded Ruleweaver-derived
 adventure with three ordered encounters, treasure, a locked door, a durable
 checkpoint, and a terminal ending; Ember's Wake has one encounter.
 
-The browser now mounts one permanent full-window Rusty Engine renderer and
-places phase UI in named overlay regions. Encounter and outcome modes now render
+The native product mounts the Engine-owned renderer while the browser shell
+places phase UI in named overlay regions. Encounter and outcome modes render
 the Rust-projected tactical board, occupancy, selected movement route, and
 combat states through that shared surface; exploration uses the bounded
 corridor frame. Move is an explicit hotbar mode whose first destination
@@ -25,9 +25,9 @@ Rust-host suite across preparation, persistence, exploration, combat,
 continuation, terminal/reset recovery, classified failures, and inspected
 desktop/mobile layouts.
 
-A native window/input host remains an explicit downstream phase. Rust
-projections and commands plus public Engine retained-frame, camera, surface,
-and picking processes are reusable, but the current application still depends
+The native window currently presents the Engine scene separately from the
+Angular overlay shell; unified desktop composition remains future work. The
+browser shell still depends
 on Angular overlays, DOM focus/accessibility, browser drag/touch/keyboard
 events, animation/media/resize browser ports, same-origin HTTP, and browser
 save/reset presentation. No native window, UI toolkit, controller adapter,

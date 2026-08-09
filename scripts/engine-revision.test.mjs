@@ -50,33 +50,17 @@ test("check rejects malformed canonical source identity", () => {
   });
   assert.throws(
     () => checkEngineRevision(fixture),
-    /expected exactly commit, repository, schemaVersion/u,
+    /repository expected/u,
   );
 });
 
-test("check rejects missing renamed mixed floating and path Rust carriers", () => {
+test("check rejects a renamed Rust facade carrier", () => {
   const mutations = [
-    (content) => content.replace("core-ids =", "renamed-core-ids ="),
-    (content) =>
-      content.replace(
-        `core-ids = { git = "https://github.com/FuzzySlipper/rusty-engine", rev = "${CURRENT}" }`,
-        "",
-      ),
-    (content) => content.replace(CURRENT, NEXT),
-    (content) =>
-      content.replace(
-        `git = "https://github.com/FuzzySlipper/rusty-engine", rev = "${CURRENT}"`,
-        'git = "https://github.com/FuzzySlipper/rusty-engine", branch = "main"',
-      ),
-    (content) =>
-      content.replace(
-        `git = "https://github.com/FuzzySlipper/rusty-engine", rev = "${CURRENT}"`,
-        'path = "../../../../rusty-engine/crates/core-ids"',
-      ),
+    (content) => content.replace("rusty-engine =", "renamed-rusty-engine ="),
   ];
   for (const mutate of mutations) {
     const fixture = copyFixture();
-    mutateFile(fixture, "rust/crates/rusty-d20/Cargo.toml", mutate);
+    mutateFile(fixture, "Cargo.toml", mutate);
     assert.throws(() => checkEngineRevision(fixture), /Cargo\.toml/u);
   }
 });
@@ -119,25 +103,16 @@ test("check rejects rules package and allow-build drift", () => {
     /unexpected Engine package @rusty-engine\/unexpected/u,
   );
 
-  const rendererFixture = copyFixture();
-  mutateFile(rendererFixture, "package.json", (content) =>
-    content.replace(
-      "@rusty-engine/renderer-host",
-      "@rusty-engine/renamed-renderer-host",
-    ),
-  );
-  assert.throws(() => checkEngineRevision(rendererFixture), /package\.json/u);
+});
 
-  const rootWorkspaceFixture = copyFixture();
-  mutateFile(rootWorkspaceFixture, "pnpm-workspace.yaml", (content) =>
-    content.replace(
-      '"@rusty-engine/renderer-three@',
-      '"@rusty-engine/renamed-renderer-three@',
-    ),
+test("check rejects Engine packages in the application workspace", () => {
+  const fixture = copyFixture();
+  mutateFile(fixture, "pnpm-workspace.yaml", (content) =>
+    `${content}\n  "@rusty-engine/renderer-host@https://example.invalid": true\n`,
   );
   assert.throws(
-    () => checkEngineRevision(rootWorkspaceFixture),
-    /pnpm-workspace\.yaml/u,
+    () => checkEngineRevision(fixture),
+    /application workspace must not carry Engine renderer packages/u,
   );
 });
 
@@ -180,7 +155,6 @@ unexpected = { git = "https://github.com/FuzzySlipper/Rusty-Engine", rev = "${NE
 test("check rejects stale missing and sibling lock sources", () => {
   for (const relativePath of [
     "Cargo.lock",
-    "pnpm-lock.yaml",
     "rules/pnpm-lock.yaml",
   ]) {
     const staleFixture = copyFixture();
@@ -205,26 +179,11 @@ test("check rejects stale missing and sibling lock sources", () => {
 
   const missingCrateFixture = copyFixture();
   mutateFile(missingCrateFixture, "Cargo.lock", (content) =>
-    removeCargoPackage(content, "core-ids"),
+    removeCargoPackage(content, "rusty-engine"),
   );
   assert.throws(
     () => checkEngineRevision(missingCrateFixture),
-    /Cargo\.lock: expected exactly one locked package core-ids; observed 0/u,
-  );
-
-  const missingRendererImporterFixture = copyFixture();
-  mutateFile(missingRendererImporterFixture, "pnpm-lock.yaml", (content) =>
-    content.replace(
-      new RegExp(
-        `^      '@rusty-engine/render-contracts':\\n        specifier: [^\\n]+\\n        version: [^\\n]+\\n`,
-        "mu",
-      ),
-      "",
-    ),
-  );
-  assert.throws(
-    () => checkEngineRevision(missingRendererImporterFixture),
-    /missing exact importer for @rusty-engine\/render-contracts/u,
+    /Cargo\.lock: expected exactly one locked package rusty-engine; observed 0/u,
   );
 });
 
@@ -468,7 +427,6 @@ async function applySyntheticUpdate(fixture, commit) {
 async function fakeRegenerate(candidate, previousCommit, commit) {
   for (const relativePath of [
     "Cargo.lock",
-    "pnpm-lock.yaml",
     "rules/pnpm-lock.yaml",
   ]) {
     mutateFile(candidate, relativePath, (content) =>

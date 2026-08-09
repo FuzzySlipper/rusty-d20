@@ -95,7 +95,7 @@ pub enum D20SessionError {
     ComponentMutation(EntityAuthoringError),
     ComponentData(D20ComponentDataError),
     Mechanics(MechanicsError),
-    MechanicsComponentData(gameplay_mechanics::MechanicsComponentDataError),
+    MechanicsComponentData(rusty_engine::gameplay_mechanics::MechanicsComponentDataError),
 }
 
 impl std::fmt::Display for D20SessionError {
@@ -142,8 +142,8 @@ impl From<MechanicsError> for D20SessionError {
     }
 }
 
-impl From<gameplay_mechanics::MechanicsComponentDataError> for D20SessionError {
-    fn from(value: gameplay_mechanics::MechanicsComponentDataError) -> Self {
+impl From<rusty_engine::gameplay_mechanics::MechanicsComponentDataError> for D20SessionError {
+    fn from(value: rusty_engine::gameplay_mechanics::MechanicsComponentDataError) -> Self {
         Self::MechanicsComponentData(value)
     }
 }
@@ -151,7 +151,7 @@ impl From<gameplay_mechanics::MechanicsComponentDataError> for D20SessionError {
 #[derive(Debug)]
 pub enum SessionSaveError {
     Json(serde_json::Error),
-    Snapshot(entity_state::EntityStateSnapshotError),
+    Snapshot(rusty_engine::entity_state::EntityStateSnapshotError),
     MechanicsSnapshot(MechanicsSnapshotError),
     ComponentRegistration(ComponentRegistrationError),
     UnsupportedSchema { actual: u32 },
@@ -174,8 +174,8 @@ impl From<serde_json::Error> for SessionSaveError {
     }
 }
 
-impl From<entity_state::EntityStateSnapshotError> for SessionSaveError {
-    fn from(value: entity_state::EntityStateSnapshotError) -> Self {
+impl From<rusty_engine::entity_state::EntityStateSnapshotError> for SessionSaveError {
+    fn from(value: rusty_engine::entity_state::EntityStateSnapshotError) -> Self {
         Self::Snapshot(value)
     }
 }

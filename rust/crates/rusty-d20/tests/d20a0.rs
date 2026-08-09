@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 
-use gameplay_rules::{decode_canonical_rule_package, AdmittedRulePackage};
 use rusty_d20::{D20CompileError, D20Id, D20Ruleset};
+use rusty_engine::gameplay_rules::{decode_canonical_rule_package, AdmittedRulePackage};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -187,7 +187,7 @@ fn invalid_authored_semantics_keep_exact_source_correlation() {
 }
 
 fn assert_correlated(
-    report: &gameplay_rules::RuleDiagnosticReport,
+    report: &rusty_engine::gameplay_rules::RuleDiagnosticReport,
     code: &str,
     expected_line: u64,
 ) {

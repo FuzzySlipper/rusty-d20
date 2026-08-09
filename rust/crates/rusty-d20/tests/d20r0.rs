@@ -1,13 +1,3 @@
-use core_ids::EntityId;
-use gameplay_mechanics::{
-    EffectInstanceId, EffectMutationKind, OperationId, SourceInstanceIdentity, TrackId,
-    TracksComponent,
-};
-use gameplay_rules::{
-    admit_rule_package, decode_canonical_rule_package, encode_rule_package, AdmittedRulePackage,
-    RuleDomainId, RulePackageCandidate, RulePackageDependency, RulePackageId, RuleProvenance,
-    RuleSource, RuleSourceId, RuleSubjectId, RuleVersion,
-};
 use rusty_d20::{
     ability_modifier, admit_d20_candidate, AbilityCandidate, AbilityScore, ActionAttackCandidate,
     ActionCandidate, ActionLineOfEffectCandidate, ActionResource, ActionTargetCandidate,
@@ -26,8 +16,18 @@ use rusty_d20::{
     RollSourceConfig, SessionSaveError, StaticActionRoll, StorageCandidate, TacticalBoardCandidate,
     TacticalPlacementCandidate, D20_CANDIDATE_SCHEMA_VERSION, MAX_D20_EXPERIENCE,
 };
+use rusty_engine::core_ids::EntityId;
+use rusty_engine::gameplay_mechanics::{
+    EffectInstanceId, EffectMutationKind, OperationId, SourceInstanceIdentity, TrackId,
+    TracksComponent,
+};
+use rusty_engine::gameplay_rules::{
+    admit_rule_package, decode_canonical_rule_package, encode_rule_package, AdmittedRulePackage,
+    RuleDomainId, RulePackageCandidate, RulePackageDependency, RulePackageId, RuleProvenance,
+    RuleSource, RuleSourceId, RuleSubjectId, RuleVersion,
+};
+use rusty_engine::svc_rng::RngSeed;
 use serde_json::json;
-use svc_rng::RngSeed;
 
 const ATTACKER: EntityId = EntityId::new(101);
 const TARGET: EntityId = EntityId::new(102);
@@ -613,7 +613,7 @@ fn compiler_reports_correlated_invalid_content_and_package_cycles() {
     assert!(matches!(
         D20Ruleset::compile(vec![a, b]),
         Err(D20CompileError::PackageSet(
-            gameplay_rules::RulePackageSetError::DependencyCycle { .. }
+            rusty_engine::gameplay_rules::RulePackageSetError::DependencyCycle { .. }
         ))
     ));
 }
@@ -1117,7 +1117,7 @@ fn otherwise_valid_adventure_candidate(
 fn authored_dungeons_reject_malformed_blocked_and_unreachable_content() {
     let compile = |package_name: &str,
                    candidate: D20RulesCandidate|
-     -> gameplay_rules::RuleDiagnosticReport {
+     -> rusty_engine::gameplay_rules::RuleDiagnosticReport {
         let base = admitted_base();
         let dependency = RulePackageDependency::new(
             base.identity().domain().clone(),
@@ -1240,7 +1240,7 @@ fn authored_dungeons_reject_malformed_blocked_and_unreachable_content() {
 fn adventure_combat_participants_require_actions_at_semantic_admission() {
     let compile = |package_name: &str,
                    candidate: D20RulesCandidate|
-     -> gameplay_rules::RuleDiagnosticReport {
+     -> rusty_engine::gameplay_rules::RuleDiagnosticReport {
         let base = admitted_base();
         let dependency = RulePackageDependency::new(
             base.identity().domain().clone(),

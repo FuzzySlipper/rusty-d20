@@ -1,52 +1,5 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-interface CameraTransitionWitness {
-  readonly motion: string | null;
-  readonly pose: string | null;
-  readonly reducedMotion: string | null;
-  readonly state: string | null;
-}
-
-async function installCameraTransitionWitness(canvas: Locator): Promise<void> {
-  await canvas.evaluate((element) => {
-    const target = element as HTMLCanvasElement & {
-      cameraTransitionWitness?: CameraTransitionWitness[];
-      cameraTransitionObserver?: MutationObserver;
-    };
-    target.cameraTransitionObserver?.disconnect();
-    target.cameraTransitionWitness = [];
-    const record = (): void => {
-      target.cameraTransitionWitness?.push({
-        motion: target.dataset["cameraMotion"] ?? null,
-        pose: target.dataset["cameraPose"] ?? null,
-        reducedMotion: target.dataset["cameraReducedMotion"] ?? null,
-        state: target.dataset["cameraTransitionState"] ?? null,
-      });
-    };
-    target.cameraTransitionObserver = new MutationObserver(record);
-    target.cameraTransitionObserver.observe(target, {
-      attributeFilter: [
-        "data-camera-motion",
-        "data-camera-pose",
-        "data-camera-reduced-motion",
-        "data-camera-transition-state",
-      ],
-    });
-  });
-}
-
-async function takeCameraTransitionWitness(
-  canvas: Locator,
-): Promise<readonly CameraTransitionWitness[]> {
-  return canvas.evaluate((element) => {
-    const target = element as HTMLCanvasElement & {
-      cameraTransitionWitness?: CameraTransitionWitness[];
-    };
-    const entries = [...(target.cameraTransitionWitness ?? [])];
-    target.cameraTransitionWitness = [];
-    return entries;
-  });
-}
 
 async function expectCombatOverlayLayout(
   page: Page,
@@ -116,25 +69,6 @@ async function expectCombatOverlayLayout(
         control.right <= layout.action.right,
     ),
   ).toBe(true);
-}
-
-async function expectRendererCanvasAtPoint(
-  page: Page,
-  x: number,
-  y: number,
-): Promise<void> {
-  const hit = await page.evaluate(
-    ({ pointX, pointY }) => {
-      const target = document.elementFromPoint(pointX, pointY);
-      return {
-        insideRenderer: target?.closest("aui-game-viewport") !== null,
-        tagName: target?.tagName ?? null,
-      };
-    },
-    { pointX: x, pointY: y },
-  );
-
-  expect(hit).toEqual({ insideRenderer: true, tagName: "CANVAS" });
 }
 
 async function expectCombatLogAtBottom(page: Page): Promise<void> {
@@ -244,7 +178,7 @@ async function exposeRendererAtPoint(
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       );
       const target = document.elementFromPoint(x, y);
-      if (target?.tagName === "CANVAS") {
+      if (target instanceof HTMLElement && target.dataset["rendererBoundary"] !== undefined) {
         return {
           className: target.className,
           clientHeight: overlay.clientHeight,
@@ -266,8 +200,8 @@ async function exposeRendererAtPoint(
   }, point);
   expect(
     hit.tagName,
-    `renderer occluded by ${hit.className} at overlay scroll ${hit.scrollTop}; ${hit.clientHeight}/${hit.scrollHeight}`,
-  ).toBe("CANVAS");
+    `native renderer boundary occluded by ${hit.className} at overlay scroll ${hit.scrollTop}; ${hit.clientHeight}/${hit.scrollHeight}`,
+  ).toBe("SECTION");
 }
 
 test.describe.serial("real Rust encounter shell", () => {
@@ -326,13 +260,11 @@ test.describe.serial("real Rust encounter shell", () => {
     }
 
     await page.goto("/");
-    await expect(page.locator("aui-game-viewport canvas")).toHaveCount(1);
+    const nativeBoundary = page.locator("aui-game-viewport [data-renderer-boundary]");
+    await expect(nativeBoundary).toHaveCount(1);
     await expect(
       page.locator("aui-game-viewport [data-scene-mode]"),
     ).toHaveAttribute("data-scene-mode", "catalog");
-    await page.locator("aui-game-viewport canvas").evaluate((canvas) => {
-      canvas.setAttribute("data-lifecycle-witness", "persistent");
-    });
     await expect(
       page.getByRole("heading", { level: 1, name: "Rusty D20", exact: true }),
     ).toBeVisible();
@@ -352,14 +284,10 @@ test.describe.serial("real Rust encounter shell", () => {
     await expect(
       page.getByRole("heading", { name: "The Warden's Gate Camp" }),
     ).toBeVisible();
-    await expect(page.locator("aui-game-viewport canvas")).toHaveCount(1);
+    await expect(nativeBoundary).toHaveCount(1);
     await expect(
       page.locator("aui-game-viewport [data-scene-mode]"),
     ).toHaveAttribute("data-scene-mode", "camp");
-    await expect(page.locator("aui-game-viewport canvas")).toHaveAttribute(
-      "data-lifecycle-witness",
-      "persistent",
-    );
     await expect(page.getByLabel("Armor defense readout")).toContainText("18");
     await expect(
       page.getByRole("region", { name: "Mara Venn pack", exact: true }),
@@ -559,19 +487,9 @@ test.describe.serial("real Rust encounter shell", () => {
       /Warden's Gate Pass, facing east at cell 1, 1/,
     );
     await expect(dungeonViewport).toHaveAttribute(
-      "data-renderer-backend",
-      "rusty-engine-three",
+      "data-renderer-boundary",
+      "native-engine-host",
     );
-    const dungeonCanvas = dungeonViewport.locator("canvas");
-    await expect(dungeonCanvas).toBeVisible();
-    await expect(dungeonViewport.getByRole("alert")).toHaveCount(0);
-    await expect(dungeonCanvas).toHaveAttribute(
-      "data-camera-transition-state",
-      "settled",
-    );
-    await expect(dungeonCanvas).toHaveAttribute("data-camera-motion", "none");
-    await installCameraTransitionWitness(dungeonCanvas);
-    await expectRendererCanvasAtPoint(page, 640, 400);
 
     const partyTrigger = page.getByRole("button", { name: "Party" });
     const beforePartyInspection = await (
@@ -727,8 +645,6 @@ test.describe.serial("real Rust encounter shell", () => {
     await page.keyboard.press("Escape");
     await expect(explorationInventory).toHaveCount(0);
     await expect(inventoryTrigger).toBeFocused();
-    await takeCameraTransitionWitness(dungeonCanvas);
-
     const rejectedStep = await request.post(
       "/api/v1/session/exploration/command",
       {
@@ -750,41 +666,25 @@ test.describe.serial("real Rust encounter shell", () => {
     await expect(
       (await request.get("/api/v1/session")).json(),
     ).resolves.toEqual(beforeExplorationInventory);
-    expect(await takeCameraTransitionWitness(dungeonCanvas)).toEqual([]);
-
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.getByRole("button", { name: "↶ Left" }).click();
     await expect(dungeonViewport).toHaveAttribute(
       "aria-label",
       /facing north at cell 1, 1/,
     );
-    await expect(dungeonCanvas).toHaveAttribute(
-      "data-camera-transition-state",
-      "settled",
-    );
-    await expect(dungeonCanvas).toHaveAttribute(
-      "data-camera-reduced-motion",
-      "true",
-    );
-    const reducedMotionWitness =
-      await takeCameraTransitionWitness(dungeonCanvas);
-    expect(
-      reducedMotionWitness.some((entry) => entry.state === "running"),
-    ).toBe(false);
     await page.getByRole("button", { name: "Right ↷" }).click();
     await expect(dungeonViewport).toHaveAttribute(
       "aria-label",
       /facing east at cell 1, 1/,
     );
     await page.emulateMedia({ reducedMotion: "no-preference" });
-    await takeCameraTransitionWitness(dungeonCanvas);
 
     await testInfo.attach("engine-dungeon-corridor.png", {
       body: await dungeonViewport.screenshot(),
       contentType: "image/png",
     });
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.locator("aui-game-viewport canvas")).toBeVisible();
+    await expect(nativeBoundary).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -796,57 +696,24 @@ test.describe.serial("real Rust encounter shell", () => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       );
     });
-    const narrowPanels = page.locator(
-      ".exploration__main > .rusty-engine-panel",
-    );
-    const narrowUpperPanel = await narrowPanels.nth(0).boundingBox();
-    const narrowLowerPanel = await narrowPanels.nth(1).boundingBox();
-    expect(narrowUpperPanel).not.toBeNull();
-    expect(narrowLowerPanel).not.toBeNull();
-    await expectRendererCanvasAtPoint(
-      page,
-      195,
-      Math.floor(
-        ((narrowUpperPanel?.y ?? 0) +
-          (narrowUpperPanel?.height ?? 0) +
-          (narrowLowerPanel?.y ?? 0)) /
-          2,
-      ),
-    );
     const narrowForward = page.getByRole("button", { name: "↑ Forward" });
     await narrowForward.focus();
     await expect(narrowForward).toBeFocused();
-    await takeCameraTransitionWitness(dungeonCanvas);
     await page.getByRole("button", { name: "↶ Left" }).click();
     await expect(dungeonViewport).toHaveAttribute(
       "aria-label",
       /facing north at cell 1, 1/,
     );
-    await expect(dungeonCanvas).toHaveAttribute(
-      "data-camera-transition-state",
-      "settled",
-    );
-    const mobileTweenWitness = await takeCameraTransitionWitness(dungeonCanvas);
-    expect(
-      mobileTweenWitness.some(
-        (entry) => entry.motion === "turn-left" && entry.state === "running",
-      ),
-    ).toBe(true);
     await page.getByRole("button", { name: "Right ↷" }).click();
     await expect(dungeonViewport).toHaveAttribute(
       "aria-label",
       /facing east at cell 1, 1/,
-    );
-    await expect(dungeonCanvas).toHaveAttribute(
-      "data-camera-transition-state",
-      "settled",
     );
     await testInfo.attach("engine-dungeon-corridor-mobile.png", {
       body: await page.locator("aui-game-viewport").screenshot(),
       contentType: "image/png",
     });
     await page.setViewportSize({ width: 1280, height: 720 });
-    await takeCameraTransitionWitness(dungeonCanvas);
 
     await page.getByRole("button", { name: "↶ Left" }).click();
     await expect(dungeonViewport).toHaveAttribute(
@@ -858,42 +725,13 @@ test.describe.serial("real Rust encounter shell", () => {
       "aria-label",
       /facing east at cell 1, 1/,
     );
-    await expect(dungeonCanvas).toHaveAttribute(
-      "data-camera-transition-state",
-      "settled",
-    );
-    const interruptedWitness = await takeCameraTransitionWitness(dungeonCanvas);
-    expect(
-      interruptedWitness.some((entry) => entry.motion === "turn-left"),
-    ).toBe(true);
-    expect(
-      interruptedWitness.some((entry) => entry.motion === "turn-right"),
-    ).toBe(true);
 
     for (const facing of ["north", "west", "south", "east"]) {
-      await takeCameraTransitionWitness(dungeonCanvas);
       await page.getByRole("button", { name: "↶ Left" }).click();
       const rotatedViewport = page.getByRole("img", {
         name: new RegExp(`Warden's Gate Pass, facing ${facing} at cell 1, 1`),
       });
       await expect(rotatedViewport).toBeVisible();
-      await expect(dungeonCanvas).toHaveAttribute(
-        "data-camera-transition-state",
-        "settled",
-      );
-      const facingWitness = await takeCameraTransitionWitness(dungeonCanvas);
-      expect(
-        facingWitness.some(
-          (entry) => entry.motion === "turn-left" && entry.state === "running",
-        ),
-      ).toBe(true);
-      expect(
-        new Set(
-          facingWitness
-            .map((entry) => entry.pose)
-            .filter((pose): pose is string => pose !== null),
-        ).size,
-      ).toBeGreaterThan(2);
       if (facing === "north" || facing === "south") {
         await testInfo.attach(`engine-dungeon-facing-${facing}.png`, {
           body: await rotatedViewport.screenshot(),
@@ -902,26 +740,14 @@ test.describe.serial("real Rust encounter shell", () => {
       }
     }
     for (let step = 0; step < 4; step += 1) {
-      await takeCameraTransitionWitness(dungeonCanvas);
       await page.getByRole("button", { name: "↑ Forward" }).click();
       await expect(dungeonViewport).toHaveAttribute(
         "aria-label",
         new RegExp(`facing east at cell ${String(step + 2)}, 1`),
       );
-      await expect(dungeonCanvas).toHaveAttribute(
-        "data-camera-transition-state",
-        "settled",
-      );
-      const stepWitness = await takeCameraTransitionWitness(dungeonCanvas);
-      expect(
-        stepWitness.some(
-          (entry) =>
-            entry.motion === "step-forward" && entry.state === "running",
-        ),
-      ).toBe(true);
     }
     const movedDungeonViewport = page.locator("aui-game-viewport");
-    await expect(movedDungeonViewport.locator("canvas")).toBeVisible();
+    await expect(movedDungeonViewport.locator("[data-renderer-boundary]")).toBeVisible();
     await expect(movedDungeonViewport.getByRole("alert")).toHaveCount(0);
     await expect(
       page.getByRole("heading", { name: "Silent murder holes" }),
@@ -936,14 +762,10 @@ test.describe.serial("real Rust encounter shell", () => {
       await page.getByRole("button", { name: "↑ Forward" }).click();
     }
 
-    await expect(page.locator("aui-game-viewport canvas")).toHaveCount(1);
+    await expect(nativeBoundary).toHaveCount(1);
     await expect(
       page.locator("aui-game-viewport [data-scene-mode]"),
     ).toHaveAttribute("data-scene-mode", "encounter");
-    await expect(page.locator("aui-game-viewport canvas")).toHaveAttribute(
-      "data-lifecycle-witness",
-      "persistent",
-    );
     await expect(page.locator("aui-character-status")).toHaveCount(6);
     await expect(page.getByText("Mara Venn", { exact: true })).toBeVisible();
     await expect(
@@ -953,7 +775,7 @@ test.describe.serial("real Rust encounter shell", () => {
         .getByText("Iron Warden", { exact: true }),
     ).toBeVisible();
     await expect(page.getByLabel("Encounter identity")).toContainText(
-      "Engine fb608e323a8b",
+      "Engine d0b5e672b83d",
     );
     await expect(
       page.getByRole("button", { name: "Pin In Place" }),
@@ -1037,17 +859,10 @@ test.describe.serial("real Rust encounter shell", () => {
         name: "Legal movement destinations",
       }),
     ).toContainText("Preview move to 7, 3, cost 1");
-    await tacticalBoard.focus();
-    await page.keyboard.press("ArrowUp");
-    await page.keyboard.press("Enter");
-    await expect(tacticalBoard).toHaveAttribute(
-      "aria-label",
-      /Previewing movement to 7, 3/,
-    );
-    await expect(page.locator(".targeting-status")).toContainText(
-      "Choose the same destination again to confirm movement",
-    );
-    await page.keyboard.press("Escape");
+    await page
+      .getByRole("status")
+      .getByRole("button", { name: "Cancel movement" })
+      .click();
     await expect(tacticalBoard).toHaveAttribute(
       "data-interaction-mode",
       "readonly",
@@ -1158,12 +973,6 @@ test.describe.serial("real Rust encounter shell", () => {
       body: await page.screenshot(),
       contentType: "image/png",
     });
-    await tacticalBoard.focus();
-    await page.keyboard.press("ArrowLeft");
-    await page.keyboard.press("Enter");
-    await expect(page.locator(".targeting-status")).toContainText(
-      "not a legal target for the selected action",
-    );
     expect(failedActionRequests).toBe(0);
     await clickRenderedTacticalCell(page, 8, 4, 12, 8);
     await expect.poll(() => failedActionRequests).toBe(1);

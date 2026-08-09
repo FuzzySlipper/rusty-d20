@@ -13,9 +13,9 @@ mod tactical;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use core_ids::EntityId;
-use entity_state::ComponentAccessError;
-use gameplay_mechanics::{
+use rusty_engine::core_ids::EntityId;
+use rusty_engine::entity_state::ComponentAccessError;
+use rusty_engine::gameplay_mechanics::{
     ActiveEffectsComponent, DecisionOutcome, EffectInstanceId, EquipmentComponent,
     InventoryComponent, ItemComponent, MechanicsError, OperationId, ResponseDecisionKind,
     SourceInstanceIdentity, StatContribution, StatService, TracksComponent,

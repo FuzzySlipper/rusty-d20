@@ -12,3 +12,4 @@ pnpm run verify:boundaries
 pnpm run verify:ui
 pnpm run verify:build
 pnpm run verify:browser
+pnpm run verify:native

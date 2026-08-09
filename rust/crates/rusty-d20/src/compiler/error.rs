@@ -1,5 +1,7 @@
-use gameplay_mechanics::CatalogError;
-use gameplay_rules::{RuleDiagnosticError, RuleDiagnosticReport, RulePackageSetError};
+use rusty_engine::gameplay_mechanics::CatalogError;
+use rusty_engine::gameplay_rules::{
+    RuleDiagnosticError, RuleDiagnosticReport, RulePackageSetError,
+};
 
 #[derive(Debug)]
 pub enum D20CompileError {

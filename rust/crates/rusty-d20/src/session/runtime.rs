@@ -190,7 +190,10 @@ impl D20Session {
                 ),
             )?;
         }
-        gameplay_mechanics::validate_state_against_catalog(&entities, rules.mechanics())?;
+        rusty_engine::gameplay_mechanics::validate_state_against_catalog(
+            &entities,
+            rules.mechanics(),
+        )?;
         Ok(Self {
             rules,
             entities,
@@ -459,7 +462,7 @@ impl D20Session {
                 entity,
                 track: vitality_track_id(),
                 amount: scalar(i64::from(amount)),
-                kind: gameplay_mechanics::TrackAdjustmentKind::Restore,
+                kind: rusty_engine::gameplay_mechanics::TrackAdjustmentKind::Restore,
                 expected_revision: None,
             },
         )?)
@@ -658,7 +661,10 @@ impl D20Session {
                 ),
             )?;
         }
-        gameplay_mechanics::validate_state_against_catalog(&staged, self.rules.mechanics())?;
+        rusty_engine::gameplay_mechanics::validate_state_against_catalog(
+            &staged,
+            self.rules.mechanics(),
+        )?;
         self.entities = staged;
         Ok(())
     }

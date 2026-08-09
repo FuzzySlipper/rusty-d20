@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use gameplay_mechanics::{
+use rusty_engine::gameplay_mechanics::{
     CapacityMetricDefinition, CatalogError, CatalogVersion, DamageKindDefinition,
     DamageKindSelector, DamageResponseDefinition, EffectDefinition as MechanicsEffectDefinition,
     EffectStackingPolicy, EquipmentSlotDefinition, ExactRatio, ItemCapacityCost, ItemDefinition,

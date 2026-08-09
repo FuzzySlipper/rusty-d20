@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use gameplay_rules::{decode_canonical_rule_package, AdmittedRulePackage, RulePackageIdentity};
+use rusty_engine::gameplay_rules::{
+    decode_canonical_rule_package, AdmittedRulePackage, RulePackageIdentity,
+};
 use serde::Deserialize;
 
 use crate::{D20Id, D20RulesCandidate, D20Ruleset, MAX_D20_ADVENTURE_ENTRIES};
@@ -203,7 +205,9 @@ impl AuthoredAdventureCatalog {
 
 #[cfg(test)]
 mod tests {
-    use gameplay_rules::{encode_rule_package, RuleDomainId, RulePackageId, RuleVersion};
+    use rusty_engine::gameplay_rules::{
+        encode_rule_package, RuleDomainId, RulePackageId, RuleVersion,
+    };
 
     use super::*;
     use crate::{

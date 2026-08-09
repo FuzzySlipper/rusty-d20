@@ -2,24 +2,11 @@
 
 ## Rusty Engine
 
-`engine-source.json` is the canonical selection of one exact reviewed public
-Engine commit. The updater described in
-[engine-revision-updates.md](engine-revision-updates.md) keeps every active
-carrier and lockfile at that revision. The Rust dependencies are:
-
-- `core-ids`
-- `core-space`
-- `core-voxel`
-- `entity-state`
-- `gameplay-mechanics`
-- `gameplay-rules`
-- `svc-collision`
-- `svc-pathfinding`
-- `svc-rng`
-- `svc-spatial`
-- `svc-volume`
-
-`Cargo.lock` records the resolved Git source. There is no sibling path fallback.
+`Cargo.toml` imports the complete public `rusty-engine` facade from branch
+`main`; `engine-source.json` and `Cargo.lock` record its resolved public commit
+and full transitive Engine crate closure. The updater described in
+[engine-revision-updates.md](engine-revision-updates.md) advances that lock
+transactionally. There is no sibling path fallback or downstream crate menu.
 
 The isolated TypeScript authoring workspace pins these public Engine packages
 to the same revision and exact repository subpaths:
@@ -31,19 +18,10 @@ to the same revision and exact repository subpaths:
 Only those exact git package prepare scripts are allowed by
 `rules/pnpm-workspace.yaml`.
 
-The product browser workspace independently consumes the public Engine
-rendering boundary from the same canonical revision:
-
-- `@rusty-engine/render-contracts`
-- `@rusty-engine/render-projection`
-- `@rusty-engine/renderer-host`
-- `@rusty-engine/renderer-three`
-
-`pnpm-lock.yaml` records each exact codeload revision and renderer package
-subpath. `pnpm-workspace.yaml` permits prepare scripts only for those exact
-package identities. The browser imports package-root APIs; it has no sibling
-link, deep import, private Three scene, camera, render loop, or copied Engine
-implementation.
+The product browser workspace has no Engine package dependency. Rust owns D20
+frame construction and uses the facade's native webview adapter; Engine alone
+owns the Rust-to-TypeScript renderer boundary, Three scene, camera, input,
+render loop, resource lifecycle, and disposal.
 
 ## Rusty Engine UI donor
 

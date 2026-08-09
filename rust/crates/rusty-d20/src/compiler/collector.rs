@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use gameplay_rules::{
+use rusty_engine::gameplay_rules::{
     AdmittedRulePackage, RuleDiagnostic, RuleDiagnosticCorrelation, RuleDiagnosticSeverity,
     RulePackageIdentity, RuleSubjectId, MAX_RULE_DIAGNOSTICS,
 };

@@ -2,7 +2,7 @@ use serde_json::json;
 
 use super::*;
 use crate::StaticActionRoll;
-use gameplay_rules::{decode_canonical_rule_package, RulePackageDependency};
+use rusty_engine::gameplay_rules::{decode_canonical_rule_package, RulePackageDependency};
 
 const PLAYER: EntityId = EntityId::new(101);
 const OPPONENT: EntityId = EntityId::new(102);
@@ -1558,7 +1558,7 @@ fn equipment_track_bound_failure_keeps_its_public_error_identity() {
     let error = GameRuntimeError::Session(D20SessionError::Mechanics(
         MechanicsError::EquipmentWouldInvalidateTrack {
             owner: PLAYER,
-            track: gameplay_mechanics::TrackId::parse("vitality").unwrap(),
+            track: rusty_engine::gameplay_mechanics::TrackId::parse("vitality").unwrap(),
             current: 100,
             prospective_minimum: 0,
             prospective_maximum: 90,

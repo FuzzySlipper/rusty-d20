@@ -2,7 +2,6 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
-  ENGINE_CRATES,
   ENGINE_REPOSITORY,
   loadEngineSource,
 } from '../../scripts/engine-revision-lib.mjs';
@@ -14,6 +13,7 @@ const productionRoots = [
   'libs/feature-main-menu/src',
   'libs/platform/src',
   'libs/protocol/src',
+  'libs/renderer/src',
   'libs/shell/src',
   'libs/store/src',
   'libs/transport/src',
@@ -23,6 +23,7 @@ const forbiddenProductionReferences = [
   '@rusty-d20/demo-config',
   'PlaceholderActions',
   'createFakeRustyD20Transport',
+  '@rusty-engine/',
 ];
 const failures = [];
 
@@ -39,21 +40,22 @@ for (const relativeRoot of productionRoots) {
   }
 }
 
-const manifest = readFileSync(
-  join(root, 'rust/crates/rusty-d20/Cargo.toml'),
-  'utf8',
-);
-const engineRevision = loadEngineSource(root).commit;
-for (const crateName of ENGINE_CRATES) {
-  const expected = `${crateName} = { git = "${ENGINE_REPOSITORY}", rev = "${engineRevision}" }`;
-  if (!manifest.includes(expected)) {
-    failures.push(
-      `Rusty Engine dependency is not exactly pinned: ${crateName}`,
-    );
-  }
+const rootManifest = readFileSync(join(root, 'Cargo.toml'), 'utf8');
+const manifest = readFileSync(join(root, 'rust/crates/rusty-d20/Cargo.toml'), 'utf8');
+const applicationWorkspace = readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8');
+const engineSource = loadEngineSource(root);
+const expected = `rusty-engine = { git = "${ENGINE_REPOSITORY}", branch = "${engineSource.branch}" }`;
+if (!rootManifest.split('\n').some((line) => line.trim() === expected)) {
+  failures.push('Rusty Engine complete facade does not track canonical main');
+}
+if (!/^rusty-engine\.workspace = true$/mu.test(manifest)) {
+  failures.push('Rusty D20 must import the complete Engine facade');
 }
 if (/^[a-z][a-z0-9-]*\s*=\s*\{[^}\n]*path\s*=/mu.test(manifest)) {
   failures.push('The downstream Rust manifest must not use path dependencies.');
+}
+if (applicationWorkspace.includes('@rusty-engine/')) {
+  failures.push('The downstream application workspace must not carry Engine renderer packages.');
 }
 
 if (failures.length > 0) {

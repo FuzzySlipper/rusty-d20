@@ -13,10 +13,6 @@ export const ENGINE_REPOSITORY = "https://github.com/FuzzySlipper/rusty-engine";
 export const COMMIT_PATTERN = /^[0-9a-f]{40}$/u;
 
 export const ENGINE_PACKAGES = new Map([
-  ["@rusty-engine/render-contracts", "render/packages/render-contracts"],
-  ["@rusty-engine/render-projection", "render/packages/render-projection"],
-  ["@rusty-engine/renderer-host", "render/packages/renderer-host"],
-  ["@rusty-engine/renderer-three", "render/packages/renderer-three"],
   [
     "@rusty-engine/gameplay-rules-authoring",
     "rules/packages/gameplay-rules-authoring",
@@ -27,56 +23,34 @@ export const ENGINE_PACKAGES = new Map([
   ],
 ]);
 
-const RENDER_ENGINE_PACKAGES = new Set([
-  "@rusty-engine/render-contracts",
-  "@rusty-engine/render-projection",
-  "@rusty-engine/renderer-host",
-  "@rusty-engine/renderer-three",
-]);
 const RULES_ENGINE_PACKAGES = new Set([
   "@rusty-engine/gameplay-rules-authoring",
   "@rusty-engine/gameplay-rules-contracts",
 ]);
 const ENGINE_PACKAGE_MANIFESTS = new Map([
-  ["package.json", RENDER_ENGINE_PACKAGES],
   ["rules/packages/d20-authoring/package.json", RULES_ENGINE_PACKAGES],
 ]);
 const ENGINE_PNPM_WORKSPACES = new Map([
-  ["pnpm-workspace.yaml", RENDER_ENGINE_PACKAGES],
   ["rules/pnpm-workspace.yaml", RULES_ENGINE_PACKAGES],
 ]);
 const ENGINE_PNPM_LOCKS = new Map([
-  ["pnpm-lock.yaml", RENDER_ENGINE_PACKAGES],
   ["rules/pnpm-lock.yaml", RULES_ENGINE_PACKAGES],
 ]);
 
-export const ENGINE_CRATES = [
-  "core-ids",
-  "core-space",
-  "core-voxel",
-  "entity-state",
-  "gameplay-mechanics",
-  "gameplay-rules",
-  "svc-collision",
-  "svc-pathfinding",
-  "svc-rng",
-  "svc-spatial",
-  "svc-volume",
-];
+export const ENGINE_CRATES = ["rusty-engine"];
 
 export const ACTIVE_CARRIER_PATHS = [
   "engine-source.json",
+  "Cargo.toml",
   "rust/crates/rusty-d20/Cargo.toml",
   "Cargo.lock",
-  "package.json",
-  "pnpm-workspace.yaml",
-  "pnpm-lock.yaml",
   "rules/packages/d20-authoring/package.json",
   "rules/pnpm-workspace.yaml",
   "rules/pnpm-lock.yaml",
 ];
 
 export const DERIVED_CONSUMER_PATHS = [
+  "pnpm-workspace.yaml",
   "rust/crates/rusty-d20/build.rs",
   "rust/crates/rusty-d20/src/lib.rs",
   "rules/scripts/check-boundaries.mjs",
@@ -85,7 +59,10 @@ export const DERIVED_CONSUMER_PATHS = [
 
 const REPAIR_COMMAND = "./scripts/engine-revision update <sha>";
 const DECLARED_PACKAGE_MANIFESTS = new Set(ENGINE_PACKAGE_MANIFESTS.keys());
-const DECLARED_CARGO_MANIFESTS = new Set(["rust/crates/rusty-d20/Cargo.toml"]);
+const DECLARED_CARGO_MANIFESTS = new Set([
+  "Cargo.toml",
+  "rust/crates/rusty-d20/Cargo.toml",
+]);
 const MANIFEST_SCAN_IGNORES = new Set([
   ".git",
   ".nx",
@@ -109,7 +86,7 @@ export function loadEngineSource(repoRoot) {
     throw new Error(`${relativePath}: expected one JSON object`);
   }
   const keys = Object.keys(source).sort();
-  const expectedKeys = ["commit", "repository", "schemaVersion"];
+  const expectedKeys = ["branch", "commit", "repository", "schemaVersion"];
   if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)) {
     throw new Error(
       `${relativePath}: expected exactly ${expectedKeys.join(", ")}; observed ${keys.join(", ")}`,
@@ -125,10 +102,14 @@ export function loadEngineSource(repoRoot) {
       `${relativePath}: repository expected ${ENGINE_REPOSITORY}; observed ${String(source.repository)}`,
     );
   }
+  if (source.branch !== "main") {
+    throw new Error(`${relativePath}: branch expected main; observed ${String(source.branch)}`);
+  }
   assertCommit(source.commit, `${relativePath}: commit`);
   return Object.freeze({
     schemaVersion: 1,
     repository: ENGINE_REPOSITORY,
+    branch: "main",
     commit: source.commit,
   });
 }
@@ -241,6 +222,7 @@ export function rewriteActiveCarriers(repoRoot, previousCommit, commit) {
       {
         schemaVersion: 1,
         repository: ENGINE_REPOSITORY,
+        branch: "main",
         commit,
       },
       null,
@@ -248,11 +230,6 @@ export function rewriteActiveCarriers(repoRoot, previousCommit, commit) {
     )}\n`,
   );
 
-  replaceRequiredCommit(
-    resolve(repoRoot, "rust/crates/rusty-d20/Cargo.toml"),
-    previousCommit,
-    commit,
-  );
   for (const [relativePath, expectedNames] of ENGINE_PACKAGE_MANIFESTS) {
     rewritePackageManifest(
       resolve(repoRoot, relativePath),
@@ -307,7 +284,7 @@ export async function provePublicCommit(repository, commit) {
 }
 
 async function regenerateLocks(candidate) {
-  for (const relativePath of ["package.json", "rules/package.json"]) {
+  for (const relativePath of ["rules/package.json"]) {
     const packageManager = JSON.parse(
       readFileSync(resolve(candidate, relativePath), "utf8"),
     ).packageManager;
@@ -323,10 +300,10 @@ async function regenerateLocks(candidate) {
       `pnpm version expected 11.7.0 from packageManager; observed ${pnpmVersion}`,
     );
   }
-  run("cargo", ["metadata", "--format-version", "1"], {
+  run("cargo", ["update", "-p", "rusty-engine", "--precise", commit], {
     cwd: candidate,
   });
-  for (const relativeRoot of [".", "rules"]) {
+  for (const relativeRoot of ["rules"]) {
     run(
       "pnpm",
       [
@@ -352,49 +329,26 @@ async function validateCandidate(candidate) {
 }
 
 function checkCargoManifest(repoRoot, source, violations) {
-  const relativePath = "rust/crates/rusty-d20/Cargo.toml";
-  const content = readFile(repoRoot, relativePath, violations);
-  if (content === null) return;
-  const dependencySection =
-    content.match(/\[dependencies\]([\s\S]*?)(?=\n\[|$)/u)?.[1] ?? "";
-  for (const crate of ENGINE_CRATES) {
-    const match = dependencySection.match(
-      new RegExp(`^${escapeRegExp(crate)}\\s*=\\s*\\{([^\\n]+)\\}$`, "mu"),
-    );
-    if (match === null) {
-      violations.push(`${relativePath}: missing Engine dependency ${crate}`);
-      continue;
-    }
-    const expected = `git = "${ENGINE_REPOSITORY}", rev = "${source.commit}"`;
-    if (match[1].trim() !== expected) {
-      violations.push(
-        `${relativePath}: ${crate} expected { ${expected} }; observed { ${match[1].trim()} }`,
-      );
-    }
+  const rootPath = "Cargo.toml";
+  const root = readFile(repoRoot, rootPath, violations);
+  const cratePath = "rust/crates/rusty-d20/Cargo.toml";
+  const crate = readFile(repoRoot, cratePath, violations);
+  if (root === null || crate === null) return;
+  const expected = `rusty-engine = { git = "${ENGINE_REPOSITORY}", branch = "${source.branch}" }`;
+  const facadeLines = root.split("\n").filter((line) => line.trim() === expected);
+  if (facadeLines.length !== 1) {
+    violations.push(`${rootPath}: expected exactly one rolling Engine facade ${expected}`);
   }
-  for (const line of dependencySection.split("\n")) {
-    if (
-      /rusty-engine|@rusty-engine/iu.test(line) &&
-      !ENGINE_CRATES.some((crate) => line.startsWith(`${crate} `))
-    ) {
-      violations.push(
-        `${relativePath}: unexpected Engine dependency carrier ${line.trim()}`,
-      );
-    }
+  if (!/^rusty-engine\.workspace = true$/mu.test(crate)) {
+    violations.push(`${cratePath}: missing rusty-engine.workspace = true`);
   }
-  const hasSiblingPath = [...content.matchAll(/path\s*=\s*"([^"]*)"/gmu)].some(
-    (match) => isEngineRepositoryReference(match[1]),
-  );
-  const hasNonCanonicalEngineGit = [
-    ...content.matchAll(/git\s*=\s*"([^"]*)"/gmu),
-  ].some(
-    (match) =>
-      isEngineRepositoryReference(match[1]) && match[1] !== ENGINE_REPOSITORY,
-  );
-  if (hasSiblingPath || hasNonCanonicalEngineGit) {
-    violations.push(
-      `${relativePath}: path, sibling, or non-canonical Engine source is forbidden`,
-    );
+  const combined = `${root}\n${crate}`;
+  const directSources = [...combined.matchAll(/git\s*=\s*"([^"]*rusty-engine[^"]*)"/gimu)];
+  if (directSources.length !== 1 || directSources[0][1] !== ENGINE_REPOSITORY) {
+    violations.push("Cargo manifests: Engine must have exactly one canonical git source");
+  }
+  if (/\brev\s*=|\.\.\/.*rusty-engine/iu.test(combined)) {
+    violations.push("Cargo manifests: exact rev and sibling Engine sources are forbidden");
   }
 }
 
@@ -405,24 +359,9 @@ function checkCargoLock(repoRoot, source, violations) {
   const packageBlocks = content
     .split(/\n(?=\[\[package\]\]\n)/u)
     .filter((block) => block.startsWith("[[package]]\n"));
-  const expected = `git+${ENGINE_REPOSITORY}?rev=${source.commit}#${source.commit}`;
-  for (const crate of ENGINE_CRATES) {
-    const matches = packageBlocks.filter(
-      (block) => block.match(/^name = "([^"]+)"$/mu)?.[1] === crate,
-    );
-    if (matches.length !== 1) {
-      violations.push(
-        `${relativePath}: expected exactly one locked package ${crate}; observed ${String(matches.length)}`,
-      );
-      continue;
-    }
-    const observed = matches[0].match(/^source = "([^"]+)"$/mu)?.[1];
-    if (observed !== expected) {
-      violations.push(
-        `${relativePath}: ${crate} source expected ${expected}; observed ${String(observed)}`,
-      );
-    }
-  }
+  const expected = `git+${ENGINE_REPOSITORY}?branch=${source.branch}#${source.commit}`;
+  const facade = packageBlocks.filter((block) => block.match(/^name = "([^"]+)"$/mu)?.[1] === "rusty-engine");
+  if (facade.length !== 1) violations.push(`${relativePath}: expected exactly one locked package rusty-engine; observed ${String(facade.length)}`);
   const sources = [
     ...content.matchAll(/^source = "(git\+[^"]*rusty-engine[^"]*)"$/gimu),
   ].map((match) => match[1]);
@@ -667,6 +606,15 @@ function checkDerivedConsumers(repoRoot, source, violations) {
     if (content.includes(source.commit)) {
       violations.push(
         `${relativePath}: must not duplicate the canonical Engine commit`,
+      );
+    }
+    if (
+      relativePath === "pnpm-workspace.yaml" &&
+      (content.includes("@rusty-engine/") ||
+        content.includes("FuzzySlipper/rusty-engine"))
+    ) {
+      violations.push(
+        `${relativePath}: downstream application workspace must not carry Engine renderer packages`,
       );
     }
   }

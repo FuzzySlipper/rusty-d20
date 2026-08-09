@@ -1,8 +1,8 @@
-use entity_state::{
+use rusty_engine::entity_state::{
     ComponentCodec, ComponentRegistration, ComponentRegistrationError, ComponentRegistry,
     ComponentTypeId, EntityComponent,
 };
-use gameplay_mechanics::{gameplay_component_registry, EffectInstanceId};
+use rusty_engine::gameplay_mechanics::{gameplay_component_registry, EffectInstanceId};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::D20Id;
@@ -528,7 +528,7 @@ fn validate_canonical<T>(
 
 #[cfg(test)]
 mod tests {
-    use entity_state::{ComponentPersistence, EntityState};
+    use rusty_engine::entity_state::{ComponentPersistence, EntityState};
 
     use super::*;
 

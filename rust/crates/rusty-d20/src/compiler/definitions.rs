@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use gameplay_mechanics::MechanicsCatalog;
+use rusty_engine::gameplay_mechanics::MechanicsCatalog;
 use serde::{Deserialize, Serialize};
 
 use crate::D20Id;
@@ -578,7 +578,7 @@ impl EquipmentReferenceDefinition {
         }
     }
 
-    pub(crate) fn mechanics_item_id(&self) -> gameplay_mechanics::ItemDefinitionId {
+    pub(crate) fn mechanics_item_id(&self) -> rusty_engine::gameplay_mechanics::ItemDefinitionId {
         match self {
             Self::Armor { armor } => armor_item_id(armor),
             Self::Implement { implement } => implement_item_id(implement),

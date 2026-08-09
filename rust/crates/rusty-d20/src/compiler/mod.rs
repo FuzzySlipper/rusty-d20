@@ -6,7 +6,9 @@ mod mechanics;
 mod validation;
 
 use crate::D20RulesCandidate;
-use gameplay_rules::{resolve_rule_packages, AdmittedRulePackage, RuleDiagnosticReport};
+use rusty_engine::gameplay_rules::{
+    resolve_rule_packages, AdmittedRulePackage, RuleDiagnosticReport,
+};
 
 use collector::DefinitionCollector;
 pub use definitions::*;
