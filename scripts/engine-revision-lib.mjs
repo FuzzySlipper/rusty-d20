@@ -163,6 +163,9 @@ export async function updateEngineRevision({
   assertCommit(commit, "update commit");
   const before = checkEngineRevision(repoRoot);
   assertCarrierFilesClean(repoRoot);
+  if (commit === before.commit) {
+    return Object.freeze({ before, commit, diff: "", dryRun });
+  }
   await provePublic(before.repository, commit);
 
   const head = git(repoRoot, ["rev-parse", "HEAD"]).trim();

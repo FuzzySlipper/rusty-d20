@@ -281,17 +281,28 @@ test("dry-run is scoped non-mutating and cleans its worktree", async () => {
   assert.equal(worktreeCount(fixture), 1);
 });
 
-test("same-revision dry-run is formatting-neutral", async () => {
+test("same-revision production path is a true no-op", async () => {
   const fixture = gitFixture();
-  const result = await updateEngineRevision({
+  const before = carrierSnapshot(fixture);
+  const dryRun = await updateEngineRevision({
     repoRoot: fixture,
     commit: CURRENT,
     dryRun: true,
-    provePublic: async () => {},
-    regenerate: fakeRegenerate,
-    validate: async (candidate) => checkEngineRevision(candidate),
   });
-  assert.equal(result.diff, "");
+  assert.equal(dryRun.diff, "");
+  assert.equal(dryRun.dryRun, true);
+  assert.deepEqual(carrierSnapshot(fixture), before);
+  assert.equal(git(fixture, ["status", "--porcelain"]), "");
+  assert.equal(worktreeCount(fixture), 1);
+
+  const applied = await updateEngineRevision({
+    repoRoot: fixture,
+    commit: CURRENT,
+  });
+  assert.equal(applied.diff, "");
+  assert.equal(applied.dryRun, false);
+  assert.deepEqual(carrierSnapshot(fixture), before);
+  assert.equal(git(fixture, ["status", "--porcelain"]), "");
   assert.equal(worktreeCount(fixture), 1);
 });
 
