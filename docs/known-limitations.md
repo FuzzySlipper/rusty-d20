@@ -53,7 +53,7 @@ native storage policy, or native accessibility implementation is claimed.
   projection rendered as a retained Rusty Engine Three/WebGL scene, compass,
   and discovered-cell map. Warden's Gate adds one claimed treasure, one
   treasure-gated door, and a safe-return checkpoint. The current visual scene
-  uses untextured floor, ceiling, and wall cuboids. Although the pinned Engine
+  uses untextured floor, ceiling, and wall cuboids. Although the Engine
   renderer supports sprites and billboard hosts, Rust does not yet project an
   exploration-visible actor or prop appearance, so the game does not invent a
   browser-only sprite to exercise them. There are no stairs, multiple floors,

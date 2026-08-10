@@ -20,7 +20,7 @@
     "native": "cargo run -p rusty-d20 --bin rusty-d20-native --",
     "verify:native": "./scripts/verify-native-host.sh",
     "check:pattern": "node tools/scripts/check-pattern.mjs",
-    "check:docs": "node tools/scripts/check-docs-commands.mjs",
+    "check:docs": "node --test tools/scripts/dependency-doc-policy.test.mjs && node tools/scripts/check-docs-commands.mjs",
     "protocol:generate": "cargo run -p rusty-d20 --bin rusty-d20-protocol -- libs/protocol/src/generated/api-types.ts",
     "protocol:check": "cargo run -p rusty-d20 --bin rusty-d20-protocol -- --check libs/protocol/src/generated/api-types.ts",
     "serve:local": "node tools/scripts/serve-local.mjs",

@@ -17,8 +17,9 @@ pnpm --dir rules run generate:contract
 ```
 
 The generic envelope, canonical writer, fingerprinting, sources, and
-provenance come from Rusty Engine packages pinned to the reviewed Engine
-revision.
+provenance come from the two neutral packages linked from the adjacent Rusty
+Engine workspace. They are build-time inputs and do not enter the running
+product.
 
 ## Package layout
 
