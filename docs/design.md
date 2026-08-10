@@ -231,8 +231,8 @@ The candidate and compiled-definition contract is documented in
 ## Rules authoring
 
 `rules/packages/d20-authoring` consumes the two neutral Engine authoring
-packages from the exact reviewed Engine Git revision. Its d20 candidate types
-and limits are generated from Rust. It provides source-aware definition
+packages through checked build-time links into the adjacent Engine workspace.
+Its d20 candidate types and limits are generated from Rust. It provides source-aware definition
 builders, module composition, deterministic definition ordering, exact package
 dependencies, and canonical artifact emission.
 
@@ -292,19 +292,24 @@ read-only outside camp.
 
 ## Dependencies
 
-`engine-source.json` records the public Rusty Engine `main` commit resolved by
-the lockfile. Cargo declares one rolling `rusty-engine` facade and therefore
-imports its complete crate namespace. `scripts/engine-revision` transactionally
-advances that lock closure and the isolated rules packages. There is no ordinary sibling
-checkout dependency. Angular libraries follow the retained Nx boundary graph
-in `boundaries.json`; production code cannot import testing fixtures.
+Cargo declares one unconditional `rusty-engine` facade at
+`../rusty-engine/rust/crates/rusty-engine` and therefore imports its complete
+crate namespace. The isolated Rules workspace links only Engine's neutral
+`gameplay-rules-contracts` and `gameplay-rules-authoring` packages from that
+same adjacent checkout. D20 uses the checkout exactly as it stands and has no
+pin updater, freshness gate, or command that mutates it. CI provisions the
+adjacent checkout ephemerally before the focused Rust and Rules gates. Angular
+libraries follow the retained Nx boundary graph in `boundaries.json`;
+production code cannot import testing fixtures.
 
 ## Persistence and execution
 
-`D20Session` saves the exact Engine revision, ruleset fingerprint, complete
-tagged roll-source configuration and position, caller-owned turn, and canonical
-entity snapshot. Session save schema 5 includes the catalog-v2 inventory/equipment state together with
-the registered party roster, encounter participation facts, and per-character
+`D20Session` saves the ruleset fingerprint, complete tagged roll-source
+configuration and position, caller-owned turn, and canonical entity snapshot.
+Engine revision identity is deliberately absent: compatibility is enforced by
+the compiled adjacent facade and strict saved facts. Session save schema 6
+includes the catalog-v2 inventory/equipment state together with the registered
+party roster, encounter participation facts, and per-character
 activation budgets and canonical tactical positions. Product save schema 11
 wraps it with the authored adventure identity, exact composition fingerprint,
 phase, dungeon position/facing/discovery/inspection state, opened doors,

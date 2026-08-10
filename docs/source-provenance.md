@@ -2,21 +2,22 @@
 
 ## Rusty Engine
 
-`Cargo.toml` imports the complete public `rusty-engine` facade from branch
-`main`; `engine-source.json` and `Cargo.lock` record its resolved public commit
-and full transitive Engine crate closure. The updater described in
-[engine-revision-updates.md](engine-revision-updates.md) advances that lock
-transactionally. There is no sibling path fallback or downstream crate menu.
+`Cargo.toml` imports the complete `rusty-engine` facade from the unconditional
+adjacent path `../rusty-engine/rust/crates/rusty-engine`. `Cargo.lock` records a
+path-resolved Engine closure without treating a provider Git SHA as D20 runtime
+identity. D20 consumes that checkout exactly as it stands; no script pulls,
+synchronizes, or mutates it, and there is no downstream crate menu. See the
+[adjacent Engine dependency contract](adjacent-engine-dependency.md).
 
-The isolated TypeScript authoring workspace pins these public Engine packages
-to the same revision and exact repository subpaths:
+The isolated TypeScript authoring workspace links exactly these two neutral
+packages from the same adjacent Engine checkout:
 
 - `@rusty-engine/gameplay-rules-contracts`
 - `@rusty-engine/gameplay-rules-authoring`
 
-`rules/pnpm-lock.yaml` records the codeload revision and subpath identities.
-Only those exact git package prepare scripts are allowed by
-`rules/pnpm-workspace.yaml`.
+`rules/packages/d20-authoring/package.json` and `rules/pnpm-lock.yaml` record
+their exact adjacent package paths. They are build-time authoring inputs only;
+the running host does not need Node or Engine TypeScript packages.
 
 The product browser workspace has no Engine package dependency. Rust owns D20
 frame construction and uses the facade's native webview adapter; Engine alone

@@ -75,8 +75,9 @@ native storage policy, or native accessibility implementation is claimed.
 - The host uses one explicit local save path, defaulting to
   `target/rusty-d20/save.json`. There is no save-slot UI, cloud/storage policy,
   authentication, TLS, multi-user coordination, or general migration between
-  Engine or ruleset revisions. Product schemas 1 through 10 and session schemas
-  before 5 are rejected; this is not a general migration framework. Schema 11
+  provider builds or ruleset fingerprints. Product schemas 1 through 10 and
+  session schemas before 6 are rejected; this is not a general migration
+  framework. Schema 11
   binds saves to the exact authored adventure package composition, dungeon
   events/progress, tactical positions, completed encounter prefix, and terminal
   ending, and permits encounter saves only at a party decision boundary. The

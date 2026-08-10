@@ -75,9 +75,9 @@ den-serve up rusty-d20 -repo /absolute/path/to/rusty-d20
 Focused commands and live-evidence instructions are in
 [docs/verification.md](docs/verification.md). Architecture and source routing
 start at [docs/design.md](docs/design.md) and
-[docs/agent-code-atlas.md](docs/agent-code-atlas.md). The canonical Engine
-revision workflow is in
-[docs/engine-revision-updates.md](docs/engine-revision-updates.md).
+[docs/agent-code-atlas.md](docs/agent-code-atlas.md). The adjacent Engine
+workspace contract is in
+[docs/adjacent-engine-dependency.md](docs/adjacent-engine-dependency.md).
 
 ## Current phase boundary
 
@@ -90,8 +90,9 @@ branching campaign graphs remain later milestones. See
 ## Provenance
 
 The UI was copied from `FuzzySlipper/rusty-engine-ui` at exact reviewed commit
-`68ddfa5430ec3bc2cf7ca96963982db9511e79ba`. `engine-source.json` selects one
-exact reviewed public Rusty Engine commit for every Rust crate and rules
-package. The reviewed Ruleweaver and Asha D20 Fantasy references, including
-the bounded Crosswind role-shape adaptation used by Warden's Gate, are recorded
-in [docs/source-provenance.md](docs/source-provenance.md).
+`68ddfa5430ec3bc2cf7ca96963982db9511e79ba`. Current builds consume the
+adjacent Rusty Engine checkout through one Rust facade path plus two build-time
+Rules package links; Engine revision identity is not a D20 runtime or save fact.
+The reviewed Ruleweaver and Asha D20 Fantasy references, including the bounded
+Crosswind role-shape adaptation used by Warden's Gate, are recorded in
+[docs/source-provenance.md](docs/source-provenance.md).

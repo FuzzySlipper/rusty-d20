@@ -139,7 +139,7 @@ callback.
 
 The semantic session save records:
 
-- save schema and exact Engine revision;
+- save schema 6;
 - compiled ruleset fingerprint;
 - tagged seeded/static roll-source configuration and next position;
 - caller-owned current turn;

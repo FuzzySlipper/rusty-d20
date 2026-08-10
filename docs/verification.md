@@ -183,12 +183,16 @@ focus restoration/navigation assertions, document-width checks, pointer
 pass-through probes, renderer resize observations, and camera disposal tests
 cover focus order, safe gaps, horizontal overflow, resize, and teardown.
 
-## Standalone clone
+## Adjacent checkout prerequisite
 
-Ordinary verification must not require sibling checkouts. A certification clone
-uses only the repository plus public Git/package registries:
+Ordinary verification requires Rusty Engine at the adjacent path selected by
+`Cargo.toml` and the Rules package links. A fresh workspace provisions both
+repositories as siblings; D20 then consumes the Engine checkout exactly as-is:
 
 ```bash
+mkdir rusty-d20-workspace
+cd rusty-d20-workspace
+git clone https://github.com/FuzzySlipper/rusty-engine.git
 git clone https://github.com/FuzzySlipper/rusty-d20.git
 cd rusty-d20
 pnpm install --frozen-lockfile
@@ -196,4 +200,5 @@ pnpm install --frozen-lockfile
 ```
 
 `verify.sh` installs the separately locked `rules/` workspace before its
-focused gate. No sibling Engine checkout is consulted.
+focused gate. It does not fetch, update, or mutate the adjacent Engine checkout;
+CI provisions that sibling ephemerally before running the same focused gates.

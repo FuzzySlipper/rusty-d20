@@ -7,9 +7,12 @@ vocabulary, semantic compilation, orchestration, complete saves, transport,
 projection, controls, and presentation. It must never become an umbrella RPG
 dependency or a facade that other games must import.
 
-Rusty Engine owns reusable host-neutral mechanisms. Pin reviewed public Engine
-revisions; do not add sibling path fallbacks or copy Engine implementations
-downstream. Route a genuinely reusable missing mechanism to an Engine task.
+Rusty Engine owns reusable host-neutral mechanisms. Consume its complete Rust
+facade through the one unconditional adjacent path in `Cargo.toml`, and consume
+its two neutral Rules authoring packages through the checked adjacent links in
+`rules/`. Use that checkout exactly as it stands: no D20 script may pull,
+synchronize, or mutate it. Do not copy Engine implementations downstream.
+Route a genuinely reusable missing mechanism to an Engine task.
 
 ## Den Guidance Bootstrap
 
@@ -64,6 +67,7 @@ Run the narrowest check first, then the owning gate. The aggregate gate is:
 
 User-visible work requires a real Rust-served browser scenario and inspected
 artifacts. Synthetic tests do not prove product integration. Update
-[docs/source-provenance.md](docs/source-provenance.md) when donor or Engine pins
-change, and [docs/known-limitations.md](docs/known-limitations.md) whenever an
-intentional phase boundary remains.
+[docs/source-provenance.md](docs/source-provenance.md) when donor provenance or
+the adjacent Engine boundary changes, and
+[docs/known-limitations.md](docs/known-limitations.md) whenever an intentional
+phase boundary remains.
