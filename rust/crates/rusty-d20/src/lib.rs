@@ -99,9 +99,6 @@ pub use session::{
     MAX_STATIC_ACTION_ROLLS,
 };
 
-/// Exact reviewed Rusty Engine revision selected by `engine-source.json`.
-pub const ENGINE_REVISION: &str = env!("RUSTY_D20_ENGINE_REVISION");
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 #[ts(rename_all = "kebab-case")]
@@ -115,7 +112,6 @@ pub enum RuntimeStatusDto {
 pub struct RuntimeReadoutDto {
     pub product: String,
     pub version: String,
-    pub engine_revision: String,
     pub status: RuntimeStatusDto,
     pub entity_count: u32,
 }
@@ -133,7 +129,6 @@ impl GameRuntime {
         RuntimeReadoutDto {
             product: "Rusty D20".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
-            engine_revision: ENGINE_REVISION.to_owned(),
             status: RuntimeStatusDto::Ready,
             entity_count: u32::try_from(self.readout_entity_count())
                 .expect("entity-state bounds fit the protocol count"),
@@ -242,7 +237,6 @@ mod tests {
             RuntimeReadoutDto {
                 product: "Rusty D20".to_owned(),
                 version: "0.1.0".to_owned(),
-                engine_revision: ENGINE_REVISION.to_owned(),
                 status: RuntimeStatusDto::Ready,
                 entity_count: 0,
             }
@@ -258,10 +252,9 @@ mod tests {
     }
 
     #[test]
-    fn engine_support_crates_are_linked_from_the_reviewed_revision() {
+    fn engine_support_crates_are_linked_through_the_facade() {
         let _mechanics_limit = rusty_engine::gameplay_mechanics::MAX_TRACKS_PER_ENTITY;
         let _rules_limit = rusty_engine::gameplay_rules::MAX_RULE_PACKAGES_PER_SET;
         let _rng_seed = rusty_engine::svc_rng::RngSeed::new(1);
-        assert_eq!(ENGINE_REVISION.len(), 40);
     }
 }

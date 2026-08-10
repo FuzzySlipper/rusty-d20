@@ -35,11 +35,10 @@ use crate::{
     ActivationBudgetsComponent, ActivationCostDefinition, ConditionClauseDefinition,
     D20ComponentDataError, D20Id, D20Ruleset, DamageDefinition, EncounterFaction,
     EncounterParticipationComponent, EquipmentReferenceDefinition, ScheduledEffect,
-    ScheduledEffectsComponent, TacticalPosition, ENGINE_REVISION, MAX_D20_DAMAGE_DICE,
-    MAX_D20_DAMAGE_DIE_SIDES,
+    ScheduledEffectsComponent, TacticalPosition, MAX_D20_DAMAGE_DICE, MAX_D20_DAMAGE_DIE_SIDES,
 };
 
-const D20_SAVE_SCHEMA_VERSION: u32 = 5;
+const D20_SAVE_SCHEMA_VERSION: u32 = 6;
 
 pub use error::{D20SessionError, SessionSaveError};
 pub use resolution::{

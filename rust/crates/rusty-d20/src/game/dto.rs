@@ -500,7 +500,6 @@ pub struct PartyMemberDto {
 pub struct GameSnapshotDto {
     pub product: String,
     pub version: String,
-    pub engine_revision: String,
     pub ruleset_fingerprint: String,
     #[ts(type = "number")]
     pub revision: u64,

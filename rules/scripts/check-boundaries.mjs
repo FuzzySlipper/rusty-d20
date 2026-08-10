@@ -1,12 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-
-import { loadEngineSource } from '../../scripts/engine-revision-lib.mjs';
-
 const root = new URL('../', import.meta.url);
 const repositoryRoot = new URL('../../', import.meta.url);
-const engineRevision = loadEngineSource(fileURLToPath(repositoryRoot)).commit;
-const enginePrefix = `github:FuzzySlipper/rusty-engine#${engineRevision}&path:rules/packages/`;
+const enginePrefix = 'link:../../../../rusty-engine/rules/packages/';
 const packages = new Map([
   [
     'd20-authoring',
@@ -58,7 +53,7 @@ for (const [dependency, path] of [
 ]) {
   if (authoringManifest.dependencies[dependency] !== `${enginePrefix}${path}`) {
     failures.push(
-      `${dependency} is not pinned to the reviewed Engine subpackage`,
+      `${dependency} does not use the adjacent Engine rules package`,
     );
   }
 }

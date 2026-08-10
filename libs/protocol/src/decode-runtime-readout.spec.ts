@@ -6,10 +6,7 @@ import {
   decodeSaveStatus,
 } from "./index";
 
-const SYNTHETIC_ENGINE_REVISION = "1111111111111111111111111111111111111111";
-
 const validReadout = {
-  engineRevision: SYNTHETIC_ENGINE_REVISION,
   entityCount: 0,
   product: "Rusty D20",
   status: "ready",
@@ -43,7 +40,6 @@ describe("decodeGameSnapshot", () => {
   const empty = {
     product: "Rusty D20",
     version: "0.1.0",
-    engineRevision: SYNTHETIC_ENGINE_REVISION,
     rulesetFingerprint: "rules",
     revision: 0,
     saved: false,

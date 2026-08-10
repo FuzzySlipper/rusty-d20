@@ -16,7 +16,7 @@ maxDungeonViewDepth: 3,
 
 export type RuntimeStatusDto = "ready";
 
-export type RuntimeReadoutDto = { product: string, version: string, engineRevision: string, status: RuntimeStatusDto, entityCount: number, };
+export type RuntimeReadoutDto = { product: string, version: string, status: RuntimeStatusDto, entityCount: number, };
 
 export type HealthDto = { status: string, version: string, };
 
@@ -104,7 +104,7 @@ export type PartyMemberDto = { character: CharacterDto, loadout: LoadoutDto, };
 
 export type CampaignDto = { id: string, title: string, phase: CampaignPhaseDto, party: Array<PartyMemberDto>, activeEncounterId: string | null, availableEncounters: Array<EncounterChoiceDto>, latestOutcome: CampaignOutcomeDto | null, completedEncounters: Array<CompletedEncounterDto>, completion: AdventureCompletionDto | null, };
 
-export type GameSnapshotDto = { product: string, version: string, engineRevision: string, rulesetFingerprint: string, revision: number, saved: boolean, availableAdventures: Array<AdventureChoiceDto>, campaign: CampaignDto | null, exploration: ExplorationDto | null, encounter: EncounterDto | null, };
+export type GameSnapshotDto = { product: string, version: string, rulesetFingerprint: string, revision: number, saved: boolean, availableAdventures: Array<AdventureChoiceDto>, campaign: CampaignDto | null, exploration: ExplorationDto | null, encounter: EncounterDto | null, };
 
 export type SaveStateDto = "empty" | "ready" | "recovery-required";
 

@@ -1280,10 +1280,7 @@ interface LoadoutItemLocation {
                       <strong>{{ status.saveIdentity }}</strong>
                     </div>
                   }
-                  <p class="muted">
-                    Engine {{ game()?.engineRevisionShort }} · exact checked
-                    catalog
-                  </p>
+                  <p class="muted">Engine-backed catalog</p>
                 </section>
               } @else if (!campaignEntered()) {
                 <section
@@ -1982,9 +1979,6 @@ interface LoadoutItemLocation {
                   ) {
                     <span>{{ defense.label }} defense {{ defense.value }}</span>
                   }
-                  <span
-                    >Engine <code>{{ game()?.engineRevisionShort }}</code></span
-                  >
                   <span>
                     Rules
                     <code [title]="game()?.rulesetFingerprint">{{

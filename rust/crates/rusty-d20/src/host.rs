@@ -581,7 +581,6 @@ mod tests {
             .to_bytes();
         let readout: RuntimeReadoutDto = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(readout.product, "Rusty D20");
-        assert_eq!(readout.engine_revision, crate::ENGINE_REVISION);
         assert_eq!(readout.entity_count, 0);
 
         let (status, body) = get_json(&app, "/api/v1/session/save-status").await;

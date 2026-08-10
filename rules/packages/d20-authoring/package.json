@@ -18,8 +18,8 @@
     "test": "tsc --build && node --test dist/*.test.js"
   },
   "dependencies": {
-    "@rusty-engine/gameplay-rules-authoring": "github:FuzzySlipper/rusty-engine#d0b5e672b83d463bff71d8d35c877f770142ff3c&path:rules/packages/gameplay-rules-authoring",
-    "@rusty-engine/gameplay-rules-contracts": "github:FuzzySlipper/rusty-engine#d0b5e672b83d463bff71d8d35c877f770142ff3c&path:rules/packages/gameplay-rules-contracts"
+    "@rusty-engine/gameplay-rules-authoring": "link:../../../../rusty-engine/rules/packages/gameplay-rules-authoring",
+    "@rusty-engine/gameplay-rules-contracts": "link:../../../../rusty-engine/rules/packages/gameplay-rules-contracts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0"

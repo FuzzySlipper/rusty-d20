@@ -13,8 +13,6 @@ import type {
 export interface RuntimeReadoutView {
   readonly product: string;
   readonly version: string;
-  readonly engineRevision: string;
-  readonly engineRevisionShort: string;
   readonly statusLabel: string;
   readonly entityCount: number;
 }
@@ -22,8 +20,6 @@ export interface RuntimeReadoutView {
 export interface GameSnapshotView {
   readonly product: string;
   readonly version: string;
-  readonly engineRevision: string;
-  readonly engineRevisionShort: string;
   readonly rulesetFingerprint: string;
   readonly rulesetFingerprintShort: string;
   readonly revision: number;
@@ -67,8 +63,6 @@ export function projectRuntimeReadout(
   return {
     product: readout.product,
     version: readout.version,
-    engineRevision: readout.engineRevision,
-    engineRevisionShort: readout.engineRevision.slice(0, 12),
     statusLabel:
       readout.status === "ready" ? "Runtime ready" : "Runtime unavailable",
     entityCount: readout.entityCount,
@@ -81,8 +75,6 @@ export function projectGameSnapshot(
   return {
     product: snapshot.product,
     version: snapshot.version,
-    engineRevision: snapshot.engineRevision,
-    engineRevisionShort: snapshot.engineRevision.slice(0, 12),
     rulesetFingerprint: snapshot.rulesetFingerprint,
     rulesetFingerprintShort: snapshot.rulesetFingerprint.slice(0, 12),
     revision: snapshot.revision,

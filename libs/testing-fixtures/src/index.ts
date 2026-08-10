@@ -6,13 +6,10 @@ import type {
 } from "@rusty-d20/protocol";
 import type { RustyD20Transport } from "@rusty-d20/transport";
 
-const SYNTHETIC_ENGINE_REVISION = "1111111111111111111111111111111111111111";
-
 export function makeRuntimeReadout(
   overrides: Partial<RuntimeReadoutDto> = {},
 ): RuntimeReadoutDto {
   return {
-    engineRevision: SYNTHETIC_ENGINE_REVISION,
     entityCount: 0,
     product: "Rusty D20",
     status: "ready",
@@ -27,7 +24,6 @@ export function makeGameSnapshot(
   return {
     product: "Rusty D20",
     version: "0.1.0",
-    engineRevision: SYNTHETIC_ENGINE_REVISION,
     rulesetFingerprint: "starter-core=fingerprint|steel-guard=fingerprint",
     revision: 0,
     saved: false,

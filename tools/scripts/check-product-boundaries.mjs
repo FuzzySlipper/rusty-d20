@@ -1,11 +1,6 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import {
-  ENGINE_REPOSITORY,
-  loadEngineSource,
-} from '../../scripts/engine-revision-lib.mjs';
-
 const root = process.cwd();
 const productionRoots = [
   'apps/app/src',
@@ -43,16 +38,13 @@ for (const relativeRoot of productionRoots) {
 const rootManifest = readFileSync(join(root, 'Cargo.toml'), 'utf8');
 const manifest = readFileSync(join(root, 'rust/crates/rusty-d20/Cargo.toml'), 'utf8');
 const applicationWorkspace = readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8');
-const engineSource = loadEngineSource(root);
-const expected = `rusty-engine = { git = "${ENGINE_REPOSITORY}", branch = "${engineSource.branch}" }`;
+const expected =
+  'rusty-engine = { path = "../rusty-engine/rust/crates/rusty-engine" }';
 if (!rootManifest.split('\n').some((line) => line.trim() === expected)) {
-  failures.push('Rusty Engine complete facade does not track canonical main');
+  failures.push('Rusty Engine complete facade does not use the adjacent checkout');
 }
 if (!/^rusty-engine\.workspace = true$/mu.test(manifest)) {
   failures.push('Rusty D20 must import the complete Engine facade');
-}
-if (/^[a-z][a-z0-9-]*\s*=\s*\{[^}\n]*path\s*=/mu.test(manifest)) {
-  failures.push('The downstream Rust manifest must not use path dependencies.');
 }
 if (applicationWorkspace.includes('@rusty-engine/')) {
   failures.push('The downstream application workspace must not carry Engine renderer packages.');

@@ -9,7 +9,7 @@ edition = "2021"
 [workspace.dependencies]
 anyhow = "1"
 gtk = "0.18"
-rusty-engine = { git = "https://github.com/FuzzySlipper/rusty-engine", branch = "main" }
+rusty-engine = { path = "../rusty-engine/rust/crates/rusty-engine" }
 winit = "0.30"
 
 [workspace.lints.rust]

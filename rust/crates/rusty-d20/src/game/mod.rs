@@ -33,7 +33,7 @@ use crate::{
     EncounterFactionDefinition, EncounterParticipationSeed, EquipmentItemSeed, InventorySeed,
     ItemInstanceDefinition, ItemRarityDefinition, ReactionReceipt, RollSourceConfig,
     ScheduledEffectsComponent, SessionSaveError, StorageSeed, TacticalBoardDefinition,
-    TacticalPosition, ENGINE_REVISION, MAX_D20_ENCOUNTER_PARTICIPANTS,
+    TacticalPosition, MAX_D20_ENCOUNTER_PARTICIPANTS,
 };
 
 const GAME_SAVE_SCHEMA_VERSION: u32 = 11;

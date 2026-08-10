@@ -155,7 +155,6 @@ pub enum SessionSaveError {
     MechanicsSnapshot(MechanicsSnapshotError),
     ComponentRegistration(ComponentRegistrationError),
     UnsupportedSchema { actual: u32 },
-    EngineRevisionMismatch { expected: String, actual: String },
     RulesetMismatch { expected: String, actual: String },
     InvalidState(D20SessionError),
 }

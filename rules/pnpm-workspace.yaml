@@ -2,7 +2,4 @@ packages:
   - "packages/*"
 
 allowBuilds:
-  "@rusty-engine/gameplay-rules-authoring@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/d0b5e672b83d463bff71d8d35c877f770142ff3c#path:rules/packages/gameplay-rules-authoring": true
-  '@rusty-engine/gameplay-rules-authoring@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/fb608e323a8b44a55195f5720101224ff37fd5db#path:rules/packages/gameplay-rules-authoring': set this to true or false
-  "@rusty-engine/gameplay-rules-contracts@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/d0b5e672b83d463bff71d8d35c877f770142ff3c#path:rules/packages/gameplay-rules-contracts": true
-  '@rusty-engine/gameplay-rules-contracts@https://codeload.github.com/FuzzySlipper/rusty-engine/tar.gz/fb608e323a8b44a55195f5720101224ff37fd5db#path:rules/packages/gameplay-rules-contracts': set this to true or false
+  "@parcel/watcher": true

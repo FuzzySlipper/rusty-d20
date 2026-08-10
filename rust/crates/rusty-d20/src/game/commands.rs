@@ -101,7 +101,6 @@ impl GameRuntime {
         Ok(GameSnapshotDto {
             product: "Rusty D20".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
-            engine_revision: ENGINE_REVISION.to_owned(),
             ruleset_fingerprint: self.rules.fingerprint().to_owned(),
             revision: self.revision,
             saved: self.saved_revision == Some(self.revision),

@@ -79,7 +79,6 @@ export function decodeRuntimeReadout(
 ): Result<RuntimeReadoutDto> {
   if (
     !hasExactKeys(value, [
-      "engineRevision",
       "entityCount",
       "product",
       "status",
@@ -93,13 +92,11 @@ export function decodeRuntimeReadout(
   }
   const product = value["product"];
   const version = value["version"];
-  const engineRevision = value["engineRevision"];
   const status = value["status"];
   const entityCount = value["entityCount"];
   if (
     typeof product !== "string" ||
     typeof version !== "string" ||
-    typeof engineRevision !== "string" ||
     status !== "ready" ||
     !isSafeNonNegativeInteger(entityCount)
   ) {
@@ -110,7 +107,7 @@ export function decodeRuntimeReadout(
   }
   return {
     ok: true,
-    value: { product, version, engineRevision, status, entityCount },
+    value: { product, version, status, entityCount },
   };
 }
 
@@ -212,7 +209,6 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
       "campaign",
       "availableAdventures",
       "encounter",
-      "engineRevision",
       "exploration",
       "product",
       "revision",
@@ -240,7 +236,6 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
   if (
     typeof value["product"] !== "string" ||
     typeof value["version"] !== "string" ||
-    typeof value["engineRevision"] !== "string" ||
     typeof value["rulesetFingerprint"] !== "string" ||
     !isSafeNonNegativeInteger(value["revision"]) ||
     typeof value["saved"] !== "boolean" ||
@@ -272,7 +267,6 @@ function gameSnapshot(value: unknown): GameSnapshotDto | undefined {
   return {
     product: value["product"],
     version: value["version"],
-    engineRevision: value["engineRevision"],
     rulesetFingerprint: value["rulesetFingerprint"],
     revision: value["revision"],
     saved: value["saved"],

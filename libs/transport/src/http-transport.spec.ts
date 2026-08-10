@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { HttpPort, HttpResponse } from '@rusty-d20/platform';
 import { createHttpRustyD20Transport } from './index';
 
-const SYNTHETIC_ENGINE_REVISION = '1111111111111111111111111111111111111111';
-
 const readout = {
-  engineRevision: SYNTHETIC_ENGINE_REVISION,
   entityCount: 0,
   product: 'Rusty D20',
   status: 'ready',
@@ -15,7 +12,6 @@ const readout = {
 const snapshot = {
   product: 'Rusty D20',
   version: '0.1.0',
-  engineRevision: SYNTHETIC_ENGINE_REVISION,
   rulesetFingerprint: 'rules',
   revision: 0,
   saved: false,

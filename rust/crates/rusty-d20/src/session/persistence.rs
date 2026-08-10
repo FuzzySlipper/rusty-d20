@@ -5,7 +5,6 @@ use super::*;
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct D20SessionSave {
     schema_version: u32,
-    engine_revision: String,
     ruleset_fingerprint: String,
     roll_source: RollSourceConfig,
     next_roll: u64,
@@ -18,7 +17,6 @@ impl D20Session {
         let entity_state = serde_json::from_str(&encode_snapshot(&self.entities)?)?;
         Ok(serde_json::to_string_pretty(&D20SessionSave {
             schema_version: D20_SAVE_SCHEMA_VERSION,
-            engine_revision: ENGINE_REVISION.to_owned(),
             ruleset_fingerprint: self.rules.fingerprint().to_owned(),
             roll_source: self.roll_source.clone(),
             next_roll: self.next_roll,
@@ -32,12 +30,6 @@ impl D20Session {
         if save.schema_version != D20_SAVE_SCHEMA_VERSION {
             return Err(SessionSaveError::UnsupportedSchema {
                 actual: save.schema_version,
-            });
-        }
-        if save.engine_revision != ENGINE_REVISION {
-            return Err(SessionSaveError::EngineRevisionMismatch {
-                expected: ENGINE_REVISION.to_owned(),
-                actual: save.engine_revision,
             });
         }
         if save.ruleset_fingerprint != rules.fingerprint() {
