@@ -39,6 +39,10 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: rules/pnpm-lock.yaml
+      - name: Prepare adjacent Engine Rules packages
+        run: |
+          pnpm --dir ../rusty-engine/rules install --frozen-lockfile
+          pnpm --dir ../rusty-engine/rules run build
       - run: ./scripts/verify-rules.sh
 
   verify-boundaries:

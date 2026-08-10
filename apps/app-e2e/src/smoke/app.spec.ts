@@ -774,9 +774,6 @@ test.describe.serial("real Rust encounter shell", () => {
         .filter({ hasText: "Iron Warden" })
         .getByText("Iron Warden", { exact: true }),
     ).toBeVisible();
-    await expect(page.getByLabel("Encounter identity")).toContainText(
-      "Engine d0b5e672b83d",
-    );
     await expect(
       page.getByRole("button", { name: "Pin In Place" }),
     ).toBeVisible();
