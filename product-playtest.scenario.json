@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "project": "rusty-d20",
+  "scenario": "wardens-gate-visible-dungeon-controls",
+  "mission": "Start a new Warden's Gate adventure, enter the dungeon, then use ordinary visible controls to turn or move and inspect a landmark; confirm that the rendered dungeon view and visible readouts change coherently with those actions.",
+  "controls": [
+    {
+      "input": "Click the visible New Warden's Gate button",
+      "purpose": "Start the authored Warden's Gate adventure"
+    },
+    {
+      "input": "Click the visible Enter the dungeon button",
+      "purpose": "Enter the first-person dungeon view"
+    },
+    {
+      "input": "Click the visible Left, Right, or Forward movement-pad buttons",
+      "purpose": "Turn or move through the Rust-owned dungeon grid"
+    },
+    {
+      "input": "Click the visible Inspect button when available",
+      "purpose": "Inspect the landmark shown by the current dungeon position"
+    }
+  ],
+  "artifacts": {
+    "screenshots": "before-and-after",
+    "frameBurst": {
+      "count": 5,
+      "intervalMs": 100
+    },
+    "trace": true,
+    "video": false
+  },
+  "reproductionLimit": 1,
+  "notes": "Use visible screenshots and repeated frames for judgement. DOM or state readback may diagnose a result but must be labelled and must not replace visible proof."
+}

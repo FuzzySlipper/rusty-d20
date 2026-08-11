@@ -66,6 +66,21 @@ For a managed LAN-visible instance, use:
 den-serve up rusty-d20 -repo /absolute/path/to/rusty-d20
 ```
 
+For an on-demand Luna/max product playtest, use `.den-serve.json` as the
+explicit broker manifest and `product-playtest.scenario.json` as the mission
+packet. Validate the repository-facing packet before spawning the playtester:
+
+```bash
+node /home/dev/den-services/scripts/check-product-playtest-adoption.mjs \
+  /home/dev/rusty-d20 \
+  /home/dev/rusty-d20/.den-serve.json \
+  /home/dev/rusty-d20/product-playtest.scenario.json
+```
+
+The live model-driven run is completion or review evidence and stays outside
+ordinary per-commit CI. Visible screenshots and repeated frames own product
+judgement; diagnostics must be labelled and cannot replace visible proof.
+
 ## Verify
 
 ```bash
