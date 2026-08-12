@@ -1,5 +1,10 @@
 # Source provenance
 
+The Engine dependency section below is current guidance. Later donor,
+composition, and migration sections retain exact source revisions as historical
+provenance and review evidence only; they are not Engine dependency pins,
+freshness requirements, or update instructions.
+
 ## Rusty Engine
 
 `Cargo.toml` imports the complete `rusty-engine` facade from the unconditional

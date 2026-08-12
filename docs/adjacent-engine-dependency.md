@@ -35,6 +35,14 @@ Use `./scripts/verify.sh` when the whole product surface needs certification.
 `Cargo.lock` and `rules/pnpm-lock.yaml` prove path resolution and third-party
 package versions; neither lockfile is an Engine Git-revision carrier.
 
+## Studio boundary
+
+D20 does not embed or configure the Engine Studio or renderer workspaces. If a
+future project adapter is needed, the Engine-hosted Studio boundary remains the
+owner: `.rusty-studio.json`, project data, and a Rust adapter are the integration
+surface. Do not add a downstream Studio shell, renderer TypeScript/Three
+package, private bridge, or child HTML document.
+
 ## Ownership
 
 Rusty Engine owns reusable mechanisms and the neutral authoring packages. D20
