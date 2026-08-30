@@ -7,6 +7,7 @@ const tacticalControls = [
   ['Move north', 'd20.tactical.move.north'], ['Move south', 'd20.tactical.move.south'], ['Move west', 'd20.tactical.move.west'], ['Move east', 'd20.tactical.move.east'],
   ['Party', 'd20.party.next'], ['Action', 'd20.action.next'], ['Target', 'd20.target.next'], ['Commit action', 'd20.action.commit'], ['React', 'd20.reaction.choose'], ['Decline (Esc)', 'd20.reaction.decline'],
 ];
+const outcomeControls = [['Continue', 'd20.outcome.continue']];
 
 export function mountProductUi(root, context) {
   const panel = document.createElement('section'); panel.setAttribute('aria-label', 'Rusty D20 controls and observations'); panel.style.maxWidth = '72rem';
@@ -17,6 +18,8 @@ export function mountProductUi(root, context) {
   const emit = (intent) => context.intents?.claim(intent, { kind: 'digital', active: true });
   const addControls = (container, definitions) => definitions.map(([label, intent]) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.dataset.intent = intent; button.style.minHeight = '44px'; button.addEventListener('click', () => emit(intent)); container.append(button); return button; });
   const campaignButtons = addControls(buttons, campaignControls); background.append(buttons);
+  const outcome = document.createElement('section'); outcome.setAttribute('aria-label', 'Outcome controls'); outcome.hidden = true;
+  const outcomeButtons = addControls(outcome, outcomeControls); background.append(outcome);
   const observations = document.createElement('section'); observations.setAttribute('aria-label', 'Campaign observer fields');
   const observationTitle = document.createElement('h2'); observationTitle.textContent = 'Campaign observer'; observations.append(observationTitle);
   const observerList = document.createElement('dl'); observerList.style.cssText = 'display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1rem'; observations.append(observerList); background.append(observations);
@@ -45,6 +48,7 @@ export function mountProductUi(root, context) {
     const entries = Object.entries(value).filter(([key]) => !key.startsWith('log.'));
     renderFields(observerList, entries.filter(([key]) => !key.startsWith('tactical.') && !key.startsWith('selection.')));
     if (phase === 'Encounter') { enterTacticalModal(); renderFields(tacticalList, entries); } else exitTacticalModal();
+    const outcomeActive = phase === 'Outcome'; outcome.hidden = !outcomeActive; outcomeButtons.forEach((button) => { button.disabled = !outcomeActive; });
     log.replaceChildren(...Object.entries(value).filter(([key]) => key.startsWith('log.')).map(([, text]) => { const item = document.createElement('li'); item.textContent = String(text); return item; }));
   };
   const onKeydown = (event) => {
