@@ -50,7 +50,41 @@ public static class D20ComponentTypes
     public static readonly ComponentType<EncounterParticipationFact> Participation = ComponentType<EncounterParticipationFact>.Create(ProductComponentKeys.Create(4));
     public static readonly ComponentType<EffectProjectionFact> Effects = ComponentType<EffectProjectionFact>.Create(ProductComponentKeys.Create(5));
 }
-public sealed record ActionPreview(EntityId Actor, EntityId Target, D20Id Action, OperationId Operation, ulong Turn, ulong RollPosition, int AbilityModifier, int Defense, DamageDefinition Damage, int Range, ulong ActorAbilitiesRevision, ulong ActorBudgetRevision, ulong ActorEquipmentRevision, ulong ActorEffectsRevision, ulong TargetResourcesRevision, ulong TargetBudgetRevision, ulong TargetVitalityRevision, ulong TargetEffectsRevision, ulong InventoryRevision);
+/// <summary>
+/// A session-issued action preview. Consumers can observe it for tactical
+/// admission, but only this assembly can construct or alter its fence facts.
+/// Apply paths still rebind every outcome fact from the live catalog/state.
+/// </summary>
+public sealed record ActionPreview
+{
+    internal ActionPreview(EntityId actor, EntityId target, D20Id action, OperationId operation, ulong turn, ulong rollPosition, int abilityModifier, int defense, DamageDefinition damage, int range, ulong actorAbilitiesRevision, ulong actorBudgetRevision, ulong actorEquipmentRevision, ulong actorEffectsRevision, ulong targetResourcesRevision, ulong targetBudgetRevision, ulong targetVitalityRevision, ulong targetEffectsRevision, ulong inventoryRevision)
+    {
+        Actor = actor; Target = target; Action = action; Operation = operation; Turn = turn; RollPosition = rollPosition;
+        AbilityModifier = abilityModifier; Defense = defense; Damage = damage; Range = range;
+        ActorAbilitiesRevision = actorAbilitiesRevision; ActorBudgetRevision = actorBudgetRevision; ActorEquipmentRevision = actorEquipmentRevision; ActorEffectsRevision = actorEffectsRevision;
+        TargetResourcesRevision = targetResourcesRevision; TargetBudgetRevision = targetBudgetRevision; TargetVitalityRevision = targetVitalityRevision; TargetEffectsRevision = targetEffectsRevision; InventoryRevision = inventoryRevision;
+    }
+
+    public EntityId Actor { get; internal init; }
+    public EntityId Target { get; internal init; }
+    public D20Id Action { get; internal init; }
+    public OperationId Operation { get; internal init; }
+    public ulong Turn { get; internal init; }
+    public ulong RollPosition { get; internal init; }
+    public int AbilityModifier { get; internal init; }
+    public int Defense { get; internal init; }
+    public DamageDefinition Damage { get; internal init; }
+    public int Range { get; internal init; }
+    public ulong ActorAbilitiesRevision { get; internal init; }
+    public ulong ActorBudgetRevision { get; internal init; }
+    public ulong ActorEquipmentRevision { get; internal init; }
+    public ulong ActorEffectsRevision { get; internal init; }
+    public ulong TargetResourcesRevision { get; internal init; }
+    public ulong TargetBudgetRevision { get; internal init; }
+    public ulong TargetVitalityRevision { get; internal init; }
+    public ulong TargetEffectsRevision { get; internal init; }
+    public ulong InventoryRevision { get; internal init; }
+}
 public sealed record ActionReceipt(OperationId Operation, EntityId Actor, EntityId Target, D20Id Action, ulong RollPosition, byte D20, int Total, int Defense, bool Hit, int Damage, D20Id? Effect, int ForcedMovementIntent, ulong Turn, ulong SessionRevision);
 public sealed record ReactionReceipt(D20Id Reaction, EntityId Target, D20Id Resource, int Before, int After, D20Id Effect, ulong ExpiresAtTurn, ulong SessionRevision);
 public sealed record ReactionResolutionReceipt(ReactionReceipt? Reaction, ActionReceipt Action);
@@ -68,6 +102,7 @@ public sealed class D20SessionException : InvalidOperationException { public D20
 public sealed class D20Session : IDisposable
 {
     private const ulong FirstInventoryOnlyEntity = 1UL << 63;
+    private readonly D20DefinitionCatalog _catalog;
     private readonly IReadOnlyDictionary<D20Id, ActionDefinition> _actions;
     private readonly IReadOnlyDictionary<D20Id, AbilityDefinition> _abilities;
     private readonly IReadOnlyDictionary<D20Id, DefenseDefinition> _defenses;
@@ -101,18 +136,19 @@ public sealed class D20Session : IDisposable
     public D20Session(CompiledD20Content rules, RollSourceState rollSource, SessionTuning? tuning = null, ScopedSeededRollAdapter? seededRolls = null)
     {
         ArgumentNullException.ThrowIfNull(rules);
-        _actions = rules.Modules.SelectMany(module => module.ActionsOrEmpty).ToDictionary(value => value.Id);
-        _abilities = rules.Modules.SelectMany(module => module.AbilitiesOrEmpty).ToDictionary(value => value.Id);
-        _defenses = rules.Modules.SelectMany(module => module.DefensesOrEmpty).ToDictionary(value => value.Id);
-        _armors = rules.Modules.SelectMany(module => module.ArmorsOrEmpty).ToDictionary(value => value.Id);
-        _implements = rules.Modules.SelectMany(module => module.ImplementsOrEmpty).ToDictionary(value => value.Id);
-        _characters = rules.Modules.SelectMany(module => module.CharactersOrEmpty).ToDictionary(value => value.Id);
-        _authoredItems = rules.Modules.SelectMany(module => module.ItemsOrEmpty).ToDictionary(value => value.Id);
-        _storage = rules.Modules.SelectMany(module => module.StorageOrEmpty).ToDictionary(value => value.Id);
-        _resources = rules.Modules.SelectMany(module => module.ResourcesOrEmpty).ToDictionary(value => value.Id);
-        _budgets = rules.Modules.SelectMany(module => module.BudgetsOrEmpty).ToDictionary(value => value.Id);
-        _effects = rules.Modules.SelectMany(module => module.EffectsOrEmpty).ToDictionary(value => value.Id);
-        _reactions = rules.Modules.SelectMany(module => module.ReactionsOrEmpty).ToDictionary(value => value.Id);
+        _catalog = rules.Catalog ?? throw new D20SessionException("Compiled content does not provide its normalized definition catalog.");
+        _actions = _catalog.Actions;
+        _abilities = _catalog.Abilities;
+        _defenses = _catalog.Defenses;
+        _armors = _catalog.Armors;
+        _implements = _catalog.Implements;
+        _characters = _catalog.Characters;
+        _authoredItems = _catalog.Items;
+        _storage = _catalog.Storage;
+        _resources = _catalog.Resources;
+        _budgets = _catalog.Budgets;
+        _effects = _catalog.Effects;
+        _reactions = _catalog.Reactions;
         _engineEffects = _effects.Values.ToDictionary(effect => effect.Id, effect => new Rusty.Engine.Mechanics.EffectDefinition(EffectDefinitionId.Parse($"d20.effect.{effect.Id.Value}"), StackingGroupId.Parse($"d20.effect.{effect.Id.Value}"), EffectStackingPolicy.Refresh, 1, 1));
         Tuning = tuning ?? new SessionTuning();
         if (rollSource.StaticRolls.Length > Tuning.MaximumStaticRolls) throw new D20SessionException("The static action roll tape exceeds the named bound.");
@@ -155,6 +191,13 @@ public sealed class D20Session : IDisposable
     public EntityId OwnerEntity(D20Id owner) => _ownerEntities.TryGetValue(owner, out EntityId entity) ? entity : throw new D20SessionException($"Unknown D20 owner {owner}.");
     public bool TryGetItemEntity(D20Id item, out EntityId entity) => _itemEntities.TryGetValue(item, out entity);
     public EntityId ItemEntity(D20Id item) => _itemEntities.TryGetValue(item, out EntityId entity) ? entity : throw new D20SessionException($"Unknown D20 item {item}.");
+    /// <summary>Returns this admitted actor's authored action closure from the immutable compiled catalog.</summary>
+    public IReadOnlyList<ActionDefinition> AdmittedActions(EntityId actor)
+    {
+        ThrowIfDisposed(); RequireParticipant(actor);
+        CharacterDefinition character = _catalog.Characters[_participantCharacters[actor]];
+        return character.Actions.Select(action => _catalog.Actions[action]).ToImmutableArray();
+    }
     public IReadOnlyList<D20InventoryTransferReceipt> InventoryTransfers => _inventoryTransfers.AsReadOnly();
     public void SetActionResource(EntityId entity, D20Id resource, int amount) => Replace(entity, D20ComponentTypes.Resources, value => new ActionResourcesFact(ReplaceResource(value.Values, resource, amount)));
     public void SetActivationBudget(EntityId entity, D20Id budget, int amount) => Replace(entity, D20ComponentTypes.Budgets, value => new ActivationBudgetsFact(ReplaceBudget(value.Values, budget, amount)));
@@ -467,8 +510,7 @@ public sealed class D20Session : IDisposable
     }
     public ReactionReceipt ApplyReaction(ActionPreview preview, D20Id reaction)
     {
-        EnsureFresh(preview); ReactionDefinition definition = _reactions.TryGetValue(reaction, out ReactionDefinition? value) ? value : throw new D20SessionException("Unknown reaction.");
-        if (definition.Defense != ResolveAttack(preview.Actor, RequireAction(preview.Action)).Defense) throw new D20SessionException("Reaction does not defend this action's authored defense.");
+        EnsureFresh(preview); ResolvedAction action = RebindAction(preview); ReactionDefinition definition = RequireReaction(reaction, action.DefendedBy);
         ActionResourcesFact resources = Entities.Get(preview.Target, D20ComponentTypes.Resources); if (!TryValue(resources.Values, definition.Resource, out int before) || before < definition.Cost) throw new D20SessionException("Reaction resource is unavailable.");
         ActivationBudgetsFact budgets = Entities.Get(preview.Target, D20ComponentTypes.Budgets); EnsureCosts(budgets.Values, definition.Costs); ulong expires = checked(Turn + (ulong)_effects[definition.Effect].DurationTurns);
         EffectState candidateEffects = CloneEffectState(preview.Target); ApplyOrRefreshEffect(candidateEffects, preview.Target, definition.Effect, preview.Operation); EffectProjectionFact afterProjection = Projection(Entities.Get(preview.Target, D20ComponentTypes.Effects), preview.Target, expires, definition.Effect);
@@ -490,13 +532,8 @@ public sealed class D20Session : IDisposable
             return new(null, ApplyAction(preview));
         }
 
-        ReactionDefinition reactionDefinition = _reactions.TryGetValue(reaction.Value, out ReactionDefinition? value)
-            ? value
-            : throw new D20SessionException("Unknown reaction.");
-        if (reactionDefinition.Defense != ResolveAttack(preview.Actor, RequireAction(preview.Action)).Defense)
-        {
-            throw new D20SessionException("Reaction does not defend this action's authored defense.");
-        }
+        ResolvedAction action = RebindAction(preview);
+        ReactionDefinition reactionDefinition = RequireReaction(reaction.Value, action.DefendedBy);
 
         ActionResourcesFact liveResources = Entities.Get(preview.Target, D20ComponentTypes.Resources);
         if (!TryValue(liveResources.Values, reactionDefinition.Resource, out int beforeResource) || beforeResource < reactionDefinition.Cost)
@@ -584,16 +621,16 @@ public sealed class D20Session : IDisposable
 
     public ActionReceipt ApplyAction(ActionPreview preview)
     {
-        EnsureFresh(preview); ActionDefinition definition = RequireAction(preview.Action); if (RollSource.Position == ulong.MaxValue) throw new D20SessionException("Roll-source position is exhausted."); ulong nextPosition = RollSource.Position + 1; StaticActionRoll roll = ReadActionRoll(preview.Damage);
-        int total = roll.D20 + preview.AbilityModifier; bool hit = total >= preview.Defense; int damage = hit ? Math.Max(0, checked(roll.Damage.Sum(value => (int)value) + preview.Damage.Bonus)) : 0;
-        ActivationBudgetsFact afterBudgets = new(SpendCosts(Entities.Get(preview.Actor, D20ComponentTypes.Budgets).Values, definition.Costs)); D20Id? effect = hit ? definition.Effect : null;
+        EnsureFresh(preview); ResolvedAction action = RebindAction(preview); if (RollSource.Position == ulong.MaxValue) throw new D20SessionException("Roll-source position is exhausted."); ulong nextPosition = RollSource.Position + 1; StaticActionRoll roll = ReadActionRoll(action.Damage);
+        int total = roll.D20 + action.AbilityModifier; bool hit = total >= action.Defense; int damage = hit ? Math.Max(0, checked(roll.Damage.Sum(value => (int)value) + action.Damage.Bonus)) : 0;
+        ActivationBudgetsFact afterBudgets = new(SpendCosts(Entities.Get(preview.Actor, D20ComponentTypes.Budgets).Values, action.Definition.Costs)); D20Id? effect = hit ? action.Definition.Effect : null;
         EffectState? candidateEffects = null; EffectProjectionFact effectsAfter = Entities.Get(preview.Target, D20ComponentTypes.Effects); if (effect is D20Id effectId) { candidateEffects = CloneEffectState(preview.Target); ApplyOrRefreshEffect(candidateEffects, preview.Target, effectId, preview.Operation); effectsAfter = Projection(effectsAfter, preview.Target, checked(Turn + (ulong)_effects[effectId].DurationTurns), effectId); }
         ExactStatTrackState? candidateTrack = null; ExactStatTrackCurrentMutationCandidate? vitality = null; if (hit && damage != 0) { candidateTrack = CloneTrack(preview.Target); vitality = candidateTrack.PrepareSpend(new ExactValue(damage), preview.TargetVitalityRevision); vitality.Publish(); }
         bool targetDies = hit && candidateTrack is not null && candidateTrack.Read().TrackCurrent.Raw == 0;
         EntityBatch batch = new EntityBatch().Mutate(world => world.Set(preview.Actor, D20ComponentTypes.Budgets, afterBudgets, world.GetComponentRevision(preview.Actor, D20ComponentTypes.Budgets))).Mutate(world => world.Set(preview.Target, D20ComponentTypes.Effects, effectsAfter, world.GetComponentRevision(preview.Target, D20ComponentTypes.Effects)));
         if (targetDies) batch.Mutate(world => world.Set(preview.Target, D20ComponentTypes.Participation, Entities.Get(preview.Target, D20ComponentTypes.Participation) with { Living = false }, world.GetComponentRevision(preview.Target, D20ComponentTypes.Participation)));
         EntityWorldBatchCandidate prepared = Entities.PrepareBatch(batch, Entities.Revision); prepared.Publish(); if (candidateEffects is not null) _effectStates[preview.Target] = candidateEffects; if (candidateTrack is not null) _vitalityTracks[preview.Target] = candidateTrack; RollSource = RollSource with { Position = nextPosition }; Revision++;
-        var receipt = new ActionReceipt(preview.Operation, preview.Actor, preview.Target, preview.Action, preview.RollPosition, roll.D20, total, preview.Defense, hit, damage, effect, hit ? definition.ForcedMovement : 0, Turn, Revision); _receipts.Add(receipt); if (_receipts.Count > Tuning.MaximumReceiptCount) _receipts.RemoveAt(0); return receipt;
+        var receipt = new ActionReceipt(preview.Operation, preview.Actor, preview.Target, preview.Action, preview.RollPosition, roll.D20, total, action.Defense, hit, damage, effect, hit ? action.Definition.ForcedMovement : 0, Turn, Revision); _receipts.Add(receipt); if (_receipts.Count > Tuning.MaximumReceiptCount) _receipts.RemoveAt(0); return receipt;
     }
     public void AdvanceTurn()
     {
@@ -679,23 +716,16 @@ public sealed class D20Session : IDisposable
                 Rusty.Engine.Mechanics.ItemDefinition engineDefinition;
                 EquipmentKind kind;
                 D20Id equipmentId;
-                if (savedItem.Item is D20Id authoredId)
-                {
-                    if (!candidate._authoredItems.TryGetValue(authoredId, out RustyD20.Core.Rules.ItemDefinition? authored) || savedItem.Kind != authored.EquipmentKind || savedItem.Equipment is not D20Id savedEquipment || savedEquipment != authored.Equipment || savedItem.Implement != authored.Equipment) throw new D20SessionException("Saved authored item mapping is invalid.");
-                    kind = authored.EquipmentKind; equipmentId = authored.Equipment; engineDefinition = candidate.ToEngineItemDefinition(authoredId, authored, equipmentId); candidate._itemEntities.Add(authoredId, entity); candidate._itemIds.Add(entity, authoredId);
-                }
-                else
-                {
-                    if (savedItem.Kind != EquipmentKind.Implement || savedItem.Equipment is D20Id legacyEquipment && legacyEquipment != savedItem.Implement || !candidate._implements.TryGetValue(savedItem.Implement, out ImplementDefinition? implement)) throw new D20SessionException("Saved legacy-shaped item mapping is invalid.");
-                    kind = EquipmentKind.Implement; equipmentId = implement.Id; engineDefinition = new Rusty.Engine.Mechanics.ItemDefinition(ItemDefinitionId.Parse(implement.Id.Value), ItemKind.Unique, 1, equipment: new ItemEquipmentPolicy(1));
-                }
+                D20Id authoredId = savedItem.Item ?? throw new D20SessionException("Saved session items must belong to the current authored adventure closure.");
+                if (!candidate._authoredItems.TryGetValue(authoredId, out RustyD20.Core.Rules.ItemDefinition? authored) || savedItem.Kind != authored.EquipmentKind || savedItem.Equipment is not D20Id savedEquipment || savedEquipment != authored.Equipment || savedItem.Implement != authored.Equipment) throw new D20SessionException("Saved authored item mapping is invalid.");
+                kind = authored.EquipmentKind; equipmentId = authored.Equipment; engineDefinition = candidate.ToEngineItemDefinition(authoredId, authored, equipmentId); candidate._itemEntities.Add(authoredId, entity); candidate._itemIds.Add(entity, authoredId);
                 candidate._itemEquipment.Add(entity, (kind, equipmentId));
                 candidate.Inventory.MaterializeUnique(new ItemState(entity, engineDefinition), owner);
                 if (savedItem.EquippedSlots.Count == 1)
                 {
                     D20Id expectedSlot = kind == EquipmentKind.Armor ? candidate._armors[equipmentId].Slot : candidate._implements[equipmentId].Slot;
                     string savedSlot = savedItem.EquippedSlots[0];
-                    if (savedSlot != expectedSlot.Value && (savedItem.Item is not D20Id authoredItem || savedSlot != $"d20.initial.{authoredItem.Value}")) throw new D20SessionException("Saved item equipment slot does not match its authored equipment.");
+                    if (savedSlot != expectedSlot.Value && savedSlot != $"d20.initial.{authoredId.Value}") throw new D20SessionException("Saved item equipment slot does not match its authored equipment.");
                     EquipmentService.Equip(candidate.Inventory, owner, entity, [new EquipmentSlotDefinition(EquipmentSlotId.Parse(savedItem.EquippedSlots[0]))]);
                 }
                 candidate._nextInventoryOnlyEntity = Math.Max(candidate._nextInventoryOnlyEntity, checked(savedItem.Entity + 1));
@@ -741,6 +771,31 @@ public sealed class D20Session : IDisposable
     }
 
     private void EnsureFresh(ActionPreview preview) { if (preview.Turn != Turn || preview.RollPosition != RollSource.Position || preview.InventoryRevision != Inventory.Revision || preview.ActorAbilitiesRevision != ComponentRevision(preview.Actor, D20ComponentTypes.Abilities) || preview.ActorBudgetRevision != ComponentRevision(preview.Actor, D20ComponentTypes.Budgets) || preview.ActorEquipmentRevision != EquipmentRevision(preview.Actor) || preview.ActorEffectsRevision != ComponentRevision(preview.Actor, D20ComponentTypes.Effects) || preview.TargetResourcesRevision != ComponentRevision(preview.Target, D20ComponentTypes.Resources) || preview.TargetBudgetRevision != ComponentRevision(preview.Target, D20ComponentTypes.Budgets) || preview.TargetVitalityRevision != RequireTrack(preview.Target).Revision || preview.TargetEffectsRevision != ComponentRevision(preview.Target, D20ComponentTypes.Effects)) throw new D20SessionException("Action preview is stale."); }
+    /// <summary>Rebinds all gameplay outcome facts rather than trusting an observed preview projection.</summary>
+    private ResolvedAction RebindAction(ActionPreview preview)
+    {
+        RequireParticipant(preview.Actor); RequireParticipant(preview.Target);
+        ActionDefinition definition = RequireAction(preview.Action);
+        EncounterParticipationFact actorParticipation = Entities.Get(preview.Actor, D20ComponentTypes.Participation);
+        EncounterParticipationFact targetParticipation = Entities.Get(preview.Target, D20ComponentTypes.Participation);
+        if (!actorParticipation.Living || !targetParticipation.Living) throw new D20SessionException("Actions require living encounter participants.");
+        EnsureTarget(preview.Actor, preview.Target, actorParticipation, targetParticipation, definition.Target);
+        EnsureCosts(Entities.Get(preview.Actor, D20ComponentTypes.Budgets).Values, definition.Costs);
+        ResolvedAttack attack = ResolveAttack(preview.Actor, definition);
+        AbilityScoresFact abilities = Entities.Get(preview.Actor, D20ComponentTypes.Abilities);
+        if (!TryValue(abilities.Values, attack.Ability, out int score)) throw new D20SessionException("The actor lacks the authored ability.");
+        IReadOnlyList<ScheduledEffectProjection> active = ActiveEffects(preview.Actor);
+        int penalty = active.Select(effect => _effects[effect.Effect]).SelectMany(effect => effect.Conditions).Where(clause => clause.Kind == ConditionKind.AttackPenalty).Sum(clause => clause.Amount);
+        if (active.Any(effect => _effects[effect.Effect].Conditions.Any(clause => clause.Kind == ConditionKind.ForbidActionTag && clause.Tag is D20Id tag && definition.Tags.Any(actionTag => actionTag == tag)))) throw new D20SessionException("An active scheduled effect forbids this action tag.");
+        return new(definition, AbilityModifier(score, Tuning) + penalty, Defense(preview.Target, attack.Defense), attack.Damage, attack.Range, attack.Defense);
+    }
+    private ReactionDefinition RequireReaction(D20Id reaction, D20Id defended)
+    {
+        ReactionDefinition definition = _reactions.TryGetValue(reaction, out ReactionDefinition? value) ? value : throw new D20SessionException("Unknown reaction.");
+        if (definition.Defense != defended) throw new D20SessionException("Reaction does not defend this action's authored defense.");
+        if (!_effects.TryGetValue(definition.Effect, out RustyD20.Core.Rules.EffectDefinition? effect) || effect.Defense != definition.Defense || effect.DefenseBonus != definition.Bonus) throw new D20SessionException("Reaction effect does not match its authored defense bonus.");
+        return definition;
+    }
     private StaticActionRoll ReadActionRoll(DamageDefinition damage) { StaticActionRoll result = RollSource.Kind switch { RollSourceKind.Static when RollSource.Position < (ulong)RollSource.StaticRolls.Length => RollSource.StaticRolls[checked((int)RollSource.Position)], RollSourceKind.Static => throw new D20SessionException("Static action rolls are exhausted."), RollSourceKind.Seeded => _seededRolls!.Draw(RollSource.Seed, RollSource.Position, damage), _ => throw new D20SessionException("Unknown roll source."), }; result.Validate(damage); return result; }
     private EffectProjectionFact NextEffectProjection(EntityId entity, D20Id effect, ulong expires) => Projection(Entities.Get(entity, D20ComponentTypes.Effects), entity, expires, effect);
     private static EffectProjectionFact Projection(EffectProjectionFact current, EntityId entity, ulong expires, D20Id justApplied)
@@ -811,7 +866,7 @@ public sealed class D20Session : IDisposable
         };
     }
     private static EffectInstanceId EffectInstance(EntityId entity, D20Id effect) => EffectInstanceId.Parse($"d20.effect.{entity.Value}.{effect.Value}");
-    private ResolvedAttack ResolveAttack(EntityId actor, ActionDefinition action) { if (action.Attack.Ability is D20Id ability && action.Attack.Defense is D20Id defense && action.Attack.Damage is DamageDefinition damage) return new(ability, defense, damage, 0); D20Id implementId = action.Attack.Implement ?? throw new D20SessionException("Action lacks a resolved attack."); ImplementDefinition implement = _implements[implementId]; if (!Inventory.TryGetEquipment(actor, out EquipmentState? equipment) || equipment is null || !equipment.Assignments.Any(assignment => _itemEquipment.TryGetValue(assignment.Item, out (EquipmentKind Kind, D20Id Equipment) value) && value.Kind == EquipmentKind.Implement && value.Equipment == implementId)) throw new D20SessionException("The required canonical Engine implement is not equipped."); return new(implement.Ability, implement.Defense, implement.Damage, implement.Range); }
+    private ResolvedAttack ResolveAttack(EntityId actor, ActionDefinition action) { if (action.Attack.Ability is D20Id ability && action.Attack.Defense is D20Id defense && action.Attack.Damage is DamageDefinition damage) return new(ability, defense, damage, action.Attack.Range); D20Id implementId = action.Attack.Implement ?? throw new D20SessionException("Action lacks a resolved attack."); ImplementDefinition implement = _implements[implementId]; if (!Inventory.TryGetEquipment(actor, out EquipmentState? equipment) || equipment is null || !equipment.Assignments.Any(assignment => _itemEquipment.TryGetValue(assignment.Item, out (EquipmentKind Kind, D20Id Equipment) value) && value.Kind == EquipmentKind.Implement && value.Equipment == implementId)) throw new D20SessionException("The required canonical Engine implement is not equipped."); return new(implement.Ability, implement.Defense, implement.Damage, implement.Range); }
     private int Defense(EntityId target, D20Id defense) => Defense(target, defense, null, null);
     private int Defense(EntityId target, D20Id defense, EffectState? effectOverride, EffectProjectionFact? projectionOverride) { DefenseDefinition definition = _defenses[defense]; AbilityScoresFact abilities = Entities.Get(target, D20ComponentTypes.Abilities); int effects = ActiveEffects(target, effectOverride, projectionOverride).Select(value => _effects[value.Effect]).Where(value => value.Defense == defense).Sum(value => value.DefenseBonus); int armor = 0; if (Inventory.TryGetEquipment(target, out EquipmentState? equipment) && equipment is not null) { armor = equipment.Assignments.Where(assignment => _itemEquipment.TryGetValue(assignment.Item, out (EquipmentKind Kind, D20Id Equipment) value) && value.Kind == EquipmentKind.Armor && _armors.TryGetValue(value.Equipment, out ArmorDefinition? authored) && authored.Defense == defense).Select(assignment => _itemEquipment[assignment.Item].Equipment).Select(id => _armors[id].Bonus).Sum(); } return definition.Base + definition.Abilities.Select(ability => TryValue(abilities.Values, ability, out int score) ? AbilityModifier(score, Tuning) : int.MinValue).Max() + armor + effects; }
     private static void EnsureTarget(EntityId actor, EntityId target, EncounterParticipationFact actorParticipation, EncounterParticipationFact targetParticipation, ActionTarget authored) { if (authored.Kind != TargetKind.Participant || authored.MaximumTargets != 1) throw new D20SessionException("This session action API admits exactly one participant target."); bool allowed = authored.Team switch { TargetTeam.Hostile => actorParticipation.Faction != targetParticipation.Faction, TargetTeam.Ally => actorParticipation.Faction == targetParticipation.Faction && actor != target, TargetTeam.SelfOnly => actor == target, TargetTeam.Any => true, _ => false, }; if (!allowed) throw new D20SessionException("Target does not satisfy the authored target team policy."); }
@@ -849,4 +904,5 @@ public sealed class D20Session : IDisposable
     private void ThrowIfDisposed() { if (_disposed) throw new ObjectDisposedException(nameof(D20Session)); }
     public void Dispose() { if (_disposed) return; Entities.Dispose(); _disposed = true; }
     private sealed record ResolvedAttack(D20Id Ability, D20Id Defense, DamageDefinition Damage, int Range);
+    private sealed record ResolvedAction(ActionDefinition Definition, int AbilityModifier, int Defense, DamageDefinition Damage, int Range, D20Id DefendedBy);
 }

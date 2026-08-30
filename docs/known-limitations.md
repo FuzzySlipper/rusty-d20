@@ -1,107 +1,23 @@
 # Known limitations
 
-The interactive product now proves a small Gold Box-style game loop with two
-selectable authored paths: camp, Rust-owned first-person grid exploration,
-hidden encounter triggers, a rendered overhead combat scene with overlay HUD,
-outcomes, and
-complete saves. Warden's Gate is the first complete bounded Ruleweaver-derived
-adventure with three ordered encounters, treasure, a locked door, a durable
-checkpoint, and a terminal ending; Ember's Wake has one encounter.
+The C# product is deliberately bounded. These are product phase boundaries,
+not compatibility obligations for the retired Rust/TypeScript architecture.
 
-The native product mounts the Engine-owned renderer while the browser shell
-places phase UI in named overlay regions. Encounter and outcome modes render
-the Rust-projected tactical board, occupancy, selected movement route, and
-combat states through that shared surface; exploration uses the bounded
-corridor frame. Move is an explicit hotbar mode whose first destination
-activation previews the exact projected route and whose second unchanged
-activation confirms the authoritative command; ordinary board picks are
-read-only.
-Catalog, camp, terminal, loading, and failure modes retain abstract
-presentation-only backdrops. Exploration steps and quarter-turns use brief
-latest-projection-wins Engine camera tweens, and combat actions use
-revision-bound action-then-grid picking against Rust-projected legal targets.
-The renderer-first campaign is certified through one cache-isolated real
-Rust-host suite across preparation, persistence, exploration, combat,
-continuation, terminal/reset recovery, classified failures, and inspected
-desktop/mobile layouts.
-
-The native window currently presents the Engine scene separately from the
-Angular overlay shell; unified desktop composition remains future work. The
-browser shell still depends
-on Angular overlays, DOM focus/accessibility, browser drag/touch/keyboard
-events, animation/media/resize browser ports, same-origin HTTP, and browser
-save/reset presentation. No native window, UI toolkit, controller adapter,
-native storage policy, or native accessibility implementation is claimed.
-
-- The live slice has an authored four-person Warden company and four
-  Ruleweaver/Asha-derived opposition roles,
-  canonical initiative and activation budgets, and a bounded overhead tactical
-  board. Warden's Gate uses
-  Steel Guard armor, canonical Training Blade/Field Bow implements, Guard
-  reactions, physical/control actions, and its Warden reward; Ember's Wake
-  uses Nerve equipment, Focus reactions, energy/resolve actions, and its Ash
-  Seer reward. Both expose vitality, attributed affinities,
-  scheduled effects, explicit player decisions with bounded automatic
-  opposition turns, deterministic opponent policy, Engine-routed combat
-  movement, range and line of effect, conditions,
-  forced movement, terminal outcomes, bounded defeat recovery, ordered
-  terminal adventure completion, and exactly-once rewards. It does not yet define
-  spellcasting, advancement, branching/repeatable campaign graphs, generated
-  rewards, or broader Ruleweaver content.
-- Each path has one bounded floor with step-forward/backward and turn-left/right
-  movement, collision, hidden triggers, landmarks, a three-depth corridor
-  projection rendered as a retained Rusty Engine Three/WebGL scene, compass,
-  and discovered-cell map. Warden's Gate adds one claimed treasure, one
-  treasure-gated door, and a safe-return checkpoint. The current visual scene
-  uses untextured floor, ceiling, and wall cuboids. Although the Engine
-  renderer supports sprites and billboard hosts, Rust does not yet project an
-  exploration-visible actor or prop appearance, so the game does not invent a
-  browser-only sprite to exercise them. There are no stairs, multiple floors,
-  traps, roaming encounters, authored lighting, navigation audio, or
-  exploration-time party selection yet.
-- The selected Ruleweaver foundation is translated: six attributes, four
-  defenses, Standard/Bonus/Reaction/Movement budget definitions, shaped
-  actions, Held/Unsettled condition clauses, and explicit armor/implement
-  binding. This remains deliberately bounded. There is no bulk-imported class,
-  talent, power, monster, item, scenario, or D&D 4e catalog. Warden's Gate
-  adapts only the bounded Crosswind role shape and independently authored
-  values/content described in source provenance.
-- Selection admits only the chosen exact package closure. Warden's Gate does
-  not silently load Ember rules, Ember's Wake does not silently load Steel
-  rules, and the non-selectable catalog probe never appears as a product path.
-- There is no content publication service, watch mode, browser editor, or
-  ruleset migration policy. Artifact generation remains an explicit build-time
-  command.
-- The host uses one explicit local save path, defaulting to
-  `target/rusty-d20/save.json`. There is no save-slot UI, cloud/storage policy,
-  authentication, TLS, multi-user coordination, or general migration between
-  provider builds or ruleset fingerprints. Product schemas 1 through 10 and
-  session schemas before 6 are rejected; this is not a general migration
-  framework. Schema 11
-  binds saves to the exact authored adventure package composition, dungeon
-  events/progress, tactical positions, completed encounter prefix, and terminal
-  ending, and permits encounter saves only at a party decision boundary. The
-  host can
-  discard one malformed or obsolete save through a guarded visible reset, but
-  it cannot repair arbitrary content.
-- Opaque reaction prompts are process-local and intentionally not saved. Save
-  is unavailable until the player chooses or declines that reaction; either
-  command then resolves the roll and resumes bounded automatic opposition
-  progression atomically. Completed entity state, turn,
-  seeded/static roll-source configuration and position, operation/log
-  identities, and bounded receipt explanations persist.
-- The default camp inventory/equipment path proves a four-item active-character
-  pack, a projected 24-slot shared inventory seeded with four authored spares,
-  drag/drop and keyboard/click/touch-compatible preparation, one opponent
-  reward, one dungeon treasure, capacity rejection without mutation,
-  equipment attribution/binding, and save/reopen. The same party loadout opens
-  over exploration without changing phase, but is intentionally read-only
-  because Rust admits loadout placement only in camp. It does not yet define
-  consumables, shops, loot generation, item comparison, crafting, or a
-  substantial authored item catalog.
-- The retained compass and minimap are now real product-neutral consumers of
-  Rust-projected facing and discovered cells. The complete dungeon topology and
-  hidden trigger coordinates never enter browser state.
-
-Later work expands this complete bounded adventure rather than treating it as a
-sprawling Ruleweaver campaign.
+- The current content is limited to the clean-room Warden's Gate and Ember's
+  Wake compositions. It is not a general campaign, publication, or ruleset
+  authoring system.
+- The development page is a minimal accessible Engine-hosted observation and
+  control surface. It is not a replacement browser game client, renderer, or
+  client-side rules runtime.
+- The native exercise proves a short lifecycle and save/load path. It is not a
+  full visible playthrough or a broad browser/E2E certification suite.
+- Saves are closed C# schemas bound to their composition fingerprint. Legacy
+  schemas and arbitrary repair/migration are intentionally unsupported.
+- The maintained fresh-process proof saves and loads during exploration. An
+  exploratory active-tactical reload reached the Engine product boundary but
+  returned its generic product-update failure status during presentation
+  refresh, so active-tactical fresh-process restore is not yet a supported
+  example path; save at an exploration boundary for now.
+- Future gameplay capabilities should extend the owning C# content, Core, or
+  Product seam and use public Engine facilities. They must not restore the
+  deleted Rust, Node/Nx/Angular, generated-protocol, or old-host topology.

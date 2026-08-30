@@ -1,13 +1,3 @@
-node_modules/
-target/
-dist/
-coverage/
-tmp/
-.angular/
-.nx/
-playwright-report/
-test-results/
-*.tsbuildinfo
 bin/
 obj/
 src/RustyD20.NativeProduct/DevelopmentHost/generated-browser/

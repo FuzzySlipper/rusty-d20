@@ -2,72 +2,68 @@
 
 ## Repository role
 
-Rusty D20 is a concrete downstream d20 game and reference consumer. It owns d20
-vocabulary, semantic compilation, orchestration, complete saves, transport,
-projection, controls, and presentation. It must never become an umbrella RPG
-dependency or a facade that other games must import.
+Rusty D20 is one concrete C# d20 game and a downstream Rusty Engine consumer.
+It owns d20 vocabulary, authored-content interpretation, semantic admission,
+session and campaign policy, action resolution, complete-save meaning, controls,
+and observational projections. It is not a reusable RPG framework and must
+never become a dependency of another game.
 
-Rusty Engine owns reusable host-neutral mechanisms. Consume its complete Rust
-facade through the one unconditional adjacent path in `Cargo.toml`, and consume
-its two neutral Rules authoring packages through the checked adjacent links in
-`rules/`. Use that checkout exactly as it stands: no D20 script may pull,
-synchronize, or mutate it. Do not copy Engine implementations downstream.
-Route a genuinely reusable missing mechanism to an Engine task.
+Rusty Engine owns reusable host-neutral mechanisms. Consume the adjacent
+`../rusty-engine` checkout exactly as it stands through its public C# SDK and
+generated product contract. Do not pull, synchronize, mutate, or copy Engine
+implementation from this repository; route reusable gaps upstream instead.
 
-## Den Guidance Bootstrap
+## Den guidance bootstrap
 
 - Project ID: `rusty-d20`
-- Resolve live guidance with the Den MCP `get_agent_guidance` tool before
-  substantial work.
-- Treat the resolved Den guidance packet and its referenced Den documents as
-  the source of truth.
-- If Den is unreachable, stop and tell the user which Den tool or command
-  failed and what you were about to do. Do not reconstruct Den state from local files.
+- Resolve live guidance with Den's `get_agent_guidance` before substantial work.
+- Treat the resolved packet and its referenced Den documents as the source of
+  truth.
+- If Den is unreachable, stop and report the failed operation rather than
+  reconstructing Den state from local files.
 
 ## Architecture
 
 Read [docs/design.md](docs/design.md) before changing authority, dependency
-direction, persistence, protocol generation, or the rules pipeline. Use
-[docs/agent-code-atlas.md](docs/agent-code-atlas.md) for path-level ownership.
+direction, persistence, floor admission, or the turn model. Use
+[docs/agent-code-atlas.md](docs/agent-code-atlas.md) for path ownership and
+[docs/csharp-migration-map.md](docs/csharp-migration-map.md) for the retained
+historical cutover disposition.
 
-- Rust is the only semantic and authoritative gameplay runtime.
-- TypeScript owns authoring-time composition and browser presentation. It never
-  evaluates gameplay rules or owns live authoritative state.
-- All persistent entity facts use registered components in Engine's canonical
-  `entity-state` store. Do not add shadow entity maps or a mechanics aggregate.
-- Call named Engine services directly. Do not add an ambient event bus,
-  universal gameplay AST, scheduler, callbacks, or service locator.
-- Protocol TypeScript is generated from the Rust owner and strictly decoded at
-  the browser boundary. Do not hand-maintain a twin.
-
-## UI boundaries
-
-Preserve the package-root layers: protocol, platform, transport, domain, store,
-renderer/components, features, shell, theme, and testing fixtures.
-
-- Do not deep-import another library's `src/` tree.
-- Browser APIs go through platform ports.
-- Backend calls go through transport; application mutation goes through store.
-- Components are presentational; features compose behavior; shell owns routes.
-- Classified failures remain visible as `AsyncState<T>`.
-- Fake transport, fake content, and placeholder actions are test fixtures only
-  and may not enter `apps/app`, `libs/store`, or production features.
+- C# is the sole authoritative gameplay runtime.
+- `RustyD20Product` is an Engine-owned `IEngineProduct`: it reacts to admitted
+  updates and never creates a second loop or handwritten interop boundary.
+- Rusty D20 owns d20 policy and the meanings it stores. Rusty Engine owns
+  lifecycle/input, renderer resources, spatial/navigation/collision,
+  deterministic random, content, UI streams, and durable storage primitives.
+- The development host's minimal HTML page and UI stream are observational;
+  neither is gameplay authority or a renderer.
+- Keep C# content modules modular and inspectable. Source provenance is a
+  record of clean-room adaptation, not an active TypeScript, Rust, or JSON
+  content pipeline.
 
 ## Work and verification
 
-Treat a dirty worktree as shared state. Preserve unrelated changes. Commit and
-push each reviewable milestone directly to the current branch; record exact
-SHAs in Den when the work is task-managed.
+Treat a dirty worktree as shared state. Preserve unrelated changes, especially
+`.agent-teams/`. Commit and push each reviewable milestone directly to the
+current branch and record its exact SHA in Den.
 
-Run the narrowest check first, then the owning gate. The aggregate gate is:
+Run focused maintained checks:
 
 ```bash
-./scripts/verify.sh
+dotnet run --project src/RustyD20.Core.Checks/RustyD20.Core.Checks.csproj
+dotnet run --project src/RustyD20.Product.Checks/RustyD20.Product.Checks.csproj
+dotnet build RustyD20.sln -c Release
+dotnet publish src/RustyD20.NativeProduct/RustyD20.NativeProduct.csproj -c Release -r linux-x64
+bash src/scripts/exercise-native-product.sh
 ```
 
-User-visible work requires a real Rust-served browser scenario and inspected
-artifacts. Synthetic tests do not prove product integration. Update
-[docs/source-provenance.md](docs/source-provenance.md) when donor provenance or
-the adjacent Engine boundary changes, and
-[docs/known-limitations.md](docs/known-limitations.md) whenever an intentional
+The exercise launches the actual Engine C# product runtime and proves a short
+lifecycle, input-binding, projection, and fresh-process save/load scenario.
+Do not restore Cargo/Rust, Node/pnpm/Nx/Angular, generated-protocol, old-host,
+or broad browser/E2E workflows. Add a focused C# proof only for new C# behavior.
+
+Update [docs/source-provenance.md](docs/source-provenance.md) when Engine or
+content source selection changes, and
+[docs/known-limitations.md](docs/known-limitations.md) when an intentional C#
 phase boundary remains.

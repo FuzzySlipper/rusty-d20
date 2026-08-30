@@ -6,7 +6,7 @@ namespace RustyD20.Product;
 public enum D20Command
 {
     None, SelectWarden, SelectEmber, Begin, Forward, Back, Left, Right, Interact,
-    PartyNext, ActionNext, TargetNext, CommitAction, React, Decline, Continue, Save, Load, Reset,
+    PartyNext, ActionNext, TargetNext, TacticalMoveNorth, TacticalMoveSouth, TacticalMoveWest, TacticalMoveEast, CommitAction, React, Decline, Continue, Save, Load, Reset,
 }
 
 /// <summary>One strict, current-update input fence. Browser controls and physical mappings only name these intents.</summary>
@@ -20,6 +20,8 @@ public static class D20InputClaims
         ["d20.left"] = D20Command.Left, ["d20.right"] = D20Command.Right, ["d20.interact"] = D20Command.Interact,
         ["d20.party.next"] = D20Command.PartyNext, ["d20.action.next"] = D20Command.ActionNext,
         ["d20.target.next"] = D20Command.TargetNext, ["d20.action.commit"] = D20Command.CommitAction,
+        ["d20.tactical.move.north"] = D20Command.TacticalMoveNorth, ["d20.tactical.move.south"] = D20Command.TacticalMoveSouth,
+        ["d20.tactical.move.west"] = D20Command.TacticalMoveWest, ["d20.tactical.move.east"] = D20Command.TacticalMoveEast,
         ["d20.reaction.choose"] = D20Command.React, ["d20.reaction.decline"] = D20Command.Decline,
         ["d20.outcome.continue"] = D20Command.Continue, ["d20.save"] = D20Command.Save,
         ["d20.load"] = D20Command.Load, ["d20.reset"] = D20Command.Reset,

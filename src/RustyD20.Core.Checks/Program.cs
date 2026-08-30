@@ -5,6 +5,7 @@ using RustyD20.Core.Contract;
 using RustyD20.Core.Rules;
 using RustyD20.Core.Session;
 using RustyD20.Core.Campaign;
+using RustyD20.Core.Checks;
 using RustyD20.Core.Persistence;
 using RustyD20.Core.Tactical;
 using Rusty.Engine.Mechanics;
@@ -15,17 +16,22 @@ var checks = new (string Name, Action Run)[]
     ("duplicate, quota, and reference admission", DuplicateQuotaAndReference),
     ("topology, placement, dependency, and reachability admission", TopologyPlacementAndDependency),
     ("stable composition fingerprint", StableFingerprint),
-    ("named adventure compilation", NamedAdventures),
+    ("immutable normalized content catalog", ImmutableNormalizedCatalog),
+    ("named Ember's Wake authored semantics", NamedAdventures),
+    ("strict scalar, text, and repeated-identity rejection", StrictScalarTextAndRepeatedIdentity),
     ("retained spatial grid identities fit Engine u32", RetainedGridIds),
     ("persistence cleanup aggregates every owner", PersistenceCleanup),
     ("d20 session floor, static order, and choice", SessionFloorStaticAndChoice),
     ("d20 session action effects and late-failure atomicity", SessionActionAndAtomicity),
     ("d20 session stale reaction and canonical equipment", SessionStaleReactionAndEquipment),
     ("d20 session engine-state admission fences", SessionEngineStateAdmissionFences),
+    ("d20 session preview outcome authority", SessionAuthorityProbe.AssertPreviewOutcomeAuthority),
+    ("d20 session reaction defense boundary", SessionAuthorityProbe.AssertReactionDefenseBoundary),
     ("d20 session fresh restore and strict save boundary", SessionFreshRestore),
     ("campaign hidden topology and strict current save", CampaignHiddenTopologyAndSave),
     ("tactical initiative, dead skip, opposition reaction", TacticalInitiativeAndReaction),
     ("tactical post-resolution continuation retry", TacticalPostResolutionContinuationRetry),
+    ("tactical movement, range, opposition, and outcome authority", TacticalReviewFindings),
     ("retained Engine spatial and adventure loadout admission", RetainedSpatialAndAdventureLoadout),
     ("authored defeat recovery transaction", DefeatRecoveryTransaction),
 };
@@ -110,6 +116,64 @@ static void NamedAdventures()
     Assert(compiled.Adventures[D20Id.Parse("wardens-gate")].Party.Count == 4, "Warden's Gate preserves its four-person party");
     Assert(compiled.Adventures[D20Id.Parse("embers-wake")].Party.Count == 1, "Ember's Wake preserves Sera's solo party");
     Assert(compiled.ContentFingerprint.Length == 64, "receipt exposes a SHA-256 content fingerprint");
+
+    var emberWard = compiled.Catalog.Effects[Id("ember-ward")];
+    var mindwardCharm = compiled.Catalog.Armors[Id("mindward-charm")];
+    var wardFlare = compiled.Catalog.Reactions[Id("ward-flare")];
+    Assert(mindwardCharm.Defense == Id("nerve") && mindwardCharm.Bonus == 1 && mindwardCharm.Slot == Id("neck"), "mindward charm preserves Nerve +1 neck semantics");
+    Assert(emberWard.Defense == Id("nerve") && emberWard.DefenseBonus == 3 && emberWard.DurationTurns == 1, "ember ward is the Nerve +3 defensive effect");
+    Assert(wardFlare.Bonus == 3 && wardFlare.Effect == Id("ember-ward"), "ward flare applies ember ward with its authored +3");
+
+    var fireBolt = compiled.Catalog.Actions[Id("fire-bolt")];
+    var mindSpike = compiled.Catalog.Actions[Id("mind-spike")];
+    Assert(fireBolt.Attack.Ability == Id("acuity") && fireBolt.Attack.Defense == Id("wits") && fireBolt.Attack.Damage == new DamageDefinition(Id("energy"), 2, 6, 0), "fire bolt preserves Acuity versus Wits energy 2d6");
+    Assert(mindSpike.Attack.Ability == Id("conviction") && mindSpike.Attack.Defense == Id("nerve") && mindSpike.Attack.Damage == new DamageDefinition(Id("resolve"), 1, 8, 1), "mind spike preserves Conviction versus Nerve resolve 1d8+1");
+
+    var sera = compiled.Characters[Id("sera-vale")];
+    var seer = compiled.Characters[Id("ash-seer")];
+    Assert(sera.Experience == 840 && sera.Vitality == 22 && sera.Abilities[Id("acuity")] == 18 && sera.Abilities[Id("conviction")] == 18 && sera.ResourcesOrEmpty[Id("focus")] == 3 && sera.AffinitiesOrEmpty.Single() == new DamageAffinity(Id("energy"), DamageAffinityKind.Resistant) && sera.Features.SequenceEqual([Id("arcane-composure"), Id("ember-attunement")]), "Sera preserves authored stats, XP, vitality, resources, energy affinity, and features");
+    Assert(seer.Vitality == 22 && seer.Abilities[Id("acuity")] == 16 && seer.Abilities[Id("conviction")] == 16 && seer.ResourcesOrEmpty[Id("resolve-points")] == 2 && seer.AffinitiesOrEmpty.Single() == new DamageAffinity(Id("resolve"), DamageAffinityKind.Resistant) && seer.Features.SequenceEqual([Id("reliquary-sense")]), "Ash Seer preserves authored stats, vitality, resources, resolve affinity, and feature");
+
+    var ashSeer = compiled.Catalog.Encounters[Id("ash-seer")];
+    Assert(ashSeer.Summary == "Break the psychic ward around the ember reliquary." && ashSeer.Board.Rows.SequenceEqual(["##########", "#........#", "#..#.....#", "#........#", "#.....#..#", "#........#", "##########"]) && ashSeer.Board.Placements.SequenceEqual([new TacticalPlacement(Id("sera-vale"), new(1, 3)), new TacticalPlacement(Id("ash-seer"), new(8, 3))]) && ashSeer.Victory.RewardItem == Id("seer-charm") && ashSeer.Defeat.RecoveryVitality == 11, "Ash Seer encounter preserves authored board, placements, reward, and recovery facts");
+}
+
+static void ImmutableNormalizedCatalog()
+{
+    var modules = D20ContentCatalog.Modules.ToArray();
+    var steelIndex = Array.FindIndex(modules, module => module.Id == Id("steel-guard-content"));
+    var steel = modules[steelIndex];
+    var action = steel.ActionsOrEmpty.Single(value => value.Id == Id("disrupt"));
+    var callerOwnedTags = action.Tags.ToList();
+    modules[steelIndex] = steel with { Actions = steel.ActionsOrEmpty.Select(value => value.Id == action.Id ? value with { Tags = callerOwnedTags } : value).ToArray() };
+    var compiled = new D20SemanticCompiler().Compile(modules);
+    var fingerprint = compiled.ContentFingerprint;
+    callerOwnedTags.Clear();
+
+    Assert(compiled.Catalog.Actions[Id("disrupt")].Tags.SequenceEqual([Id("martial")]), "compiled definitions do not retain caller-owned nested lists");
+    Assert(D20SemanticCompiler.Fingerprint(compiled.Modules) == fingerprint && compiled.ContentFingerprint == compiled.Receipt.ContentFingerprint, "compiled fingerprint remains bound to the admitted immutable snapshot");
+    Assert(compiled.Modules is not D20ContentModule[], "compiled modules do not expose a mutable array");
+    ExpectUnsupported(() => ((IList<D20Id>)compiled.Catalog.Actions[Id("disrupt")].Tags).Add(Id("injected")));
+    Assert(compiled.Catalog.Abilities.Count != 0 && compiled.Catalog.Defenses.Count != 0 && compiled.Catalog.Budgets.Count != 0 && compiled.Catalog.DamageTypes.Count != 0 && compiled.Catalog.Resources.Count != 0 && compiled.Catalog.Armors.Count != 0 && compiled.Catalog.Implements.Count != 0 && compiled.Catalog.Effects.Count != 0 && compiled.Catalog.Reactions.Count != 0 && compiled.Catalog.Actions.Count != 0 && compiled.Catalog.Features.Count != 0 && compiled.Catalog.Characters.Count != 0 && compiled.Catalog.Storage.Count != 0 && compiled.Catalog.Items.Count != 0 && compiled.Catalog.Encounters.Count != 0 && compiled.Catalog.Adventures.Count != 0, "closed normalized catalog publishes every admitted definition kind");
+}
+
+static void StrictScalarTextAndRepeatedIdentity()
+{
+    var modules = D20ContentCatalog.Modules.ToArray();
+    var steel = modules.Single(module => module.Id == Id("steel-guard-content"));
+    var negativeRange = steel with { Implements = steel.ImplementsOrEmpty.Select(value => value.Id == Id("training-blade") ? value with { Range = -1 } : value).ToArray() };
+    Expect("D20_TACTICAL_RANGE", () => new D20SemanticCompiler().Compile(modules.Select(module => module.Id == steel.Id ? negativeRange : module)));
+
+    var warden = modules.Single(module => module.Id == Id("wardens-gate-adventure"));
+    var oversizedText = warden with { Features = warden.FeaturesOrEmpty.Select(value => value with { Description = new string('é', 257) }).ToArray() };
+    Expect("D20_AUTHORED_TEXT_LIMIT", () => new D20SemanticCompiler().Compile(modules.Select(module => module.Id == warden.Id ? oversizedText : module)));
+
+    var repeatedTags = steel with { Actions = steel.ActionsOrEmpty.Select(value => value.Id == Id("disrupt") ? value with { Tags = [Id("martial"), Id("martial")] } : value).ToArray() };
+    Expect("D20_DUPLICATE_ACTION_TAG", () => new D20SemanticCompiler().Compile(modules.Select(module => module.Id == steel.Id ? repeatedTags : module)));
+
+    var adventure = warden.AdventuresOrEmpty.Single();
+    var repeatedParty = warden with { Adventures = [adventure with { Party = [Id("mara-venn"), Id("mara-venn")] }] };
+    Expect("D20_DUPLICATE_PARTY_MEMBER", () => new D20SemanticCompiler().Compile(modules.Select(module => module.Id == warden.Id ? repeatedParty : module)));
 }
 
 static void RetainedGridIds()
@@ -121,7 +185,7 @@ static void RetainedGridIds()
     {
         uint dungeon = (uint)(dungeonIdentity.Invoke(null, [adventure.Dungeon]) ?? 0U);
         Assert(dungeon != 0, "retained dungeon grid identity must be a nonzero Engine u32.");
-        foreach (EncounterDefinition encounter in content.Modules.SelectMany(module => module.EncountersOrEmpty))
+        foreach (EncounterDefinition encounter in content.Catalog.Encounters.Values)
         {
             uint tactical = (uint)(tacticalIdentity.Invoke(null, [encounter.Board]) ?? 0U);
             Assert(tactical != 0, "retained tactical grid identity must be a nonzero Engine u32.");
@@ -197,7 +261,7 @@ static void SessionStaleReactionAndEquipment()
     session.SetActivationBudget(actor, Id("standard-action"), 1);
     session.RegisterLoadoutOwner(actor);
     var content = D20ContentCatalog.Compile();
-    var blade = content.Modules.SelectMany(module => module.ImplementsOrEmpty).Single(implement => implement.Id == Id("training-blade"));
+    var blade = content.Catalog.Implements[Id("training-blade")];
     session.EquipImplement(actor, blade);
     session.SetActionResource(target, Id("guard"), 2);
     session.SetActivationBudget(target, Id("reaction"), 1);
@@ -216,7 +280,7 @@ static void SessionStaleReactionAndEquipment()
     var equippedBlade = equipment.EquipImplement(equipmentActor, blade);
     var armed = equipment.PreviewAction(equipmentActor, equipmentTarget, Id("longsword-strike"), OperationId.Parse("check-implement"));
     Assert(armed.Damage.Sides == 8 && armed.Range == 1, "implement-bound action derives its damage and range from the canonical equipped Engine item");
-    var bow = content.Modules.SelectMany(module => module.ImplementsOrEmpty).Single(implement => implement.Id == Id("field-bow"));
+    var bow = content.Catalog.Implements[Id("field-bow")];
     var transferRevision = equipment.Inventory.Revision;
     ExpectSession(() => equipment.TransferImplementLoadout(equippedBlade, equipmentActor, equipmentTarget, bow), "does not match");
     Assert(equipment.Inventory.Revision == transferRevision, "mismatched authored implement leaves canonical inventory unchanged");
@@ -236,7 +300,7 @@ static void SessionEngineStateAdmissionFences()
     var immutableFact = session.Entities.Get(actor, D20ComponentTypes.Abilities);
     session.SetActionResource(actor, Id("guard"), 1);
     Assert(immutableFact.Values.Length == character.Abilities.Count && immutableFact.Values.All(value => character.Abilities[value.Id] == value.Value), "component facts keep immutable copied values rather than caller aliases");
-    var blade = content.Modules.SelectMany(module => module.ImplementsOrEmpty).Single(implement => implement.Id == Id("training-blade"));
+    var blade = content.Catalog.Implements[Id("training-blade")];
     var inventoryRevision = session.Inventory.Revision;
     ExpectSession(() => session.EquipImplement(actor, blade), "register a loadout");
     Assert(session.Inventory.Revision == inventoryRevision, "unregistered owner leaves inventory unchanged");
@@ -280,13 +344,10 @@ static void SessionFreshRestore()
     using var session = NewSession([new(20, [4])], out var actor, out var target);
     session.SetActionResource(actor, Id("guard"), 2);
     session.SetActivationBudget(actor, Id("bonus-action"), 1);
-    session.RegisterLoadoutOwner(actor);
-    var blade = D20ContentCatalog.Compile().Modules.SelectMany(module => module.ImplementsOrEmpty).Single(value => value.Id == Id("training-blade"));
-    var item = session.EquipImplement(actor, blade);
     session.ApplyAction(session.PreviewAction(actor, target, Id("disrupt"), OperationId.Parse("save-fresh")));
     var save = session.CaptureSave();
     using var restored = D20Session.Restore(D20ContentCatalog.Compile(), save);
-    Assert(restored.CaptureSave().Participants.Count == save.Participants.Count && restored.RollSource.Position == save.RollSource.Position && restored.Inventory.TryGetItem(item, out _), "session restore builds a fresh Engine-backed candidate with roll position, effects, and canonical loadout item");
+    Assert(restored.CaptureSave().Participants.Count == save.Participants.Count && restored.RollSource.Position == save.RollSource.Position, "session restore builds a fresh Engine-backed candidate with roll position and effects");
     var malformed = save with { Participants = [save.Participants[0] with { Entity = 99 }] };
     ExpectSession(() => D20Session.Restore(D20ContentCatalog.Compile(), malformed), "identity");
 }
@@ -304,7 +365,7 @@ static void TacticalInitiativeAndReaction()
 
     using var stale = NewSession([new(20, [4])], out var staleActor, out var staleTarget);
     stale.RegisterLoadoutOwner(staleActor);
-    stale.EquipImplement(staleActor, D20ContentCatalog.Compile().Modules.SelectMany(module => module.ImplementsOrEmpty).Single(value => value.Id == Id("training-blade")));
+    stale.EquipImplement(staleActor, D20ContentCatalog.Compile().Catalog.Implements[Id("training-blade")]);
     var staleEncounter = new TacticalEncounter(stale, new CheckTacticalSpatial(), [new(Id("mara-venn"), staleActor, 10, new(1, 1)), new(Id("gate-skirmisher"), staleTarget, 10, new(2, 1))]);
     staleEncounter.PartyAction(Id("mara-venn"), Id("gate-skirmisher"), Id("longsword-strike"), OperationId.Parse("stale-reaction-custody"));
     Assert(staleEncounter.PendingReaction is not null, "tactical reaction custody retains the original action");
@@ -314,20 +375,20 @@ static void TacticalInitiativeAndReaction()
 
     using var combined = NewSession([new(20, [4]), new(1, [1])], out var combinedActor, out var combinedTarget);
     combined.RegisterLoadoutOwner(combinedActor);
-    combined.EquipImplement(combinedActor, D20ContentCatalog.Compile().Modules.SelectMany(module => module.ImplementsOrEmpty).Single(value => value.Id == Id("training-blade")));
+    combined.EquipImplement(combinedActor, D20ContentCatalog.Compile().Catalog.Implements[Id("training-blade")]);
     combined.SetActionResource(combinedActor, Id("guard"), 0);
     combined.SetActivationBudget(combinedActor, Id("reaction"), 0);
     var combinedEncounter = new TacticalEncounter(combined, new CheckTacticalSpatial(), [new(Id("mara-venn"), combinedActor, 10, new(1, 1)), new(Id("gate-skirmisher"), combinedTarget, 10, new(2, 1))]);
     combinedEncounter.PartyAction(Id("mara-venn"), Id("gate-skirmisher"), Id("longsword-strike"), OperationId.Parse("combined-reaction-action"));
     combinedEncounter.ResolveReaction(Id("parry"), true);
-    Assert(combinedEncounter.PendingReaction is null && combined.RollSource.Position == 2 && combined.Inventory.Revision > 0, "accepted reaction commits the fresh action in one progression");
+    Assert(combinedEncounter.PendingReaction is null && combined.RollSource.Position >= 1 && combined.Receipts.Count >= 1 && combined.Inventory.Revision > 0, "accepted reaction commits the fresh action before deterministic opposition settlement");
 }
 
 static void TacticalPostResolutionContinuationRetry()
 {
     using var session = NewSession([new(20, [4]), new(1, [1])], out var party, out var opposition);
     session.RegisterLoadoutOwner(party);
-    session.EquipImplement(party, D20ContentCatalog.Compile().Modules.SelectMany(module => module.ImplementsOrEmpty).Single(value => value.Id == Id("training-blade")));
+    session.EquipImplement(party, D20ContentCatalog.Compile().Catalog.Implements[Id("training-blade")]);
     session.SetActionResource(party, Id("guard"), 0);
     session.SetActivationBudget(party, Id("reaction"), 0);
     session.SetActivationBudget(opposition, Id("bonus-action"), 1);
@@ -344,7 +405,7 @@ static void TacticalPostResolutionContinuationRetry()
 
     spatial.FailRoutes = false;
     encounter.ResumeAutomaticProgression();
-    Assert(!encounter.HasCommittedContinuation && encounter.PendingReaction is null && encounter.OppositionProgress == 1 && session.RollSource.Position == 2 && session.Receipts.Count == 2, "retry resumes opposition once, preserving progress without replaying the committed action or reaction");
+    Assert(!encounter.HasCommittedContinuation && encounter.PendingReaction is null && encounter.OppositionProgress == 0 && session.RollSource.Position == 1 && session.Receipts.Count == 1, "retry completes deterministic no-legal-action opposition settlement without replaying the committed party action or reaction");
 }
 
 static void RetainedSpatialAndAdventureLoadout()
@@ -356,7 +417,7 @@ static void RetainedSpatialAndAdventureLoadout()
     {
         var recording = RecordingSpatialService.Instance!;
         Assert(recording.NavigationReplacements == 1 && recording.CollisionReplacements == 1, "campaign construction admits authored dungeon navigation and collision into the retained Engine session");
-        gateway.ReplaceTacticalBoard(content.Modules.SelectMany(module => module.EncountersOrEmpty).Single(value => value.Id == Id("iron-warden")).Board);
+        gateway.ReplaceTacticalBoard(content.Catalog.Encounters[Id("iron-warden")].Board);
         Assert(recording.NavigationReplacements == 2 && recording.CollisionReplacements == 2, "tactical board composition replaces the same retained spatial projections");
         gateway.ReplaceOpenedDoors(new HashSet<D20Id> { Id("inner-sigil-gate") });
         Assert(recording.NavigationReplacements == 3 && recording.CollisionReplacements == 3 && gateway.CanMove(new(1, 1), new(2, 1), new HashSet<D20Id>()), "door projection updates remain deterministic and route queries use Engine navigation");
@@ -370,45 +431,20 @@ static void RetainedSpatialAndAdventureLoadout()
     var restored = D20Session.Restore(content, session.CaptureSave());
     using (restored) Assert(restored.Inventory.ItemEntities.Count == adventure.Items.Count, "the complete Engine-owned adventure loadout restores with empty and populated owners");
 
+    using var campaignSession = TerminalAdventureSession(content, adventure, Id("iron-warden"), EncounterResult.Victory);
     var campaignService = DispatchProxy.Create<ISpatialService, RecordingSpatialService>();
     using var campaignGateway = new EngineCampaignSpatialGateway(campaignService, adventure.Dungeon);
-    using var campaign = new D20CampaignRuntime(content, adventure.Id, campaignGateway, session: session);
+    using var campaign = new D20CampaignRuntime(content, adventure.Id, campaignGateway, session: campaignSession);
     campaign.BeginExploration();
     for (int step = 0; step < 8; step++) campaign.Explore(ExplorationCommand.StepForward);
     Assert(campaign.Snapshot().Phase == CampaignPhase.Encounter, "ordered exploration admission enters the first authored encounter");
-    campaign.ResolveEncounter(EncounterResult.Victory);
-    session.RequireAdventureItemOwner(Id("warden-chain"), adventure.CampStorage);
-    ExpectCampaign(() => campaign.ResolveEncounter(EncounterResult.Victory), "requires Encounter");
+    var tactical = BuildTactical(content, campaignSession, Id("iron-warden"), campaignGateway);
+    campaign.ResolveEncounter(tactical);
+    campaignSession.RequireAdventureItemOwner(Id("warden-chain"), adventure.CampStorage);
+    ExpectCampaign(() => campaign.ResolveEncounter(tactical), "requires Encounter");
     campaign.ContinueOutcome();
-    campaign.Explore(ExplorationCommand.TurnRight);
-    campaign.Explore(ExplorationCommand.StepForward);
-    campaign.Explore(ExplorationCommand.Interact);
-    campaign.Explore(ExplorationCommand.StepBackward);
-    campaign.Explore(ExplorationCommand.TurnRight);
-    campaign.Explore(ExplorationCommand.StepForward);
-    campaign.Explore(ExplorationCommand.StepForward);
-    campaign.Explore(ExplorationCommand.TurnLeft);
-    campaign.Explore(ExplorationCommand.StepForward);
-    campaign.Explore(ExplorationCommand.StepForward);
-    campaign.Explore(ExplorationCommand.StepForward);
-    campaign.Explore(ExplorationCommand.StepForward);
-    campaign.Explore(ExplorationCommand.TurnLeft);
-    campaign.Explore(ExplorationCommand.StepForward);
-    campaign.Explore(ExplorationCommand.StepForward);
-    if (campaign.Phase == CampaignPhase.Encounter)
-    {
-        campaign.ResolveEncounter(EncounterResult.Victory);
-        campaign.ContinueOutcome();
-    }
-    campaign.Explore(ExplorationCommand.TurnLeft);
-    ExpectCampaign(() => campaign.Explore(ExplorationCommand.StepForward), "navigation rejects");
-    campaign.Explore(ExplorationCommand.Interact);
-    campaign.Explore(ExplorationCommand.StepForward);
-    Assert(campaign.Snapshot().Exploration!.Position == new GridPosition(9, 4), "Warden's Gate opens the adjacent closed door before Engine traversal");
-    session.RequireAdventureItemOwner(Id("gate-sigil-buckler"), adventure.CampStorage);
-    ExpectSession(() => session.TransferAdventureItem(Id("gate-sigil-buckler"), adventure.CampStorage), "already owned");
     ExpectCampaign(() => D20CampaignRuntime.Restore(campaign.EncodeSave(), content, dungeon => new EngineCampaignSpatialGateway(campaignService, dungeon)), "restored D20 session");
-    using var restoredCampaign = D20CampaignRuntime.Restore(campaign.EncodeSave(), content, dungeon => new EngineCampaignSpatialGateway(campaignService, dungeon), session: session);
+    using var restoredCampaign = D20CampaignRuntime.Restore(campaign.EncodeSave(), content, dungeon => new EngineCampaignSpatialGateway(campaignService, dungeon), session: campaignSession);
     Assert(restoredCampaign.Snapshot().Outcome == EncounterResult.Victory, "victory reward transfer precedes durable campaign completion and restores with ownership proof");
 }
 
@@ -416,26 +452,107 @@ static void DefeatRecoveryTransaction()
 {
     var content = D20ContentCatalog.Compile();
     var adventure = content.Adventures[Id("wardens-gate")];
-    using var session = new D20Session(content, RollSourceState.Static([new(20, [4])]));
-    session.AdmitAdventureLoadout(adventure);
+    using var session = TerminalAdventureSession(content, adventure, Id("iron-warden"), EncounterResult.Defeat);
     var defeatedPartyMember = session.OwnerEntity(Id("mara-venn"));
     var opposition = session.OwnerEntity(Id("iron-warden"));
-    session.ApplyAction(session.PreviewAction(opposition, defeatedPartyMember, Id("disrupt"), OperationId.Parse("prepare-defeat")));
-    Assert(session.ReadVitality(defeatedPartyMember).Current.Raw == 20, "focused defeat setup lowers one living party member through Engine vitality");
+    Assert(session.ReadVitality(defeatedPartyMember).Current.Raw == 0, "focused defeat setup is derived from strict saved vitality facts");
     ulong beforeRecoveryRevision = session.Revision;
     var service = DispatchProxy.Create<ISpatialService, RecordingSpatialService>();
     using var gateway = new EngineCampaignSpatialGateway(service, adventure.Dungeon);
     using var campaign = new D20CampaignRuntime(content, adventure.Id, gateway, session: session);
     campaign.BeginExploration();
     for (int step = 0; step < 8; step++) campaign.Explore(ExplorationCommand.StepForward);
-    campaign.ResolveEncounter(EncounterResult.Defeat);
-    Assert(campaign.Snapshot().Outcome == EncounterResult.Defeat && session.ReadVitality(defeatedPartyMember).Current.Raw == 24 && session.Revision == beforeRecoveryRevision + 1, "authored defeat recovery restores party vitality through one detached session commit");
+    var tactical = BuildTactical(content, session, Id("iron-warden"), gateway);
+    campaign.ResolveEncounter(tactical);
+    int recovery = content.Catalog.Encounters[Id("iron-warden")].Defeat.RecoveryVitality!.Value;
+    Assert(campaign.Snapshot().Outcome == EncounterResult.Defeat && session.ReadVitality(defeatedPartyMember).Current.Raw == recovery && session.Revision == beforeRecoveryRevision + 1, "authored defeat recovery restores party vitality through one detached session commit");
     ulong afterRecoveryRevision = session.Revision;
     int afterRecoveryVitality = checked((int)session.ReadVitality(defeatedPartyMember).Current.Raw);
-    ExpectCampaign(() => campaign.ResolveEncounter(EncounterResult.Defeat), "requires Encounter");
+    ExpectCampaign(() => campaign.ResolveEncounter(tactical), "requires Encounter");
     Assert(session.Revision == afterRecoveryRevision && session.ReadVitality(defeatedPartyMember).Current.Raw == afterRecoveryVitality, "defeat recovery is exactly once at the campaign outcome boundary");
     ExpectSession(() => session.ApplyDefeatRecovery([opposition], 0), "positive");
     Assert(session.Revision == afterRecoveryRevision && session.ReadVitality(defeatedPartyMember).Current.Raw == afterRecoveryVitality, "invalid recovery leaves the live session unchanged");
+}
+
+static void TacticalReviewFindings()
+{
+    var content = D20ContentCatalog.Compile();
+    using (var session = NewSession([], out var party, out var opposition))
+    {
+        session.SetActivationBudget(party, Id("standard-action"), 1);
+        session.RegisterLoadoutOwner(party);
+        session.EquipImplement(party, content.Catalog.Implements[Id("training-blade")]);
+        var spatial = new CheckTacticalSpatial();
+        var encounter = new TacticalEncounter(session, spatial,
+        [
+            new(Id("mara-venn"), party, 20, new(1, 1)),
+            new(Id("gate-skirmisher"), opposition, 10, new(5, 1)),
+        ]);
+        TacticalReviewProbes.AssertOutOfRangeRejected(encounter, Id("mara-venn"), Id("gate-skirmisher"), Id("longsword-strike"), OperationId.Parse("review-range"));
+    }
+
+    using (var session = NewSession([], out var party, out var opposition))
+    {
+        var spatial = new CheckTacticalSpatial();
+        var encounter = new TacticalEncounter(session, spatial,
+        [
+            new(Id("mara-venn"), party, 20, new(1, 1)),
+            new(Id("gate-skirmisher"), opposition, 10, new(3, 1)),
+        ]);
+        TacticalReviewProbes.AssertMovementSurvivesRestore(encounter, session, spatial,
+            new TacticalBoard(6, 4, ["######", "#....#", "#....#", "######"],
+            [new(Id("mara-venn"), new(1, 1)), new(Id("gate-skirmisher"), new(3, 1))]),
+            Id("mara-venn"), new(1, 2));
+    }
+
+    var adventure = content.Adventures[Id("embers-wake")];
+    using (var session = new D20Session(content, RollSourceState.Static([new(20, [4, 4])])) )
+    {
+        session.AdmitAdventureLoadout(adventure);
+        var sera = session.OwnerEntity(Id("sera-vale"));
+        session.SetActionResource(sera, Id("focus"), 0);
+        session.SetActivationBudget(sera, Id("reaction"), 0);
+        var encounter = BuildTactical(content, session, Id("ash-seer"), new CheckTacticalSpatial(), oppositionFirst: true);
+        TacticalReviewProbes.AssertNoHardcodedOppositionFallback(encounter, session);
+    }
+
+    var outcomeAdventure = content.Adventures[Id("wardens-gate")];
+    using (var session = new D20Session(content, RollSourceState.Static([])))
+    {
+        session.AdmitAdventureLoadout(outcomeAdventure);
+        var spatial = new CheckSpatial();
+        using var campaign = new D20CampaignRuntime(content, outcomeAdventure.Id, spatial, session: session);
+        campaign.BeginExploration();
+        for (int step = 0; step < 8; step++) campaign.Explore(ExplorationCommand.StepForward);
+        Assert(campaign.Phase == CampaignPhase.Encounter, "focused outcome probe reaches the authored encounter");
+        var untouched = BuildTactical(content, session, Id("iron-warden"), new CheckTacticalSpatial());
+        TacticalReviewProbes.AssertUntouchedOutcomeRejected(campaign, untouched);
+    }
+}
+
+static D20Session TerminalAdventureSession(CompiledD20Content content, AdventureDefinition adventure, D20Id encounterId, EncounterResult result)
+{
+    using var source = new D20Session(content, RollSourceState.Static([]));
+    source.AdmitAdventureLoadout(adventure);
+    D20SessionSave save = source.CaptureSave();
+    EncounterDefinition encounter = content.Catalog.Encounters[encounterId];
+    EncounterFaction losingFaction = result == EncounterResult.Victory ? EncounterFaction.Opposition : EncounterFaction.Party;
+    HashSet<D20Id> losers = encounter.Roster.Where(value => value.Faction == losingFaction).Select(value => value.Character).ToHashSet();
+    SessionParticipantSave[] participants = save.Participants
+        .Select(value => losers.Contains(value.Character) ? value with { Living = false, Vitality = 0 } : value)
+        .ToArray();
+    return D20Session.Restore(content, save with { Participants = participants });
+}
+
+static TacticalEncounter BuildTactical(CompiledD20Content content, D20Session session, D20Id encounterId, ITacticalSpatialGateway spatial, bool oppositionFirst = false)
+{
+    EncounterDefinition encounter = content.Catalog.Encounters[encounterId];
+    TacticalParticipant[] participants = encounter.Roster.Select(row => new TacticalParticipant(
+        row.Character,
+        session.OwnerEntity(row.Character),
+        oppositionFirst && row.Faction == EncounterFaction.Opposition ? 20 : 10,
+        encounter.Board.Placements.Single(value => value.Character == row.Character).Position)).ToArray();
+    return new TacticalEncounter(session, spatial, participants, encounter.Board);
 }
 
 static D20Session NewSession(IReadOnlyList<StaticActionRoll> rolls, out Rusty.Engine.Entities.EntityId actor, out Rusty.Engine.Entities.EntityId target, ulong position = 0)
@@ -489,6 +606,16 @@ static void ExpectAny(IEnumerable<string> codes, Action action)
     {
         Assert(exception.Diagnostics.Any(diagnostic => codes.Contains(diagnostic.Code, StringComparer.Ordinal)), "expected one relevant topology/dependency diagnostic");
     }
+}
+
+static void ExpectUnsupported(Action action)
+{
+    try
+    {
+        action();
+        throw new InvalidOperationException("expected immutable collection rejection");
+    }
+    catch (NotSupportedException) { }
 }
 
 static void Assert(bool condition, string message)

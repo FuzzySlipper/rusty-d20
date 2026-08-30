@@ -88,12 +88,6 @@ public sealed class EngineCampaignSpatialGateway : ICampaignSpatialGateway, ITac
         }
     }
 
-    /// <summary>Compatibility constructor for callers that already admitted the geometry.</summary>
-    public EngineCampaignSpatialGateway(ISpatialService spatial, SpatialSession session)
-        : this(spatial, new DungeonDefinition("borrowed", D20Id.Parse("borrowed-wall"), 1, 1, ["."], new(0, 0), D20Id.Parse("borrowed-checkpoint"), DungeonFacing.North, [], [], [], [], [new(D20Id.Parse("borrowed-checkpoint"), new(0, 0), "borrowed", "borrowed")]), session, null, admitProjection: false)
-    {
-    }
-
     public SpatialSession Session => _session;
     public bool OwnsSession => _ownsSession;
 
@@ -335,28 +329,29 @@ public sealed partial class D20CampaignRuntime : IDisposable
         else Interact();
         if (Phase == CampaignPhase.Exploration) Note("exploration", $"Party at {_position.X},{_position.Y}, facing {_facing}.");
     }
-    public void ResolveEncounter(EncounterResult result)
+    /// <summary>Admits one terminal result only when the active tactical aggregate proves it from canonical session vitality.</summary>
+    public void ResolveEncounter(TacticalEncounter tactical)
     {
-        if (!Enum.IsDefined(result)) throw new CampaignException("Unknown encounter result.");
+        ArgumentNullException.ThrowIfNull(tactical);
         Require(CampaignPhase.Encounter); D20Id encounter = _active ?? throw new CampaignException("Encounter phase has no active encounter.");
+        if (_session is null) throw new CampaignException("Encounter outcome resolution requires an admitted D20 session.");
+        EncounterDefinition authored = _content.Catalog.Encounters.TryGetValue(encounter, out EncounterDefinition? admittedEncounter) ? admittedEncounter : throw new CampaignException("Active encounter is not in the compiled definition catalog.");
+        IReadOnlyList<TacticalParticipant> participants = tactical.Participants;
+        if (participants.Count != authored.Roster.Count || participants.Select(value => value.Id).Distinct().Count() != participants.Count || authored.Roster.Any(row => participants.SingleOrDefault(value => value.Id == row.Character) is not TacticalParticipant participant || participant.Entity != _session.OwnerEntity(row.Character) || _session.FactionOf(participant.Entity) != row.Faction))
+            throw new CampaignException("Tactical outcome aggregate does not match the active authored encounter closure.");
+        if (!tactical.TryGetTerminalResult(out EncounterResult result)) throw new CampaignException("Active tactical facts are unresolved or contradictory; no campaign outcome is admitted.");
         if (Revision == ulong.MaxValue) throw new CampaignException("Campaign revision is exhausted before encounter resolution.");
-        EncounterDefinition authored = _content.Modules.SelectMany(module => module.EncountersOrEmpty).Single(value => value.Id == encounter);
         if (result == EncounterResult.Victory)
         {
             if (authored.Victory.RewardItem is D20Id reward)
             {
-                if (_session is null) throw new CampaignException("Encounter reward transfer requires an admitted D20 session.");
-                RustyD20.Core.Rules.ItemDefinition rewardDefinition = _content.Modules
-                    .SelectMany(module => module.ItemsOrEmpty)
-                    .SingleOrDefault(value => value.Id == reward)
-                    ?? throw new CampaignException($"Encounter reward item {reward} is not authored.");
+                RustyD20.Core.Rules.ItemDefinition rewardDefinition = _content.Catalog.Items.TryGetValue(reward, out RustyD20.Core.Rules.ItemDefinition? admittedReward) ? admittedReward : throw new CampaignException($"Encounter reward item {reward} is not authored.");
                 _session.RequireAdventureItemOwner(reward, rewardDefinition.Owner);
                 _session.TransferAdventureItem(reward, _adventure.CampStorage);
             }
         }
         else
         {
-            if (_session is null) throw new CampaignException("Defeat recovery requires an admitted D20 session.");
             if (authored.Defeat.RecoveryVitality is not int recovery) throw new CampaignException("Authored defeat has no recovery vitality.");
             EntityId[] party = _adventure.Party.Select(_session.OwnerEntity).ToArray();
             _session.ApplyDefeatRecovery(party, recovery);
@@ -469,7 +464,7 @@ public sealed partial class D20CampaignRuntime : IDisposable
         {
             DungeonTreasure authored = adventure.Dungeon.Treasures.SingleOrDefault(value => value.Id == treasure) ?? throw new CampaignException("Saved treasure fact is unknown.");
             if (session is null) throw new CampaignException("Saved treasure facts require the admitted restored D20 session.");
-            ItemDefinition item = content.Modules.SelectMany(module => module.ItemsOrEmpty).SingleOrDefault(value => value.Id == authored.Item) ?? throw new CampaignException($"Saved treasure item {authored.Item} is not authored.");
+            ItemDefinition item = content.Catalog.Items.TryGetValue(authored.Item, out ItemDefinition? admittedItem) ? admittedItem : throw new CampaignException($"Saved treasure item {authored.Item} is not authored.");
             RequireCampOwnership(session, authored.Item, item.Owner, adventure.CampStorage);
         }
         foreach (D20Id landmark in inspectedLandmarks) if (!adventure.Dungeon.Landmarks.Any(value => value.Id == landmark)) throw new CampaignException("Saved inspected-landmark fact is unknown.");
@@ -478,11 +473,11 @@ public sealed partial class D20CampaignRuntime : IDisposable
         if (!Floor(adventure.Dungeon.Rows, document.Position)) throw new CampaignException("Saved exploration position is not an authored floor cell.");
         foreach (D20Id completedId in completed)
         {
-            EncounterDefinition encounter = content.Modules.SelectMany(module => module.EncountersOrEmpty).Single(value => value.Id == completedId);
+            EncounterDefinition encounter = content.Catalog.Encounters.TryGetValue(completedId, out EncounterDefinition? admittedEncounter) ? admittedEncounter : throw new CampaignException($"Saved completed encounter {completedId} is not authored.");
             if (encounter.Victory.RewardItem is D20Id reward)
             {
                 if (session is null) throw new CampaignException("Completed reward history requires the admitted restored D20 session.");
-                ItemDefinition item = content.Modules.SelectMany(module => module.ItemsOrEmpty).SingleOrDefault(value => value.Id == reward) ?? throw new CampaignException($"Saved encounter reward item {reward} is not authored.");
+                ItemDefinition item = content.Catalog.Items.TryGetValue(reward, out ItemDefinition? admittedReward) ? admittedReward : throw new CampaignException($"Saved encounter reward item {reward} is not authored.");
                 RequireCampOwnership(session, reward, item.Owner, adventure.CampStorage);
             }
         }
@@ -538,7 +533,7 @@ public sealed partial class D20CampaignRuntime : IDisposable
             Note("door", door.Title); return;
         }
         DungeonTreasure? treasure = _adventure.Dungeon.Treasures.SingleOrDefault(value => value.Position == _position);
-        if (treasure is not null) { if (_collectedTreasures.Contains(treasure.Id)) throw new CampaignException("Treasure was already transferred."); if (_session is null) throw new CampaignException("Treasure transfer requires an admitted D20 session."); RustyD20.Core.Rules.ItemDefinition treasureDefinition = _content.Modules.SelectMany(module => module.ItemsOrEmpty).SingleOrDefault(value => value.Id == treasure.Item) ?? throw new CampaignException($"Treasure item {treasure.Item} is not authored."); _session.RequireAdventureItemOwner(treasure.Item, treasureDefinition.Owner); _session.TransferAdventureItem(treasure.Item, _adventure.CampStorage); _collectedTreasures.Add(treasure.Id); Note("treasure", treasure.Title); return; }
+        if (treasure is not null) { if (_collectedTreasures.Contains(treasure.Id)) throw new CampaignException("Treasure was already transferred."); if (_session is null) throw new CampaignException("Treasure transfer requires an admitted D20 session."); RustyD20.Core.Rules.ItemDefinition treasureDefinition = _content.Catalog.Items.TryGetValue(treasure.Item, out RustyD20.Core.Rules.ItemDefinition? admittedTreasure) ? admittedTreasure : throw new CampaignException($"Treasure item {treasure.Item} is not authored."); _session.RequireAdventureItemOwner(treasure.Item, treasureDefinition.Owner); _session.TransferAdventureItem(treasure.Item, _adventure.CampStorage); _collectedTreasures.Add(treasure.Id); Note("treasure", treasure.Title); return; }
         DungeonCheckpoint? checkpoint = _adventure.Dungeon.Checkpoints.SingleOrDefault(value => value.Position == _position);
         if (checkpoint is not null) { _checkpoint = checkpoint.Id; Phase = CampaignPhase.Camp; Note("checkpoint", checkpoint.Title); return; }
         DungeonLandmark? landmark = _adventure.Dungeon.Landmarks.SingleOrDefault(value => value.Position == _position);

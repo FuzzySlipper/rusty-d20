@@ -1,4 +1,4 @@
-name: CI
+name: C# product CI
 
 on:
   pull_request:
@@ -9,113 +9,16 @@ permissions:
   contents: read
 
 jobs:
-  verify-rust:
+  csharp-product:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Provision adjacent Rusty Engine checkout
         run: git clone --depth 1 https://github.com/FuzzySlipper/rusty-engine.git ../rusty-engine
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-dotnet@v4
         with:
-          components: clippy, rustfmt
-      - run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-      - run: cargo fmt --all --check
-      - run: cargo test --workspace --locked
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-
-  verify-rules:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Provision adjacent Rusty Engine checkout
-        run: git clone --depth 1 https://github.com/FuzzySlipper/rusty-engine.git ../rusty-engine
-      - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.7.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: rules/pnpm-lock.yaml
-      - name: Prepare adjacent Engine Rules packages
-        run: |
-          pnpm --dir ../rusty-engine/rules install --frozen-lockfile
-          pnpm --dir ../rusty-engine/rules run build
-      - run: ./scripts/verify-rules.sh
-
-  verify-boundaries:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Provision adjacent Rusty Engine checkout
-        run: git clone --depth 1 https://github.com/FuzzySlipper/rusty-engine.git ../rusty-engine
-      - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.7.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run verify:boundaries
-
-  verify-ui:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.7.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run verify:ui
-
-  verify-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.7.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run verify:build
-
-  verify-browser:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Provision adjacent Rusty Engine checkout
-        run: git clone --depth 1 https://github.com/FuzzySlipper/rusty-engine.git ../rusty-engine
-      - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.7.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm run verify:browser
-
-  verify-native:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Provision adjacent Rusty Engine checkout
-        run: git clone --depth 1 https://github.com/FuzzySlipper/rusty-engine.git ../rusty-engine
-      - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libxkbcommon-x11-dev xvfb xdotool
-      - run: ./scripts/verify-native-host.sh
+          dotnet-version: 10.0.x
+      - run: dotnet run --project src/RustyD20.Core.Checks/RustyD20.Core.Checks.csproj
+      - run: dotnet run --project src/RustyD20.Product.Checks/RustyD20.Product.Checks.csproj
+      - run: dotnet build RustyD20.sln -c Release
+      - run: dotnet publish src/RustyD20.NativeProduct/RustyD20.NativeProduct.csproj -c Release -r linux-x64

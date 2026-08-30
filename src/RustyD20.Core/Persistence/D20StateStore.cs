@@ -51,7 +51,7 @@ public sealed record D20RestoreCandidate(D20CampaignRuntime Campaign, D20Session
 
 public sealed class D20DurableStateCodec : IProductStateCodec<D20DurableState>
 {
-    public const uint CurrentSchema = 1;
+    public const uint CurrentSchema = 2;
     public uint SchemaVersion => CurrentSchema;
     public void Encode(in D20DurableState state, IBufferWriter<byte> destination)
     {
@@ -112,7 +112,7 @@ public sealed class D20EngineStateStore : IDisposable
             AdventureDefinition adventure = content.Adventures[snapshot.Adventure];
             foreach (D20Id completed in snapshot.CompletedEncounters)
             {
-                EncounterDefinition encounter = content.Modules.SelectMany(module => module.EncountersOrEmpty).Single(value => value.Id == completed);
+                EncounterDefinition encounter = content.Catalog.Encounters.TryGetValue(completed, out EncounterDefinition? admittedCompleted) ? admittedCompleted : throw new CampaignException("Saved completed encounter is not in the compiled definition catalog.");
                 if (encounter.Victory.RewardItem is D20Id reward) session.RequireAdventureItemOwner(reward, adventure.CampStorage);
             }
 
@@ -120,7 +120,7 @@ public sealed class D20EngineStateStore : IDisposable
             if (snapshot.Phase == CampaignPhase.Encounter)
             {
                 if (state.Tactical is null || snapshot.ActiveEncounter is not D20Id active) throw new CampaignException("Saved encounter phase has no tactical aggregate.");
-                EncounterDefinition encounter = content.Modules.SelectMany(module => module.EncountersOrEmpty).Single(value => value.Id == active);
+                EncounterDefinition encounter = content.Catalog.Encounters.TryGetValue(active, out EncounterDefinition? admittedActive) ? admittedActive : throw new CampaignException("Saved active encounter is not in the compiled definition catalog.");
                 ValidateTacticalClosure(session, encounter, state.Tactical);
                 if (campaign.Spatial is not ITacticalSpatialGateway tacticalSpatial) throw new CampaignException("The fresh campaign spatial candidate does not expose tactical Engine queries.");
                 tactical = TacticalEncounter.Restore(session, tacticalSpatial, state.Tactical, encounter.Board);
@@ -139,11 +139,10 @@ public sealed class D20EngineStateStore : IDisposable
     private static void ValidateTacticalClosure(D20Session session, EncounterDefinition encounter, TacticalEncounterSave save)
     {
         if (save.Participants.Count != encounter.Roster.Count || save.Participants.Select(value => value.Id).Distinct().Count() != save.Participants.Count) throw new CampaignException("Saved tactical roster is not the authored encounter closure.");
-        var placements = encounter.Board.Placements.ToDictionary(value => value.Character);
         foreach (EncounterParticipant authored in encounter.Roster)
         {
             TacticalParticipant participant = save.Participants.SingleOrDefault(value => value.Id == authored.Character) ?? throw new CampaignException("Saved tactical participant is missing from the authored roster.");
-            if (participant.Entity != session.OwnerEntity(authored.Character) || session.FactionOf(participant.Entity) != authored.Faction || !placements.TryGetValue(authored.Character, out TacticalPlacement? placement) || participant.Position != placement.Position) throw new CampaignException("Saved tactical participant identity or placement disagrees with authored content.");
+            if (participant.Entity != session.OwnerEntity(authored.Character) || session.FactionOf(participant.Entity) != authored.Faction) throw new CampaignException("Saved tactical participant identity or faction disagrees with authored content.");
         }
     }
 }

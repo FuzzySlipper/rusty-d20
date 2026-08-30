@@ -38,29 +38,34 @@ internal static class D20Disposal
 /// <summary>Named product-owned posture for the retained Engine presentation; no geometry or renderer is duplicated here.</summary>
 public sealed record D20PresentationTuning(
     uint MaterialSlot = 1,
+    uint PartyMaterialSlot = 2,
+    uint OppositionMaterialSlot = 3,
+    uint ActiveMaterialSlot = 4,
+    uint SelectionMaterialSlot = 5,
     int DungeonFloorLayer = 0,
     int DungeonWallLayer = 1,
+    int MarkerLayer = 2,
     int TacticalFloorLayer = 0,
     int TacticalWallLayer = 1,
-    int TacticalOffsetX = 32,
     float MaterialRed = .55f,
     float MaterialGreen = .25f,
     float MaterialBlue = .08f,
     float MaterialRoughness = .8f,
-    float CameraX = 6,
-    float CameraY = 9,
-    float CameraZ = 10,
-    float CameraPitch = -25,
+    float ExplorationEyeHeight = .65f,
+    float ExplorationCameraPitch = -8,
+    float TacticalCameraHeight = 9,
+    float TacticalCameraPitch = -62,
     float CameraFieldOfView = 65,
     float CameraFar = 64)
 {
     public void Validate()
     {
-        if (MaterialSlot == 0 || DungeonFloorLayer < 0 || DungeonWallLayer <= DungeonFloorLayer || TacticalFloorLayer < 0 || TacticalWallLayer <= TacticalFloorLayer || TacticalOffsetX < 1 || MaterialRed is < 0 or > 1 || MaterialGreen is < 0 or > 1 || MaterialBlue is < 0 or > 1 || MaterialRoughness is < 0 or > 1 || CameraFieldOfView is < 1 or > 179 || CameraFar <= 0)
+        uint[] slots = [MaterialSlot, PartyMaterialSlot, OppositionMaterialSlot, ActiveMaterialSlot, SelectionMaterialSlot];
+        if (slots.Any(slot => slot == 0) || slots.Distinct().Count() != slots.Length || DungeonFloorLayer < 0 || DungeonWallLayer <= DungeonFloorLayer || MarkerLayer <= DungeonWallLayer || TacticalFloorLayer < 0 || TacticalWallLayer <= TacticalFloorLayer || MaterialRed is < 0 or > 1 || MaterialGreen is < 0 or > 1 || MaterialBlue is < 0 or > 1 || MaterialRoughness is < 0 or > 1 || ExplorationEyeHeight is <= 0 or > 4 || TacticalCameraHeight is <= 0 or > 32 || CameraFieldOfView is < 1 or > 179 || CameraFar <= 0)
             throw new ArgumentOutOfRangeException(nameof(D20PresentationTuning), "Presentation tuning is outside the admitted product bounds.");
     }
 
-    public string Readout => $"material={MaterialSlot};dungeon={DungeonFloorLayer}/{DungeonWallLayer};tactical={TacticalFloorLayer}/{TacticalWallLayer}@{TacticalOffsetX};camera={CameraX},{CameraY},{CameraZ}:{CameraPitch}/{CameraFieldOfView}/{CameraFar}";
+    public string Readout => $"materials=terrain:{MaterialSlot},party:{PartyMaterialSlot},opposition:{OppositionMaterialSlot},active:{ActiveMaterialSlot},selection:{SelectionMaterialSlot};layers=explore:{DungeonFloorLayer}/{DungeonWallLayer}/{MarkerLayer},tactical:{TacticalFloorLayer}/{TacticalWallLayer}/{MarkerLayer};camera=eye:{ExplorationEyeHeight}:{ExplorationCameraPitch},tactical:{TacticalCameraHeight}:{TacticalCameraPitch}/{CameraFieldOfView}/{CameraFar}";
 }
 
 /// <summary>Engine-admitted D20 orchestration. Core owns rules/campaign meaning; this class owns only lifecycle, input, retained view, and projection composition.</summary>
@@ -187,6 +192,10 @@ public sealed class RustyD20Product : IEngineProduct
                 case D20Command.PartyNext: CycleParty(); break;
                 case D20Command.ActionNext: _actionCursor++; Note("selection:action"); break;
                 case D20Command.TargetNext: _targetCursor++; Note("selection:target"); break;
+                case D20Command.TacticalMoveNorth: MoveTactical(0, -1); break;
+                case D20Command.TacticalMoveSouth: MoveTactical(0, 1); break;
+                case D20Command.TacticalMoveWest: MoveTactical(-1, 0); break;
+                case D20Command.TacticalMoveEast: MoveTactical(1, 0); break;
                 case D20Command.CommitAction: CommitAction(); break;
                 case D20Command.React: ResolveReaction(true); break;
                 case D20Command.Decline: ResolveReaction(false); break;
@@ -240,7 +249,7 @@ public sealed class RustyD20Product : IEngineProduct
         D20CampaignRuntime campaign = RequireCampaign();
         CampaignSnapshot snapshot = campaign.Snapshot();
         if (snapshot.Phase != CampaignPhase.Encounter || snapshot.ActiveEncounter is not D20Id active || _tactical is not null) return;
-        EncounterDefinition encounter = _content.Modules.SelectMany(module => module.EncountersOrEmpty).Single(value => value.Id == active);
+        EncounterDefinition encounter = _content.Catalog.Encounters[active];
         var participants = encounter.Roster.Select(row => new TacticalParticipant(row.Character, RequireSession().OwnerEntity(row.Character), Initiative(row.Character), encounter.Board.Placements.Single(place => place.Character == row.Character).Position));
         _tactical = new TacticalEncounter(RequireSession(), (ITacticalSpatialGateway)campaign.Spatial, participants, encounter.Board);
         _partyCursor = _actionCursor = _targetCursor = 0;
@@ -272,6 +281,16 @@ public sealed class RustyD20Product : IEngineProduct
         ResolveCampaignIfSettled();
     }
 
+    private void MoveTactical(int deltaX, int deltaY)
+    {
+        TacticalEncounter tactical = _tactical ?? throw new CampaignException("No tactical movement is active.");
+        D20Id actor = tactical.CurrentActor;
+        if (RequireSession().FactionOf(RequireSession().OwnerEntity(actor)) != EncounterFaction.Party) throw new TacticalException("The Engine-admitted opposition is resolving automatically.");
+        TacticalParticipant current = tactical.Participants.Single(value => value.Id == actor);
+        tactical.PartyMove(actor, new GridPosition(current.Position.X + deltaX, current.Position.Y + deltaY));
+        Note($"move:{actor}:{deltaX},{deltaY}");
+    }
+
     private void ResolveReaction(bool choose)
     {
         TacticalEncounter tactical = _tactical ?? throw new TacticalException("No pending reaction.");
@@ -286,15 +305,11 @@ public sealed class RustyD20Product : IEngineProduct
     {
         TacticalEncounter? tactical = _tactical;
         if (tactical?.PendingReaction is not null) return;
-        EncounterDefinition encounter = CurrentEncounter();
-        D20Session session = RequireSession();
-        bool oppositionAlive = encounter.Roster.Where(row => row.Faction == EncounterFaction.Opposition).Any(row => session.IsLiving(session.OwnerEntity(row.Character)));
-        bool partyAlive = encounter.Roster.Where(row => row.Faction == EncounterFaction.Party).Any(row => session.IsLiving(session.OwnerEntity(row.Character)));
-        if (!oppositionAlive || !partyAlive)
+        if (tactical is not null && tactical.TryGetTerminalResult(out EncounterResult result))
         {
-            RequireCampaign().ResolveEncounter(oppositionAlive ? EncounterResult.Defeat : EncounterResult.Victory);
+            RequireCampaign().ResolveEncounter(tactical);
             _tactical = null;
-            Note(oppositionAlive ? "outcome:defeat" : "outcome:victory");
+            Note(result == EncounterResult.Victory ? "outcome:victory" : "outcome:defeat");
         }
     }
 
@@ -324,7 +339,7 @@ public sealed class RustyD20Product : IEngineProduct
     private EncounterDefinition CurrentEncounter()
     {
         D20Id id = RequireCampaign().Snapshot().ActiveEncounter ?? throw new CampaignException("No active encounter identity.");
-        return _content.Modules.SelectMany(module => module.EncountersOrEmpty).Single(value => value.Id == id);
+        return _content.Catalog.Encounters[id];
     }
     private int Initiative(D20Id id) => _content.Characters[id].Abilities.Values.Sum();
     private D20CampaignRuntime RequireCampaign() => _campaign ?? throw new InvalidOperationException("Campaign candidate was not created.");
@@ -343,11 +358,11 @@ public sealed class RustyD20Product : IEngineProduct
         {
             CampaignSnapshot snapshot = campaign.Snapshot();
             AdventureDefinition adventure = _content.Adventures[snapshot.Adventure];
-            EncounterDefinition? encounter = snapshot.ActiveEncounter is D20Id active ? _content.Modules.SelectMany(module => module.EncountersOrEmpty).Single(value => value.Id == active) : null;
-            _surface.Refresh(adventure, encounter);
+            EncounterDefinition? encounter = snapshot.ActiveEncounter is D20Id active ? _content.Catalog.Encounters[active] : null;
+            _surface.Refresh(adventure, snapshot, encounter, _tactical, _session, _targetCursor);
             AddCampaign(fields, snapshot);
         }
-        fields.Add(UiField.NumberValue("presentation.chunks", _surface.ChunkCount)); fields.Add(UiField.TextValue("presentation.source", _surface.Source)); fields.Add(UiField.TextValue("presentation.adventure", _surface.Adventure)); fields.Add(UiField.TextValue("presentation.board", _surface.Board)); fields.Add(UiField.TextValue("presentation.tuning", _surface.Tuning.Readout));
+        fields.Add(UiField.NumberValue("presentation.chunks", _surface.ChunkCount)); fields.Add(UiField.TextValue("presentation.source", _surface.Source)); fields.Add(UiField.TextValue("presentation.adventure", _surface.Adventure)); fields.Add(UiField.TextValue("presentation.board", _surface.Board)); fields.Add(UiField.TextValue("presentation.mode", _surface.Mode)); fields.Add(UiField.NumberValue("presentation.visibleDepth", _surface.VisibleDepth)); fields.Add(UiField.TextValue("presentation.tuning", _surface.Tuning.Readout));
         if (_tactical is { } tactical) AddTactical(fields, tactical);
         foreach ((string line, int index) in _log.TakeLast(12).Select((line, index) => (line, index))) fields.Add(UiField.TextValue($"log.{index}", line));
         _engine.Ui.PublishProjection(new UiProjection(_ui, ++_sequence, StructuredUiProjection.Object(fields)));
@@ -360,7 +375,15 @@ public sealed class RustyD20Product : IEngineProduct
     }
     private void AddTactical(List<UiField> fields, TacticalEncounter tactical)
     {
-        fields.Add(UiField.TextValue("tactical.actor", tactical.CurrentActor.Value)); fields.Add(UiField.NumberValue("tactical.initiativeProgress", tactical.OppositionProgress)); fields.Add(UiField.TextValue("tactical.pendingReaction", tactical.PendingReaction is null ? string.Empty : tactical.PendingReaction.Defender.Value)); fields.Add(UiField.NumberValue("selection.party", _partyCursor)); fields.Add(UiField.NumberValue("selection.action", _actionCursor)); fields.Add(UiField.NumberValue("selection.target", _targetCursor));
+        TacticalMovementReadout movement = tactical.Movement;
+        EncounterDefinition encounter = CurrentEncounter();
+        D20Session session = RequireSession();
+        EncounterFaction actorFaction = session.FactionOf(session.OwnerEntity(tactical.CurrentActor));
+        D20Id[] actions = _content.Characters[tactical.CurrentActor].Actions.ToArray();
+        D20Id[] targets = encounter.Roster.Where(value => value.Faction != actorFaction).Select(value => value.Character).ToArray();
+        D20Id? selectedAction = actions.Length == 0 ? null : actions[Modulo(_actionCursor, actions.Length)];
+        D20Id? selectedTarget = targets.Length == 0 ? null : targets[Modulo(_targetCursor, targets.Length)];
+        fields.Add(UiField.TextValue("tactical.actor", tactical.CurrentActor.Value)); fields.Add(UiField.TextValue("tactical.actorFaction", actorFaction.ToString())); fields.Add(UiField.NumberValue("tactical.initiativeProgress", tactical.OppositionProgress)); fields.Add(UiField.TextValue("tactical.pendingReaction", tactical.PendingReaction is null ? string.Empty : tactical.PendingReaction.Defender.Value)); fields.Add(UiField.NumberValue("tactical.movement.budget", movement.Budget)); fields.Add(UiField.NumberValue("tactical.movement.remaining", movement.Remaining)); fields.Add(UiField.TextValue("tactical.positions", string.Join(';', movement.Participants.Select(value => $"{value.Id}:{session.FactionOf(value.Entity)}@{value.Position.X},{value.Position.Y}")))); fields.Add(UiField.TextValue("tactical.participants", string.Join(';', movement.Participants.Select(value => $"{value.Id}:{session.FactionOf(value.Entity)}:vitality={session.ReadVitality(value.Entity).Current.Raw}@{value.Position.X},{value.Position.Y}")))); fields.Add(UiField.TextValue("tactical.actions", string.Join(',', actions.Select(value => value.Value)))); fields.Add(UiField.TextValue("tactical.targets", string.Join(',', targets.Select(value => value.Value)))); fields.Add(UiField.TextValue("tactical.selectedAction", selectedAction?.Value ?? string.Empty)); fields.Add(UiField.TextValue("tactical.selectedTarget", selectedTarget?.Value ?? string.Empty)); fields.Add(UiField.TextValue("tactical.selectionReadout", tactical.PendingReaction is not null ? "reaction choice is required before progression" : actorFaction == EncounterFaction.Party ? "selected action and target are resolver-admitted on commit" : "Engine-admitted opposition is resolving automatically")); fields.Add(UiField.NumberValue("selection.party", _partyCursor)); fields.Add(UiField.NumberValue("selection.action", _actionCursor)); fields.Add(UiField.NumberValue("selection.target", _targetCursor));
     }
     private static int Modulo(int value, int length) => length == 0 ? throw new InvalidOperationException("No authored choice.") : ((value % length) + length) % length;
     private static string Bound(string value) => value.Length <= 120 ? value : value[..120];
@@ -369,67 +392,132 @@ public sealed class RustyD20Product : IEngineProduct
 
 internal sealed class D20Surface : IDisposable
 {
-    private readonly IEngineContext _engine; private readonly SpatialSession _spatial; private readonly Material _material; private readonly VoxelScenePresentation _presentation; private readonly Camera _camera; private readonly HashSet<VoxelAddress> _occupied = [];
+    private readonly IEngineContext _engine; private readonly SpatialSession _spatial; private readonly IReadOnlyDictionary<uint, Material> _materials; private readonly VoxelScenePresentation _presentation; private readonly Camera _camera; private readonly Dictionary<VoxelAddress, uint> _occupied = [];
     private bool _disposed;
-    private D20Surface(IEngineContext engine, SpatialSession spatial, Material material, VoxelScenePresentation presentation, Camera camera, D20PresentationTuning tuning, HashSet<VoxelAddress> occupied, AdventureDefinition initial) { _engine = engine; _spatial = spatial; _material = material; _presentation = presentation; _camera = camera; Tuning = tuning; _occupied.UnionWith(occupied); Adventure = initial.Id.Value; Source = initial.Source.SourcePath; }
+    private D20Surface(IEngineContext engine, SpatialSession spatial, IReadOnlyDictionary<uint, Material> materials, VoxelScenePresentation presentation, Camera camera, D20PresentationTuning tuning, IReadOnlyDictionary<VoxelAddress, uint> occupied, AdventureDefinition initial) { _engine = engine; _spatial = spatial; _materials = materials; _presentation = presentation; _camera = camera; Tuning = tuning; foreach ((VoxelAddress address, uint material) in occupied) _occupied.Add(address, material); Adventure = initial.Id.Value; Source = initial.Source.SourcePath; }
     public ulong ChunkCount { get; private set; }
     public string Source { get; private set; } = "unprojected";
     public string Adventure { get; private set; } = "";
     public string Board { get; private set; } = "";
+    public string Mode { get; private set; } = "camp";
+    public int VisibleDepth { get; private set; }
     public D20PresentationTuning Tuning { get; }
     public static D20Surface Create(IEngineContext engine, AdventureDefinition initial, D20PresentationTuning? tuning = null)
     {
         ArgumentNullException.ThrowIfNull(initial);
         D20PresentationTuning posture = tuning ?? new D20PresentationTuning(); posture.Validate();
-        SpatialSession? spatial = null; Material? material = null; VoxelScenePresentation? presentation = null; Camera? camera = null;
+        SpatialSession? spatial = null; var materials = new Dictionary<uint, Material>(); VoxelScenePresentation? presentation = null; Camera? camera = null;
         try
         {
             spatial = engine.Spatial.CreateSession(new SpatialSessionConfig(1.0, 16, VoxelSurfaceMode.GreedyCubes));
-            material = engine.Appearance.CreateMaterial(new MaterialRequest(new Color(posture.MaterialRed, posture.MaterialGreen, posture.MaterialBlue, 1), new RenderResourceHandle(0), posture.MaterialRoughness, new Color(1, 1, 1, 1), Vector3.Zero, 0, false));
-            var occupied = new HashSet<VoxelAddress>(); AddRows(occupied, initial.Dungeon.Rows, 0, posture.DungeonFloorLayer, posture.DungeonWallLayer);
+            materials.Add(posture.MaterialSlot, CreateMaterial(engine, new Color(posture.MaterialRed, posture.MaterialGreen, posture.MaterialBlue, 1), posture.MaterialRoughness));
+            materials.Add(posture.PartyMaterialSlot, CreateMaterial(engine, new Color(.18f, .62f, .92f, 1), .5f));
+            materials.Add(posture.OppositionMaterialSlot, CreateMaterial(engine, new Color(.82f, .18f, .2f, 1), .5f));
+            materials.Add(posture.ActiveMaterialSlot, CreateMaterial(engine, new Color(.28f, .9f, .36f, 1), .35f));
+            materials.Add(posture.SelectionMaterialSlot, CreateMaterial(engine, new Color(.95f, .78f, .18f, 1), .35f));
+            var occupied = new Dictionary<VoxelAddress, uint>(); AddCamp(occupied, initial.Dungeon.Start, posture);
             VoxelSceneReadout scene = engine.Voxel.ReadScene(new VoxelSceneReadRequest(spatial));
-            engine.Voxel.ApplyEdits(new VoxelEditTransaction(spatial, scene.SourceRevision, occupied.Select(address => new VoxelEdit(VoxelEditKind.Set, address, posture.MaterialSlot)).ToArray()));
-            presentation = engine.VoxelScenePresentation.ProjectScene(new ProjectVoxelSceneRequest(spatial, new VoxelSceneMaterialBinding[] { new(posture.MaterialSlot, material) }));
-            camera = engine.CameraView.CreateCamera(new CameraDescriptor(new CameraPose(new Vector3(posture.CameraX, posture.CameraY, posture.CameraZ), posture.CameraPitch, 0), CameraBasisMode.Explicit, new CameraBasis(Vector3.Normalize(new Vector3(0, -0.5f, -1)), Vector3.UnitX, Vector3.UnitY), new CameraProjection(CameraProjectionKind.Perspective, posture.CameraFieldOfView, 0, .1f, posture.CameraFar), new CameraViewport(0, 0, 1, 1)));
+            engine.Voxel.ApplyEdits(new VoxelEditTransaction(spatial, scene.SourceRevision, occupied.Select(value => new VoxelEdit(VoxelEditKind.Set, value.Key, value.Value)).ToArray()));
+            presentation = engine.VoxelScenePresentation.ProjectScene(new ProjectVoxelSceneRequest(spatial, Bindings(materials, occupied)));
+            camera = engine.CameraView.CreateCamera(ExplorationCamera(posture, initial.Dungeon.Start, initial.Dungeon.StartFacing));
             engine.CameraView.SetActiveCamera(camera);
-            D20Surface result = new(engine, spatial, material, presentation, camera, posture, occupied, initial); result.ChunkCount = engine.VoxelScenePresentation.RefreshScene(presentation).ChunkCount; spatial = null; material = null; presentation = null; camera = null; return result;
+            D20Surface result = new(engine, spatial, materials, presentation, camera, posture, occupied, initial); result.ChunkCount = engine.VoxelScenePresentation.RefreshScene(presentation).ChunkCount; spatial = null; materials = []; presentation = null; camera = null; return result;
         }
-        catch (Exception error) { D20Disposal.DisposeAfterFailure(error, camera, presentation, material, spatial); throw; }
+        catch (Exception error) { D20Disposal.DisposeAfterFailure(error, new IDisposable?[] { camera, presentation }.Concat(materials.Values).Append(spatial).ToArray()); throw; }
     }
-    public void Refresh(AdventureDefinition adventure, EncounterDefinition? encounter)
+    public void Refresh(AdventureDefinition adventure, CampaignSnapshot state, EncounterDefinition? encounter, TacticalEncounter? tactical, D20Session? session, int targetCursor)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(adventure);
-        var next = new HashSet<VoxelAddress>();
-        AddRows(next, adventure.Dungeon.Rows, 0, Tuning.DungeonFloorLayer, Tuning.DungeonWallLayer);
-        if (encounter is not null) AddRows(next, encounter.Board.Rows, Tuning.TacticalOffsetX, Tuning.TacticalFloorLayer, Tuning.TacticalWallLayer);
-        VoxelEdit[] edits = _occupied.Except(next).Select(address => new VoxelEdit(VoxelEditKind.Clear, address, 0)).Concat(next.Except(_occupied).Select(address => new VoxelEdit(VoxelEditKind.Set, address, Tuning.MaterialSlot))).ToArray();
+        var next = new Dictionary<VoxelAddress, uint>();
+        if (state.Phase == CampaignPhase.Encounter && encounter is not null && tactical is not null && session is not null)
+        {
+            AddTactical(next, encounter, tactical, session, targetCursor, Tuning);
+            SetCamera(TacticalCamera(Tuning, encounter.Board));
+            Mode = "tactical-modal"; VisibleDepth = 0;
+        }
+        else if (state.Exploration is { } exploration)
+        {
+            AddExploration(next, exploration, Tuning);
+            SetCamera(ExplorationCamera(Tuning, exploration.Position, exploration.Facing));
+            Mode = "exploration-bounded"; VisibleDepth = exploration.View.Count;
+        }
+        else
+        {
+            AddCamp(next, adventure.Dungeon.Start, Tuning);
+            SetCamera(ExplorationCamera(Tuning, adventure.Dungeon.Start, adventure.Dungeon.StartFacing));
+            Mode = "camp"; VisibleDepth = 0;
+        }
+        VoxelEdit[] edits = _occupied.Keys.Except(next.Keys).Select(address => new VoxelEdit(VoxelEditKind.Clear, address, 0)).Concat(next.Where(value => !_occupied.TryGetValue(value.Key, out uint material) || material != value.Value).Select(value => new VoxelEdit(VoxelEditKind.Set, value.Key, value.Value))).ToArray();
         if (edits.Length != 0)
         {
             VoxelSceneReadout scene = _engine.Voxel.ReadScene(new VoxelSceneReadRequest(_spatial));
             _engine.Voxel.ApplyEdits(new VoxelEditTransaction(_spatial, scene.SourceRevision, edits));
-            _occupied.Clear(); _occupied.UnionWith(next);
+            _occupied.Clear(); foreach ((VoxelAddress address, uint material) in next) _occupied.Add(address, material);
         }
-        VoxelScenePresentationReadout view = _engine.VoxelScenePresentation.RefreshScene(_presentation);
+        VoxelScenePresentationReadout view = _engine.VoxelScenePresentation.UpdateScene(new UpdateVoxelScenePresentationRequest(_presentation, Bindings(_materials, next)));
         ChunkCount = view.ChunkCount; Adventure = adventure.Id.Value; Board = encounter?.Id.Value ?? ""; Source = encounter is null ? adventure.Source.SourcePath : $"{adventure.Source.SourcePath};{encounter.Source.SourcePath}";
     }
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        D20Disposal.DisposeAll(_camera, _presentation, _material, _spatial);
+        D20Disposal.DisposeAll(new IDisposable?[] { _camera, _presentation }.Concat(_materials.Values).Append(_spatial).ToArray());
     }
 
-    private static void AddRows(ISet<VoxelAddress> target, IReadOnlyList<string> rows, int offsetX, int floorLayer, int wallLayer)
+    private static Material CreateMaterial(IEngineContext engine, Color color, float roughness) => engine.Appearance.CreateMaterial(new MaterialRequest(color, new RenderResourceHandle(0), roughness, new Color(1, 1, 1, 1), Vector3.Zero, 0, false));
+    private static VoxelSceneMaterialBinding[] Bindings(IReadOnlyDictionary<uint, Material> materials, IReadOnlyDictionary<VoxelAddress, uint> occupied) => occupied.Values.Distinct().OrderBy(slot => slot).Select(slot => new VoxelSceneMaterialBinding(slot, materials[slot])).ToArray();
+    private void SetCamera(CameraDescriptor camera) { _engine.CameraView.UpdateCamera(new CameraUpdateRequest(_camera, camera)); _engine.CameraView.SetActiveCamera(_camera); }
+    private static CameraDescriptor ExplorationCamera(D20PresentationTuning tuning, GridPosition position, DungeonFacing facing)
     {
-        for (int z = 0; z < rows.Count; z++)
+        Vector3 forward = FacingVector(facing);
+        return new CameraDescriptor(new CameraPose(new Vector3(position.X + .5f, tuning.ExplorationEyeHeight, position.Y + .5f), tuning.ExplorationCameraPitch, FacingYaw(facing)), CameraBasisMode.Explicit, new CameraBasis(Vector3.Normalize(forward + new Vector3(0, -.14f, 0)), Vector3.UnitX, Vector3.UnitY), new CameraProjection(CameraProjectionKind.Perspective, tuning.CameraFieldOfView, 0, .1f, tuning.CameraFar), new CameraViewport(0, 0, 1, 1));
+    }
+    private static CameraDescriptor TacticalCamera(D20PresentationTuning tuning, TacticalBoard board)
+    {
+        float extent = Math.Max(board.Width, board.Height) + 2;
+        return new CameraDescriptor(new CameraPose(new Vector3(board.Width / 2f, tuning.TacticalCameraHeight, board.Height / 2f), tuning.TacticalCameraPitch, 0), CameraBasisMode.Explicit, new CameraBasis(Vector3.Normalize(new Vector3(0, -1, -.15f)), Vector3.UnitX, Vector3.UnitY), new CameraProjection(CameraProjectionKind.Orthographic, 0, extent, .1f, tuning.CameraFar), new CameraViewport(0, 0, 1, 1));
+    }
+    private static void AddCamp(IDictionary<VoxelAddress, uint> target, GridPosition start, D20PresentationTuning tuning)
+    {
+        for (int z = -1; z <= 1; z++) for (int x = -1; x <= 1; x++) Set(target, new VoxelAddress(start.X + x, tuning.DungeonFloorLayer, start.Y + z), tuning.MaterialSlot);
+    }
+    private static void AddExploration(IDictionary<VoxelAddress, uint> target, ExplorationReadout view, D20PresentationTuning tuning)
+    {
+        GridPosition cell = view.Position;
+        foreach (VisibleDepth depth in view.View.OrderBy(value => value.Depth))
         {
-            for (int x = 0; x < rows[z].Length; x++)
-            {
-                if (rows[z][x] is not ('.' or '#')) continue;
-                target.Add(new VoxelAddress(checked(x + offsetX), floorLayer, z));
-                if (rows[z][x] == '#') target.Add(new VoxelAddress(checked(x + offsetX), wallLayer, z));
-            }
+            Set(target, new VoxelAddress(cell.X, tuning.DungeonFloorLayer, cell.Y), tuning.MaterialSlot);
+            GridPosition left = Offset(cell, view.Facing, -1, 0); GridPosition right = Offset(cell, view.Facing, 1, 0); GridPosition front = Offset(cell, view.Facing, 0, 1);
+            if (depth.LeftBlocked) Set(target, new VoxelAddress(left.X, tuning.DungeonWallLayer, left.Y), tuning.MaterialSlot);
+            if (depth.RightBlocked) Set(target, new VoxelAddress(right.X, tuning.DungeonWallLayer, right.Y), tuning.MaterialSlot);
+            if (depth.FrontBlocked) { Set(target, new VoxelAddress(front.X, tuning.DungeonWallLayer, front.Y), tuning.MaterialSlot); break; }
+            cell = front;
+        }
+        Set(target, new VoxelAddress(view.Position.X, tuning.MarkerLayer, view.Position.Y), tuning.PartyMaterialSlot);
+    }
+    private static void AddTactical(IDictionary<VoxelAddress, uint> target, EncounterDefinition encounter, TacticalEncounter tactical, D20Session session, int targetCursor, D20PresentationTuning tuning)
+    {
+        AddRows(target, encounter.Board.Rows, tuning.TacticalFloorLayer, tuning.TacticalWallLayer, tuning.MaterialSlot);
+        EncounterFaction actorFaction = session.FactionOf(session.OwnerEntity(tactical.CurrentActor));
+        D20Id[] selectableTargets = encounter.Roster.Where(value => value.Faction != actorFaction).Select(value => value.Character).ToArray();
+        D20Id? selectedTarget = selectableTargets.Length == 0 ? null : selectableTargets[Modulo(targetCursor, selectableTargets.Length)];
+        foreach (TacticalParticipant participant in tactical.Participants)
+        {
+            uint material = participant.Id == tactical.CurrentActor ? tuning.ActiveMaterialSlot : participant.Id == selectedTarget ? tuning.SelectionMaterialSlot : session.FactionOf(participant.Entity) == EncounterFaction.Party ? tuning.PartyMaterialSlot : tuning.OppositionMaterialSlot;
+            Set(target, new VoxelAddress(participant.Position.X, tuning.MarkerLayer, participant.Position.Y), material);
         }
     }
+    private static void AddRows(IDictionary<VoxelAddress, uint> target, IReadOnlyList<string> rows, int floorLayer, int wallLayer, uint material)
+    {
+        for (int z = 0; z < rows.Count; z++) for (int x = 0; x < rows[z].Length; x++) { if (rows[z][x] is not ('.' or '#')) continue; Set(target, new VoxelAddress(x, floorLayer, z), material); if (rows[z][x] == '#') Set(target, new VoxelAddress(x, wallLayer, z), material); }
+    }
+    private static void Set(IDictionary<VoxelAddress, uint> target, VoxelAddress address, uint material) => target[address] = material;
+    private static GridPosition Offset(GridPosition point, DungeonFacing facing, int lateral, int forward)
+    {
+        return facing switch { DungeonFacing.North => new(point.X + lateral, point.Y - forward), DungeonFacing.East => new(point.X + forward, point.Y + lateral), DungeonFacing.South => new(point.X - lateral, point.Y + forward), _ => new(point.X - forward, point.Y - lateral) };
+    }
+    private static Vector3 FacingVector(DungeonFacing facing) => facing switch { DungeonFacing.North => new(0, 0, -1), DungeonFacing.East => new(1, 0, 0), DungeonFacing.South => new(0, 0, 1), _ => new(-1, 0, 0) };
+    private static float FacingYaw(DungeonFacing facing) => facing switch { DungeonFacing.North => 0, DungeonFacing.East => 90, DungeonFacing.South => 180, _ => -90 };
+    private static int Modulo(int value, int length) => ((value % length) + length) % length;
 }

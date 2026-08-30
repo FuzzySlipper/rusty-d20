@@ -272,7 +272,7 @@ dual-host compatibility mode:
 | `rules/` and its package/artifact lockfiles | TypeScript D20 authoring, generated contract, canonical package catalog, and rules test pipeline are no longer runtime inputs |
 | `apps/`, `libs/`, `apps/app-e2e/`, and generated `libs/protocol` DTOs | Angular/Nx browser gameplay, HTTP transport/store, handwritten renderer/picker, and broad Playwright runtime are retired; recreate only an observational shell if needed |
 | `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `nx.json`, `tsconfig*.json`, `vitest.config.ts`, `eslint.config.mjs`, and `boundaries.json` | Node/Nx/TypeScript workspace machinery is bound to the retired architecture |
-| `scripts/verify.sh`, `verify-rules.sh`, `verify-native-host.sh`, `run-native-host-proof-linux.sh`, `serve-den.sh`, and old `tools/` generators/audits | Rust/Node/browser aggregate gates and protocol generators cannot remain compatibility obligations |
+| Old verification scripts and `tools/` generators/audits | Rust/Node/browser aggregate gates and protocol generators cannot remain compatibility obligations |
 | `.github/workflows/ci.yml`, `product-playtest.scenario.json`, `.den-serve.json`, `.playwright-service.json`, and `template-manifest.json` when their old commands are removed | Old CI and browser-service metadata describe the retired host and workflows |
 | Rust, TypeScript authoring, Vitest, and Playwright suites tied to the old schemas/protocol | Broad legacy coverage is not a migration requirement; retain only focused C# checks that prove current behavior |
 
@@ -313,15 +313,15 @@ checks:
 
 ```bash
 dotnet run --project src/RustyD20.Product.Checks/RustyD20.Product.Checks.csproj
+dotnet run --project src/RustyD20.Core.Checks/RustyD20.Core.Checks.csproj
 dotnet build RustyD20.sln -c Release
 dotnet publish src/RustyD20.NativeProduct/RustyD20.NativeProduct.csproj -c Release -r linux-x64
 bash src/scripts/exercise-native-product.sh
 ```
 
-Use the actual project/script names chosen by implementation, but do not
-recreate `./scripts/verify.sh` or the old exhaustive browser matrix.  Commit
-and push each reviewable milestone on the current branch and record its exact
-SHA in Den as required by the repository guidance.
+Do not recreate an aggregate legacy workflow or an exhaustive browser matrix.
+Commit and push each reviewable milestone on the current branch and record its
+exact SHA in Den as required by the repository guidance.
 
 ## Genuine gaps and stopping rule
 

@@ -48,7 +48,7 @@ public static class D20ContentCatalog
                 new(I("reaction"), ActivationTiming.Reaction, 1, source),
                 new(I("movement"), ActivationTiming.Movement, 1, source),
             ],
-            DamageTypes: [new(I("physical"), source), new(I("energy"), source), new(I("psychic"), source)],
+            DamageTypes: [new(I("impact"), source), new(I("projectile"), source), new(I("physical"), source), new(I("energy"), source), new(I("resolve"), source)],
             Resources: [new(I("guard"), 2, source), new(I("focus"), 3, source), new(I("resolve-points"), 2, source)]);
     }
 
@@ -80,7 +80,7 @@ public static class D20ContentCatalog
                 new(I("longsword-strike"), [I("weapon")], [new(I("standard-action"), 1)], new(TargetKind.Participant, TargetTeam.Hostile, 1, true), new(null, null, null, I("training-blade")), null, 0, source),
                 new(I("precise-shot"), [I("weapon"), I("ranged")], [new(I("standard-action"), 1)], new(TargetKind.Participant, TargetTeam.Hostile, 1, true), new(null, null, null, I("field-bow")), I("bleeding"), 0, source),
                 new(I("pin-in-place"), [I("weapon"), I("control")], [new(I("standard-action"), 1)], new(TargetKind.Participant, TargetTeam.Hostile, 1, true), new(null, null, null, I("field-bow")), I("held"), 0, source),
-                new(I("disrupt"), [I("martial")], [new(I("bonus-action"), 1)], new(TargetKind.Participant, TargetTeam.Hostile, 1, true), new(I("might"), I("grit"), new DamageDefinition(I("physical"), 1, 4, 0), null), I("unsettled"), 0, source),
+                new(I("disrupt"), [I("martial")], [new(I("bonus-action"), 1)], new(TargetKind.Participant, TargetTeam.Hostile, 1, true), new(I("might"), I("grit"), new DamageDefinition(I("physical"), 1, 4, 0), null, 8), I("unsettled"), 0, source),
             ]);
     }
 
@@ -88,14 +88,17 @@ public static class D20ContentCatalog
     {
         var source = S("ember-ward-content", "rules/packages/starter-ruleset/src/content/ember_ward.ts");
         return new D20ContentModule(I("ember-ward-content"), D20Schemas.Content, [I("starter-abilities"), I("starter-fundamentals")], source,
-            Armors: [new(I("runed-robe"), I("nerve"), 2, I("body"), source), new(I("mindward-charm"), I("wits"), 2, I("charm"), source)],
-            Implements: [new(I("ember-ward"), I("focus-slot"), [I("ember")], I("spirit"), I("nerve"), new DamageDefinition(I("energy"), 1, 8, 2), 6, source)],
-            Effects: [new(I("scorched"), null, 0, 2, [new(ConditionKind.AttackPenalty, Amount: 1)], source)],
-            Reactions: [new(I("ward-flare"), I("nerve"), 2, I("focus"), 1, [new(I("reaction"), 1)], I("scorched"), source)],
+            Armors: [new(I("runed-robe"), I("nerve"), 2, I("body"), source), new(I("mindward-charm"), I("nerve"), 1, I("neck"), source)],
+            Effects:
+            [
+                new(I("ember-ward"), I("nerve"), 3, 1, [], source),
+                new(I("scorched"), null, 0, 2, [new(ConditionKind.AttackPenalty, Amount: -1)], source),
+            ],
+            Reactions: [new(I("ward-flare"), I("nerve"), 3, I("focus"), 1, [new(I("reaction"), 1)], I("ember-ward"), source)],
             Actions:
             [
-                new(I("fire-bolt"), [I("ember")], [new(I("standard-action"), 1)], new(TargetKind.Participant, TargetTeam.Hostile, 1, true), new(null, null, null, I("ember-ward")), I("scorched"), 0, source),
-                new(I("mind-spike"), [I("psychic")], [new(I("standard-action"), 1)], new(TargetKind.Participant, TargetTeam.Hostile, 1, true), new(I("intellect"), I("wits"), new DamageDefinition(I("psychic"), 1, 6, 1), null), null, 0, source),
+                new(I("fire-bolt"), [I("attack"), I("energy"), I("ranged")], [new(I("standard-action"), 1)], new(TargetKind.Participant, TargetTeam.Hostile, 1, true), new(I("acuity"), I("wits"), new DamageDefinition(I("energy"), 2, 6, 0), null, 8), I("scorched"), 0, source),
+                new(I("mind-spike"), [I("attack"), I("mental"), I("ranged")], [new(I("standard-action"), 1)], new(TargetKind.Participant, TargetTeam.Hostile, 1, true), new(I("conviction"), I("nerve"), new DamageDefinition(I("resolve"), 1, 8, 1), null, 8), null, 0, source),
             ]);
     }
 
@@ -168,27 +171,53 @@ public static class D20ContentCatalog
     private static D20ContentModule EmbersWake()
     {
         var source = S("embers-wake", "rules/packages/starter-ruleset/src/content/adventures/embers_wake.ts");
-        var sera = Character("sera-vale", "Sera Vale", "Ember Adept", ["fire-bolt", "mind-spike"], ["ward-flare"], source);
-        var seer = Character("ash-seer", "Ash Seer", "Reliquary Keeper", ["mind-spike", "fire-bolt"], ["ward-flare"], source);
+        var castSource = S("ember-cast", "rules/packages/starter-ruleset/src/content/adventures/ember_cast.ts");
+        var sera = Character("sera-vale", "Sera Vale", "Ember Adept", ["fire-bolt", "mind-spike"], ["ward-flare"], castSource,
+            experience: 840, vitality: 22,
+            abilities: [("acuity", 18), ("conviction", 18), ("finesse", 12), ("intellect", 14), ("might", 12), ("spirit", 12)],
+            resources: [("focus", 3), ("guard", 2), ("resolve-points", 2)],
+            affinities: [("energy", DamageAffinityKind.Resistant)],
+            features: ["arcane-composure", "ember-attunement"]);
+        var seer = Character("ash-seer", "Ash Seer", "Reliquary Keeper", ["mind-spike", "fire-bolt"], ["ward-flare"], castSource,
+            experience: 0, vitality: 22,
+            abilities: [("acuity", 16), ("conviction", 16), ("finesse", 10), ("intellect", 14), ("might", 12), ("spirit", 14)],
+            resources: [("focus", 3), ("guard", 2), ("resolve-points", 2)],
+            affinities: [("resolve", DamageAffinityKind.Resistant)],
+            features: ["reliquary-sense"]);
         var items = Items(source,
             ("seer-charm", "Ash Seer's mindward charm", EquipmentKind.Armor, "mindward-charm", "ash-seer", true),
             ("sera-robe", "Sera's runed robe", EquipmentKind.Armor, "runed-robe", "sera-vale", true),
             ("sera-charm", "Sera's mindward charm", EquipmentKind.Armor, "mindward-charm", "sera-vale", true),
             ("spare-robe", "Spare runed robe", EquipmentKind.Armor, "runed-robe", "ember-camp-stash", false));
-        var encounter = Encounter("ash-seer", "The Ash Seer", ["sera-vale"], ["ash-seer"], 10, 7, source, "seer-charm");
+        var encounter = new EncounterDefinition(I("ash-seer"), "The Ash Seer",
+            [new(I("sera-vale"), EncounterFaction.Party), new(I("ash-seer"), EncounterFaction.Opposition)],
+            new TacticalBoard(10, 7, ["##########", "#........#", "#..#.....#", "#........#", "#.....#..#", "#........#", "##########"], [new(I("sera-vale"), new(1, 3)), new(I("ash-seer"), new(8, 3))]),
+            new EncounterOutcome("The Ash Seer defeated", "Sera claimed the reliquary and kept her remaining focus.", I("seer-charm"), null),
+            new EncounterOutcome("Sera was defeated", "No reward was granted; returning to camp rekindles bounded vitality.", null, 11),
+            source, "Break the psychic ward around the ember reliquary.");
         var dungeon = new DungeonDefinition("Ember Reliquary", I("ember-vault"), 9, 7,
             ["#########", "#.......#", "#.#####.#", "#.#...#.#", "#.#.#.#.#", "#...#...#", "#########"],
             new(1, 1), I("ember-camp"), DungeonFacing.East, [new(I("ash-seer"), new(7, 5))],
             [new(I("ember-inscription"), new(7, 1), "Ash-written warning", "Only a focused mind may pass.")], [], [],
             [new(I("ember-camp"), new(1, 1), "Reliquary threshold", "Sera can leave safely.")]);
         return new D20ContentModule(I("embers-wake-adventure"), D20Schemas.Content, [I("starter-abilities"), I("starter-fundamentals"), I("ember-ward-content")], source,
-            Features: [new(I("ember-attunement"), "Ember attunement", "A clean-room authored reliquary trait.", source)],
+            Features:
+            [
+                new(I("arcane-composure"), "Arcane Composure", "The adept holds an incantation steady while danger presses close.", castSource),
+                new(I("ember-attunement"), "Ember Attunement", "Sera recognizes the heat and cadence of unstable ward-fire before it breaks.", castSource),
+                new(I("reliquary-sense"), "Reliquary Sense", "Long service around sealed relics makes subtle disturbances impossible to ignore.", castSource),
+            ],
             Characters: [sera, seer], Storage: [new(I("ember-camp-stash"), "Ember camp stash", 8, source)], Items: items, Encounters: [encounter],
             Adventures: [new(I("embers-wake"), "Ember's Wake", false, true, [I("sera-vale")], [I("sera-vale"), I("ash-seer")], I("ember-camp-stash"), [I("ember-camp-stash")], items.Select(value => value.Id).ToArray(), [I("ash-seer")], dungeon, new("Ember Reliquary", "Ember's Wake complete", "Sera carries the recovered charm beyond the reliquary.", "Ember's Wake ended", "Sera survives but its ward remains unbroken.", ["Terminal outcome and resources are saved."]), source)]);
     }
 
-    private static CharacterDefinition Character(string id, string name, string title, string[] actions, string[] reactions, SourceProvenance source) =>
-        new(I(id), name, title, 1, 0, 24, new Dictionary<D20Id, int> { [I("might")] = 12, [I("finesse")] = 12, [I("acuity")] = 12, [I("intellect")] = 12, [I("conviction")] = 12, [I("spirit")] = 12 }, actions.Select(I).ToArray(), reactions.Select(I).ToArray(), [], source);
+    private static CharacterDefinition Character(string id, string name, string title, string[] actions, string[] reactions, SourceProvenance source,
+        int experience = 0, int vitality = 24, (string Id, int Value)[]? abilities = null, (string Id, int Value)[]? resources = null, (string Id, DamageAffinityKind Affinity)[]? affinities = null, string[]? features = null) =>
+        new(I(id), name, title, 1, experience, vitality,
+            (abilities ?? [("might", 12), ("finesse", 12), ("acuity", 12), ("intellect", 12), ("conviction", 12), ("spirit", 12)]).ToDictionary(value => I(value.Id), value => value.Value),
+            actions.Select(I).ToArray(), reactions.Select(I).ToArray(), (features ?? []).Select(I).ToArray(), source,
+            (resources ?? []).ToDictionary(value => I(value.Id), value => value.Value),
+            (affinities ?? []).Select(value => new DamageAffinity(I(value.Id), value.Affinity)).ToArray());
 
     private static ItemDefinition[] Items(SourceProvenance source, params (string Id, string Name, EquipmentKind Kind, string Equipment, string Owner, bool Equipped)[] entries) =>
         entries.Select(entry => new ItemDefinition(I(entry.Id), entry.Name, entry.Kind, I(entry.Equipment), I(entry.Owner), entry.Equipped, source)).ToArray();

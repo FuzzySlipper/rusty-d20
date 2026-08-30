@@ -48,7 +48,27 @@ public sealed record CompiledD20Content(
     IReadOnlyDictionary<D20Id, AdventureDefinition> Adventures,
     IReadOnlyDictionary<D20Id, CharacterDefinition> Characters,
     IReadOnlyDictionary<D20Id, ItemDefinition> Items,
+    D20DefinitionCatalog Catalog,
     IReadOnlyList<D20ContentModule> Modules,
     CompilationReceipt Receipt);
 
 public sealed record CompilationReceipt(string ContentFingerprint, IReadOnlyList<SourceProvenance> Sources, int DefinitionCount, int AdventureCount);
+
+/// <summary>Closed, normalized admitted definitions. Runtime consumers use these tables instead of reopening composition modules.</summary>
+public sealed record D20DefinitionCatalog(
+    IReadOnlyDictionary<D20Id, AbilityDefinition> Abilities,
+    IReadOnlyDictionary<D20Id, DefenseDefinition> Defenses,
+    IReadOnlyDictionary<D20Id, ActivationBudgetDefinition> Budgets,
+    IReadOnlyDictionary<D20Id, DamageTypeDefinition> DamageTypes,
+    IReadOnlyDictionary<D20Id, ResourceDefinition> Resources,
+    IReadOnlyDictionary<D20Id, ArmorDefinition> Armors,
+    IReadOnlyDictionary<D20Id, ImplementDefinition> Implements,
+    IReadOnlyDictionary<D20Id, EffectDefinition> Effects,
+    IReadOnlyDictionary<D20Id, ReactionDefinition> Reactions,
+    IReadOnlyDictionary<D20Id, ActionDefinition> Actions,
+    IReadOnlyDictionary<D20Id, FeatureDefinition> Features,
+    IReadOnlyDictionary<D20Id, CharacterDefinition> Characters,
+    IReadOnlyDictionary<D20Id, StorageDefinition> Storage,
+    IReadOnlyDictionary<D20Id, ItemDefinition> Items,
+    IReadOnlyDictionary<D20Id, EncounterDefinition> Encounters,
+    IReadOnlyDictionary<D20Id, AdventureDefinition> Adventures);
