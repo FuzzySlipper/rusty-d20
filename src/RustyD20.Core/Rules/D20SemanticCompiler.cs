@@ -165,16 +165,7 @@ public sealed class D20SemanticCompiler
                 Bound(action.ForcedMovement, D20Limits.ForcedMovement, action.Source, "D20_FORCED_MOVEMENT");
                 Distinct(action.Tags, action.Source, "D20_DUPLICATE_ACTION_TAG", "action tag");
                 ValidateCosts(action.Costs, ActivationTiming.Action, action.Source);
-                if (action.Attack.Implement is { } implement) Require(implements, implement, action.Source, "D20_UNKNOWN_IMPLEMENT", "action implement");
-                if (action.Attack.Ability is { } ability) Require(abilities, ability, action.Source, "D20_UNKNOWN_ABILITY", "action ability");
-                if (action.Attack.Defense is { } defense) Require(defenses, defense, action.Source, "D20_UNKNOWN_DEFENSE", "action defense");
-                if (action.Attack.Damage is { } damage)
-                {
-                    Require(damageTypes, damage.Kind, action.Source, "D20_UNKNOWN_DAMAGE_TYPE", "action damage");
-                    ValidateDamage(damage, action.Source);
-                }
-                if (action.Attack.Implement is null && (action.Attack.Range < 1 || action.Attack.Range > D20Limits.TacticalRange)) Add("D20_TACTICAL_RANGE", "fixed action range is outside the admitted tactical bound", action.Source);
-                if (action.Attack.Implement is not null && action.Attack.Range != 0) Add("D20_TACTICAL_RANGE", "implement-bound action range must come from the admitted implement", action.Source);
+                ValidateAttack(action.Attack, action.Source);
 
                 if (action.Effect is { } effect) Require(effects, effect, action.Source, "D20_UNKNOWN_EFFECT", "action effect");
             }
@@ -422,6 +413,30 @@ public sealed class D20SemanticCompiler
             if (damage.Dice <= 0 || damage.Dice > D20Limits.DamageDice || damage.Sides <= 0 || damage.Sides > D20Limits.DamageDieSides) Add("D20_DAMAGE_LIMIT", "damage dice or sides are outside the admitted bound", source);
         }
 
+        void ValidateAttack(ActionAttack attack, SourceProvenance source)
+        {
+            var hasFixedField = attack.Ability is not null || attack.Defense is not null || attack.Damage is not null;
+            if (attack.Implement is { } implement)
+            {
+                if (hasFixedField) Add("D20_INVALID_ATTACK_SHAPE", "an action attack cannot combine fixed and implement forms", source);
+                if (attack.Range != 0) Add("D20_TACTICAL_RANGE", "implement-bound action range must come from the admitted implement", source);
+                Require(implements, implement, source, "D20_UNKNOWN_IMPLEMENT", "action implement");
+                return;
+            }
+
+            if (attack.Ability is not { } ability || attack.Defense is not { } defense || attack.Damage is not { } damage)
+            {
+                Add("D20_INVALID_ATTACK_SHAPE", "an action attack must be a complete fixed attack or an implement-only attack", source);
+                return;
+            }
+
+            Require(abilities, ability, source, "D20_UNKNOWN_ABILITY", "action ability");
+            Require(defenses, defense, source, "D20_UNKNOWN_DEFENSE", "action defense");
+            Require(damageTypes, damage.Kind, source, "D20_UNKNOWN_DAMAGE_TYPE", "action damage");
+            ValidateDamage(damage, source);
+            if (attack.Range < 1 || attack.Range > D20Limits.TacticalRange) Add("D20_TACTICAL_RANGE", "fixed action range is outside the admitted tactical bound", source);
+        }
+
         void Require<T>(IReadOnlyDictionary<D20Id, T> table, D20Id id, SourceProvenance source, string code, string role) where T : notnull
         {
             if (!table.ContainsKey(id)) Add(code, $"{role} references unknown identity '{id}'", source, id.Value);
@@ -542,35 +557,42 @@ public sealed class D20SemanticCompiler
 
     private static IEnumerable<string> CanonicalLines(D20ContentModule module)
     {
-        yield return $"module:{module.Id}|schema:{module.ContentSchema}|dependencies:{Ids(module.Dependencies)}|source:{Source(module.Source)}";
-        foreach (var definition in module.AbilitiesOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"ability:{definition.Id}:{definition.Minimum}:{definition.Maximum}:{Source(definition.Source)}";
-        foreach (var definition in module.DefensesOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"defense:{definition.Id}:{definition.Base}:{Ids(definition.Abilities)}:{Source(definition.Source)}";
-        foreach (var definition in module.BudgetsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"budget:{definition.Id}:{definition.Timing}:{definition.Initial}:{Source(definition.Source)}";
-        foreach (var definition in module.DamageTypesOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"damage-type:{definition.Id}:{Source(definition.Source)}";
-        foreach (var definition in module.ResourcesOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"resource:{definition.Id}:{definition.Maximum}:{Source(definition.Source)}";
-        foreach (var definition in module.ArmorsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"armor:{definition.Id}:{definition.Defense}:{definition.Bonus}:{definition.Slot}:{Source(definition.Source)}";
-        foreach (var definition in module.ImplementsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"implement:{definition.Id}:{definition.Slot}:{Ids(definition.Tags)}:{definition.Ability}:{definition.Defense}:{Damage(definition.Damage)}:{definition.Range}:{Source(definition.Source)}";
-        foreach (var definition in module.EffectsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"effect:{definition.Id}:{definition.Defense}:{definition.DefenseBonus}:{definition.DurationTurns}:{string.Join(',', definition.Conditions.OrderBy(value => value.Kind).ThenBy(value => value.Tag?.Value, StringComparer.Ordinal).ThenBy(value => value.Amount).Select(Condition))}:{Source(definition.Source)}";
-        foreach (var definition in module.ReactionsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"reaction:{definition.Id}:{definition.Defense}:{definition.Bonus}:{definition.Resource}:{definition.Cost}:{Costs(definition.Costs)}:{definition.Effect}:{Source(definition.Source)}";
-        foreach (var definition in module.ActionsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"action:{definition.Id}:{Ids(definition.Tags)}:{Costs(definition.Costs)}:{Target(definition.Target)}:{Attack(definition.Attack)}:{definition.Effect}:{definition.ForcedMovement}:{Source(definition.Source)}";
-        foreach (var definition in module.FeaturesOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"feature:{definition.Id}:{definition.Label}:{definition.Description}:{Source(definition.Source)}";
-        foreach (var definition in module.CharactersOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"character:{definition.Id}:{definition.Name}:{definition.Title}:{definition.Level}:{definition.Experience}:{definition.Vitality}:{string.Join(',', definition.Abilities.OrderBy(value => value.Key.Value, StringComparer.Ordinal).Select(value => $"{value.Key}={value.Value}"))}:{Ids(definition.Actions)}:{Ids(definition.Reactions)}:{Ids(definition.Features)}:{Source(definition.Source)}";
-        foreach (var definition in module.StorageOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"storage:{definition.Id}:{definition.Name}:{definition.Capacity}:{Source(definition.Source)}";
-        foreach (var definition in module.ItemsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"item:{definition.Id}:{definition.Name}:{definition.EquipmentKind}:{definition.Equipment}:{definition.Owner}:{definition.Equipped}:{Source(definition.Source)}";
-        foreach (var definition in module.EncountersOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"encounter:{definition.Id}:{definition.Title}:{string.Join(',', definition.Roster.OrderBy(value => value.Character.Value, StringComparer.Ordinal).ThenBy(value => value.Faction).Select(value => $"{value.Character}:{value.Faction}"))}:{Board(definition.Board)}:{Outcome(definition.Victory)}:{Outcome(definition.Defeat)}:{Source(definition.Source)}";
-        foreach (var definition in module.AdventuresOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return $"adventure:{definition.Id}:{definition.Title}:{definition.IsDefault}:{definition.Selectable}:{Ids(definition.Party)}:{Ids(definition.Characters)}:{definition.CampStorage}:{Ids(definition.Storage)}:{Ids(definition.Items)}:{string.Join(',', definition.Encounters)}:{Dungeon(definition.Dungeon)}:{AdventureOutcome(definition.Completion)}:{Source(definition.Source)}";
+        yield return Line("module", module.Id.Value, module.ContentSchema, SetIds(module.Dependencies), Source(module.Source));
+        foreach (var definition in module.AbilitiesOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("ability", definition.Id.Value, definition.Minimum.ToString(), definition.Maximum.ToString(), Source(definition.Source));
+        foreach (var definition in module.DefensesOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("defense", definition.Id.Value, definition.Base.ToString(), SetIds(definition.Abilities), Source(definition.Source));
+        foreach (var definition in module.BudgetsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("budget", definition.Id.Value, definition.Timing.ToString(), definition.Initial.ToString(), Source(definition.Source));
+        foreach (var definition in module.DamageTypesOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("damage-type", definition.Id.Value, Source(definition.Source));
+        foreach (var definition in module.ResourcesOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("resource", definition.Id.Value, definition.Maximum.ToString(), Source(definition.Source));
+        foreach (var definition in module.ArmorsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("armor", definition.Id.Value, definition.Defense.Value, definition.Bonus.ToString(), definition.Slot.Value, Source(definition.Source));
+        foreach (var definition in module.ImplementsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("implement", definition.Id.Value, definition.Slot.Value, SetIds(definition.Tags), definition.Ability.Value, definition.Defense.Value, Damage(definition.Damage), definition.Range.ToString(), Source(definition.Source));
+        foreach (var definition in module.EffectsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("effect", definition.Id.Value, Id(definition.Defense), definition.DefenseBonus.ToString(), definition.DurationTurns.ToString(), List(definition.Conditions.Select(Condition)), Source(definition.Source));
+        foreach (var definition in module.ReactionsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("reaction", definition.Id.Value, definition.Defense.Value, definition.Bonus.ToString(), definition.Resource.Value, definition.Cost.ToString(), List(definition.Costs.Select(Cost)), definition.Effect.Value, Source(definition.Source));
+        foreach (var definition in module.ActionsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("action", definition.Id.Value, SetIds(definition.Tags), List(definition.Costs.Select(Cost)), Target(definition.Target), Attack(definition.Attack), Id(definition.Effect), definition.ForcedMovement.ToString(), Source(definition.Source));
+        foreach (var definition in module.FeaturesOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("feature", definition.Id.Value, definition.Label, definition.Description, Source(definition.Source));
+        foreach (var definition in module.CharactersOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("character", definition.Id.Value, definition.Name, definition.Title, definition.Level.ToString(), definition.Experience.ToString(), definition.Vitality.ToString(), Map(definition.Abilities), List(definition.Actions.Select(id => id.Value)), List(definition.Reactions.Select(id => id.Value)), List(definition.Features.Select(id => id.Value)), Map(definition.ResourcesOrEmpty), List(definition.AffinitiesOrEmpty.Select(Affinity)), Source(definition.Source));
+        foreach (var definition in module.StorageOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("storage", definition.Id.Value, definition.Name, definition.Capacity.ToString(), Source(definition.Source));
+        foreach (var definition in module.ItemsOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("item", definition.Id.Value, definition.Name, definition.EquipmentKind.ToString(), definition.Equipment.Value, definition.Owner.Value, definition.Equipped.ToString(), Source(definition.Source));
+        foreach (var definition in module.EncountersOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("encounter", definition.Id.Value, definition.Title, definition.Summary, List(definition.Roster.Select(Roster)), Board(definition.Board), Outcome(definition.Victory), Outcome(definition.Defeat), Source(definition.Source));
+        foreach (var definition in module.AdventuresOrEmpty.OrderBy(value => value.Id.Value, StringComparer.Ordinal)) yield return Line("adventure", definition.Id.Value, definition.Title, definition.IsDefault.ToString(), definition.Selectable.ToString(), List(definition.Party.Select(id => id.Value)), List(definition.Characters.Select(id => id.Value)), definition.CampStorage.Value, List(definition.Storage.Select(id => id.Value)), List(definition.Items.Select(id => id.Value)), List(definition.Encounters.Select(id => id.Value)), Dungeon(definition.Dungeon), AdventureOutcome(definition.Completion), Source(definition.Source));
 
-        static string Ids(IEnumerable<D20Id> ids) => string.Join(',', ids.OrderBy(value => value.Value, StringComparer.Ordinal));
-        static string Source(SourceProvenance source) => $"{source.SourcePath}:{source.Subject}:{source.Adaptation}:{source.DonorPath}";
-        static string Damage(DamageDefinition damage) => $"{damage.Kind}:{damage.Dice}:{damage.Sides}:{damage.Bonus}";
-        static string Condition(ConditionClause clause) => $"{clause.Kind}:{clause.Tag}:{clause.Amount}";
-        static string Costs(IEnumerable<ActivationCost> costs) => string.Join(',', costs.OrderBy(value => value.Budget.Value, StringComparer.Ordinal).ThenBy(value => value.Amount).Select(value => $"{value.Budget}:{value.Amount}"));
-        static string Target(ActionTarget target) => $"{target.Kind}:{target.Team}:{target.MaximumTargets}:{target.RequiresLineOfEffect}";
-        static string Attack(ActionAttack attack) => $"{attack.Ability}:{attack.Defense}:{(attack.Damage is null ? string.Empty : Damage(attack.Damage))}:{attack.Implement}";
-        static string Board(TacticalBoard board) => $"{board.Width}:{board.Height}:{string.Join('/', board.Rows)}:{string.Join(',', board.Placements.OrderBy(value => value.Character.Value, StringComparer.Ordinal).ThenBy(value => value.Position.X).ThenBy(value => value.Position.Y).Select(value => $"{value.Character}@{value.Position.X},{value.Position.Y}"))}";
-        static string Outcome(EncounterOutcome outcome) => $"{outcome.Title}:{outcome.Summary}:{outcome.RewardItem}:{outcome.RecoveryVitality}";
-        static string Dungeon(DungeonDefinition dungeon) => $"{dungeon.Title}:{dungeon.WallStyle}:{dungeon.Width}:{dungeon.Height}:{string.Join('/', dungeon.Rows)}:{dungeon.Start.X},{dungeon.Start.Y}:{dungeon.StartCheckpoint}:{dungeon.StartFacing}:{string.Join(',', dungeon.Encounters.Select(value => $"{value.Encounter}@{value.Position.X},{value.Position.Y}"))}:{string.Join(',', dungeon.Landmarks.OrderBy(value => value.Id.Value, StringComparer.Ordinal).Select(value => $"{value.Id}@{value.Position.X},{value.Position.Y}:{value.Title}:{value.Text}"))}:{string.Join(',', dungeon.Doors.OrderBy(value => value.Id.Value, StringComparer.Ordinal).Select(value => $"{value.Id}@{value.Position.X},{value.Position.Y}:{value.Facing}:{value.Title}:{value.Text}:{value.RequiresTreasure}"))}:{string.Join(',', dungeon.Treasures.OrderBy(value => value.Id.Value, StringComparer.Ordinal).Select(value => $"{value.Id}@{value.Position.X},{value.Position.Y}:{value.Item}:{value.Title}:{value.Text}"))}:{string.Join(',', dungeon.Checkpoints.OrderBy(value => value.Id.Value, StringComparer.Ordinal).Select(value => $"{value.Id}@{value.Position.X},{value.Position.Y}:{value.Title}:{value.Text}"))}";
-        static string AdventureOutcome(AdventureOutcome outcome) => $"{outcome.Source}:{outcome.VictoryTitle}:{outcome.VictoryText}:{outcome.DefeatTitle}:{outcome.DefeatText}:{string.Join('|', outcome.Details.Select((value, index) => $"{index}:{value}"))}";
+        static string Line(string kind, params string?[] fields) => Frame([kind, .. fields]);
+        static string Frame(IEnumerable<string?> fields) => string.Concat(fields.Select(field => field is null ? "-1:" : $"{Encoding.UTF8.GetByteCount(field)}:{field}"));
+        static string List(IEnumerable<string?> values) => Frame(values);
+        static string SetIds(IEnumerable<D20Id> ids) => List(ids.OrderBy(value => value.Value, StringComparer.Ordinal).Select(value => value.Value));
+        static string Id(D20Id? id) => id?.Value ?? null!;
+        static string Map(IEnumerable<KeyValuePair<D20Id, int>> values) => List(values.OrderBy(value => value.Key.Value, StringComparer.Ordinal).Select(value => Line(value.Key.Value, value.Value.ToString())));
+        static string Source(SourceProvenance source) => Line(source.SourcePath, source.Subject, source.Adaptation, source.DonorPath);
+        static string Damage(DamageDefinition damage) => Line(damage.Kind.Value, damage.Dice.ToString(), damage.Sides.ToString(), damage.Bonus.ToString());
+        static string Condition(ConditionClause clause) => Line(clause.Kind.ToString(), Id(clause.Tag), clause.Amount.ToString());
+        static string Cost(ActivationCost cost) => Line(cost.Budget.Value, cost.Amount.ToString());
+        static string Target(ActionTarget target) => Line(target.Kind.ToString(), target.Team.ToString(), target.MaximumTargets.ToString(), target.RequiresLineOfEffect.ToString());
+        static string Attack(ActionAttack attack) => Line(Id(attack.Ability), Id(attack.Defense), attack.Damage is null ? null : Damage(attack.Damage), Id(attack.Implement), attack.Range.ToString());
+        static string Affinity(DamageAffinity affinity) => Line(affinity.DamageType.Value, affinity.Affinity.ToString());
+        static string Roster(EncounterParticipant participant) => Line(participant.Character.Value, participant.Faction.ToString());
+        static string Board(TacticalBoard board) => Line(board.Width.ToString(), board.Height.ToString(), List(board.Rows), List(board.Placements.Select(value => Line(value.Character.Value, value.Position.X.ToString(), value.Position.Y.ToString()))));
+        static string Outcome(EncounterOutcome outcome) => Line(outcome.Title, outcome.Summary, Id(outcome.RewardItem), outcome.RecoveryVitality?.ToString());
+        static string Dungeon(DungeonDefinition dungeon) => Line(dungeon.Title, dungeon.WallStyle.Value, dungeon.Width.ToString(), dungeon.Height.ToString(), List(dungeon.Rows), Line(dungeon.Start.X.ToString(), dungeon.Start.Y.ToString()), dungeon.StartCheckpoint.Value, dungeon.StartFacing.ToString(), List(dungeon.Encounters.Select(value => Line(value.Encounter.Value, value.Position.X.ToString(), value.Position.Y.ToString()))), List(dungeon.Landmarks.Select(value => Line(value.Id.Value, value.Position.X.ToString(), value.Position.Y.ToString(), value.Title, value.Text))), List(dungeon.Doors.Select(value => Line(value.Id.Value, value.Position.X.ToString(), value.Position.Y.ToString(), value.Facing.ToString(), value.Title, value.Text, Id(value.RequiresTreasure)))), List(dungeon.Treasures.Select(value => Line(value.Id.Value, value.Position.X.ToString(), value.Position.Y.ToString(), value.Item.Value, value.Title, value.Text))), List(dungeon.Checkpoints.Select(value => Line(value.Id.Value, value.Position.X.ToString(), value.Position.Y.ToString(), value.Title, value.Text))));
+        static string AdventureOutcome(AdventureOutcome outcome) => Line(outcome.Source, outcome.VictoryTitle, outcome.VictoryText, outcome.DefeatTitle, outcome.DefeatText, List(outcome.Details));
     }
 
     private static bool Floor(IReadOnlyList<string> rows, GridPosition position) => position.Y >= 0 && position.Y < rows.Count && position.X >= 0 && position.X < rows[position.Y].Length && rows[position.Y][position.X] == '.';

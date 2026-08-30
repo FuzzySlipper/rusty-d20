@@ -19,6 +19,8 @@ var checks = new (string Name, Action Run)[]
     ("immutable normalized content catalog", ImmutableNormalizedCatalog),
     ("named Ember's Wake authored semantics", NamedAdventures),
     ("strict scalar, text, and repeated-identity rejection", StrictScalarTextAndRepeatedIdentity),
+    ("strict fixed versus implement attack admission", StrictAttackUnion),
+    ("complete framed semantic fingerprint", CompleteSemanticFingerprint),
     ("retained spatial grid identities fit Engine u32", RetainedGridIds),
     ("persistence cleanup aggregates every owner", PersistenceCleanup),
     ("d20 session floor, static order, and choice", SessionFloorStaticAndChoice),
@@ -174,6 +176,49 @@ static void StrictScalarTextAndRepeatedIdentity()
     var adventure = warden.AdventuresOrEmpty.Single();
     var repeatedParty = warden with { Adventures = [adventure with { Party = [Id("mara-venn"), Id("mara-venn")] }] };
     Expect("D20_DUPLICATE_PARTY_MEMBER", () => new D20SemanticCompiler().Compile(modules.Select(module => module.Id == warden.Id ? repeatedParty : module)));
+}
+
+static void StrictAttackUnion()
+{
+    var modules = D20ContentCatalog.Modules.ToArray();
+    var steel = modules.Single(module => module.Id == Id("steel-guard-content"));
+    var disrupt = steel.ActionsOrEmpty.Single(action => action.Id == Id("disrupt"));
+
+    ExpectAttackShape(new(null, null, null, null, 1));
+    ExpectAttackShape(new(Id("might"), null, null, null, 1));
+    ExpectAttackShape(new(Id("might"), Id("grit"), new DamageDefinition(Id("physical"), 1, 4, 0), Id("training-blade"), 0));
+    var implementRange = steel with { Actions = steel.ActionsOrEmpty.Select(action => action.Id == Id("longsword-strike") ? action with { Attack = action.Attack with { Range = 1 } } : action).ToArray() };
+    Expect("D20_TACTICAL_RANGE", () => new D20SemanticCompiler().Compile(modules.Select(module => module.Id == steel.Id ? implementRange : module)));
+    return;
+
+    void ExpectAttackShape(ActionAttack attack)
+    {
+        var invalid = steel with { Actions = steel.ActionsOrEmpty.Select(action => action.Id == disrupt.Id ? action with { Attack = attack } : action).ToArray() };
+        Expect("D20_INVALID_ATTACK_SHAPE", () => new D20SemanticCompiler().Compile(modules.Select(module => module.Id == steel.Id ? invalid : module)));
+    }
+}
+
+static void CompleteSemanticFingerprint()
+{
+    var modules = D20ContentCatalog.Modules;
+    var fingerprint = D20SemanticCompiler.Fingerprint(modules);
+    var ember = modules.Single(module => module.Id == Id("ember-ward-content"));
+    var fireBoltRange = ember with { Actions = ember.ActionsOrEmpty.Select(action => action.Id == Id("fire-bolt") ? action with { Attack = action.Attack with { Range = action.Attack.Range - 1 } } : action).ToArray() };
+    Assert(fingerprint != D20SemanticCompiler.Fingerprint(modules.Select(module => module.Id == ember.Id ? fireBoltRange : module)), "fixed attack range is part of content identity");
+
+    var emberCast = modules.Single(module => module.Id == Id("embers-wake-adventure"));
+    var changedResources = emberCast with { Characters = emberCast.CharactersOrEmpty.Select(character => character.Id == Id("sera-vale") ? character with { Resources = character.ResourcesOrEmpty.ToDictionary(value => value.Key, value => value.Key == Id("focus") ? value.Value - 1 : value.Value) } : character).ToArray() };
+    Assert(fingerprint != D20SemanticCompiler.Fingerprint(modules.Select(module => module.Id == emberCast.Id ? changedResources : module)), "character resources are part of content identity");
+
+    var changedAffinity = emberCast with { Characters = emberCast.CharactersOrEmpty.Select(character => character.Id == Id("sera-vale") ? character with { Affinities = [new DamageAffinity(Id("resolve"), DamageAffinityKind.Resistant)] } : character).ToArray() };
+    Assert(fingerprint != D20SemanticCompiler.Fingerprint(modules.Select(module => module.Id == emberCast.Id ? changedAffinity : module)), "character affinities are part of content identity");
+
+    var changedSummary = emberCast with { Encounters = emberCast.EncountersOrEmpty.Select(encounter => encounter.Id == Id("ash-seer") ? encounter with { Summary = "A different admitted encounter meaning." } : encounter).ToArray() };
+    Assert(fingerprint != D20SemanticCompiler.Fingerprint(modules.Select(module => module.Id == emberCast.Id ? changedSummary : module)), "encounter summary is part of content identity");
+
+    var collisionLeft = emberCast with { Features = emberCast.FeaturesOrEmpty.Select(feature => feature.Id == Id("arcane-composure") ? feature with { Label = "a:bc", Description = "" } : feature).ToArray() };
+    var collisionRight = emberCast with { Features = emberCast.FeaturesOrEmpty.Select(feature => feature.Id == Id("arcane-composure") ? feature with { Label = "a", Description = ":bc" } : feature).ToArray() };
+    Assert(D20SemanticCompiler.Fingerprint(modules.Select(module => module.Id == emberCast.Id ? collisionLeft : module)) != D20SemanticCompiler.Fingerprint(modules.Select(module => module.Id == emberCast.Id ? collisionRight : module)), "length-framed fingerprint fields cannot collide through authored delimiters");
 }
 
 static void RetainedGridIds()
