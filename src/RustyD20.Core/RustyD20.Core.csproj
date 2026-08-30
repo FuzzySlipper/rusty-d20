@@ -5,4 +5,7 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../rusty-engine/csharp/Rusty.Engine/Rusty.Engine.csproj" />
+  </ItemGroup>
 </Project>
