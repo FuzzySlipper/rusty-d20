@@ -505,6 +505,19 @@ static void TacticalReviewFindings()
             Id("mara-venn"), new(1, 2));
     }
 
+    using (var session = NewSession([new(20, [2])], out var party, out var opposition))
+    {
+        session.RegisterLoadoutOwner(opposition);
+        session.EquipImplement(opposition, content.Catalog.Implements[Id("field-bow")]);
+        session.ApplyAction(session.PreviewAction(opposition, party, Id("pin-in-place"), OperationId.Parse("review-held")));
+        var encounter = new TacticalEncounter(session, new CheckTacticalSpatial(),
+        [
+            new(Id("mara-venn"), party, 20, new(1, 1)),
+            new(Id("gate-skirmisher"), opposition, 10, new(3, 1)),
+        ]);
+        TacticalReviewProbes.AssertMovementConditionBoundary(encounter, session, Id("mara-venn"), new(1, 2));
+    }
+
     var adventure = content.Adventures[Id("embers-wake")];
     using (var session = new D20Session(content, RollSourceState.Static([new(20, [4, 4])])) )
     {

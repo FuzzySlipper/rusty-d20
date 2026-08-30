@@ -187,6 +187,12 @@ public sealed class D20Session : IDisposable
     public bool IsParticipant(EntityId entity) => _vitalityTracks.ContainsKey(entity);
     public EncounterFaction FactionOf(EntityId entity) => Entities.Get(entity, D20ComponentTypes.Participation).Faction;
     public bool IsLiving(EntityId entity) => Entities.Get(entity, D20ComponentTypes.Participation).Living && ReadVitality(entity).Current.Raw > 0;
+    public bool IsVoluntaryMovementForbidden(EntityId entity)
+    {
+        ThrowIfDisposed();
+        RequireParticipant(entity);
+        return ActiveEffects(entity).Any(active => _effects[active.Effect].Conditions.Any(condition => condition.Kind == ConditionKind.ForbidMovement));
+    }
     public bool TryGetOwnerEntity(D20Id owner, out EntityId entity) => _ownerEntities.TryGetValue(owner, out entity);
     public EntityId OwnerEntity(D20Id owner) => _ownerEntities.TryGetValue(owner, out EntityId entity) ? entity : throw new D20SessionException($"Unknown D20 owner {owner}.");
     public bool TryGetItemEntity(D20Id item, out EntityId entity) => _itemEntities.TryGetValue(item, out entity);

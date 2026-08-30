@@ -35,6 +35,23 @@ internal static class TacticalReviewProbes
             throw new InvalidOperationException("Tactical position or movement budget did not survive strict restore.");
     }
 
+    public static void AssertMovementConditionBoundary(TacticalEncounter encounter, D20Session session, D20Id actor, GridPosition destination)
+    {
+        try
+        {
+            encounter.PartyMove(actor, destination);
+            throw new InvalidOperationException("Expected an active authored movement prohibition to reject voluntary relocation.");
+        }
+        catch (TacticalException error) when (error.Message.Contains("rejects", StringComparison.OrdinalIgnoreCase))
+        {
+        }
+
+        session.AdvanceTurn();
+        encounter.PartyMove(actor, destination);
+        if (encounter.Participants.Single(value => value.Id == actor).Position != destination)
+            throw new InvalidOperationException("Voluntary movement did not resume after the authored prohibition expired.");
+    }
+
     public static void AssertUntouchedOutcomeRejected(D20CampaignRuntime campaign, TacticalEncounter untouched)
     {
         try

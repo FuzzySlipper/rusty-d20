@@ -252,7 +252,7 @@ public sealed class TacticalEncounter
     {
         TacticalParticipant source = Participant(actor);
         int distance = Chebyshev(source.Position, destination);
-        if (distance < 1 || distance > D20Limits.ForcedMovement || distance > maximumDistance || (spendMovement && distance > _remainingMovement) || !_spatial.HasLegalRoute(source.Position, destination)) return false;
+        if (distance < 1 || distance > D20Limits.ForcedMovement || distance > maximumDistance || (spendMovement && (distance > _remainingMovement || _session.IsVoluntaryMovementForbidden(source.Entity))) || !_spatial.HasLegalRoute(source.Position, destination)) return false;
         _participants[actor] = source with { Position = destination };
         if (spendMovement) _remainingMovement -= distance;
         return true;
