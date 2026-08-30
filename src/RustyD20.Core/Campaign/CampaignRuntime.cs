@@ -245,7 +245,7 @@ public sealed class EngineCampaignSpatialGateway : ICampaignSpatialGateway, ITac
             new(start + 1, start + 5, start + 6), new(start + 1, start + 6, start + 2)]);
     }
 
-    private static ulong StableGridId(DungeonDefinition dungeon)
+    private static uint StableGridId(DungeonDefinition dungeon)
     {
         unchecked
         {
@@ -256,11 +256,12 @@ public sealed class EngineCampaignSpatialGateway : ICampaignSpatialGateway, ITac
                 value *= 1099511628211UL;
             }
 
-            return value == 0 ? 1 : value;
+            uint admitted = unchecked((uint)(value ^ (value >> 32)));
+            return admitted == 0 ? 1U : admitted;
         }
     }
 
-    private static ulong StableGridId(TacticalBoard board)
+    private static uint StableGridId(TacticalBoard board)
     {
         unchecked
         {
@@ -271,7 +272,8 @@ public sealed class EngineCampaignSpatialGateway : ICampaignSpatialGateway, ITac
                 value *= 1099511628211UL;
             }
 
-            return value == 0 ? 1 : value;
+            uint admitted = unchecked((uint)(value ^ (value >> 32)));
+            return admitted == 0 ? 1U : admitted;
         }
     }
 
@@ -285,7 +287,7 @@ public sealed class EngineCampaignSpatialGateway : ICampaignSpatialGateway, ITac
 }
 
 /// <summary>One concrete C# campaign: it owns phase, ordered trigger policy, and observations; Engine owns the queried spatial mechanism.</summary>
-public sealed class D20CampaignRuntime : IDisposable
+public sealed partial class D20CampaignRuntime : IDisposable
 {
     private readonly CompiledD20Content _content;
     private readonly AdventureDefinition _adventure;
@@ -379,7 +381,7 @@ public sealed class D20CampaignRuntime : IDisposable
     public string EncodeSave()
     {
         var document = new CampaignSaveDocument(1, _content.ContentFingerprint, _adventure.Id.Value, Phase, _active?.Value, _outcome, _position, _facing, _checkpoint.Value, _completed.Select(value => value.Value).ToArray(), _openedDoors.Select(value => value.Value).OrderBy(value => value, StringComparer.Ordinal).ToArray(), _collectedTreasures.Select(value => value.Value).OrderBy(value => value, StringComparer.Ordinal).ToArray(), _inspectedLandmarks.Select(value => value.Value).OrderBy(value => value, StringComparer.Ordinal).ToArray(), _receipts.ToArray(), Revision);
-        return JsonSerializer.Serialize(document);
+        return JsonSerializer.Serialize(document, CampaignJsonContext.Default.CampaignSaveDocument);
     }
     public static D20CampaignRuntime Restore(string encoded, CompiledD20Content content, CampaignSpatialFactory spatialFactory, CampaignTuning? tuning = null, D20Session? session = null)
     {
@@ -438,7 +440,7 @@ public sealed class D20CampaignRuntime : IDisposable
         CampaignSaveDocument? document;
         try
         {
-            document = JsonSerializer.Deserialize<CampaignSaveDocument>(encoded, new JsonSerializerOptions { UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow });
+            document = JsonSerializer.Deserialize(encoded, CampaignJsonContext.Default.CampaignSaveDocument);
         }
         catch (JsonException error)
         {
@@ -562,5 +564,8 @@ public sealed class D20CampaignRuntime : IDisposable
 
     private static bool Floor(IReadOnlyList<string> rows, GridPosition point) => point.Y >= 0 && point.Y < rows.Count && point.X >= 0 && point.X < rows[point.Y].Length && rows[point.Y][point.X] == '.';
     private sealed record CampaignSaveDocument(int Schema, string Fingerprint, string Adventure, CampaignPhase Phase, string? ActiveEncounter, EncounterResult? Outcome, GridPosition Position, DungeonFacing Facing, string Checkpoint, string[] Completed, string[] OpenedDoors, string[] CollectedTreasures, string[] InspectedLandmarks, CampaignReceipt[] Receipts, ulong Revision);
+    [System.Text.Json.Serialization.JsonSourceGenerationOptions(UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
+    [System.Text.Json.Serialization.JsonSerializable(typeof(CampaignSaveDocument))]
+    private partial class CampaignJsonContext : System.Text.Json.Serialization.JsonSerializerContext { }
     private sealed record ValidatedCampaignSave(AdventureDefinition Adventure, CampaignPhase Phase, D20Id? ActiveEncounter, EncounterResult? Outcome, GridPosition Position, DungeonFacing Facing, D20Id Checkpoint, IReadOnlyList<D20Id> Completed, IReadOnlySet<D20Id> OpenedDoors, IReadOnlySet<D20Id> CollectedTreasures, IReadOnlySet<D20Id> InspectedLandmarks, IReadOnlyList<CampaignReceipt> Receipts, ulong Revision);
 }

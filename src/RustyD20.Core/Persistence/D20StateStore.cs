@@ -10,20 +10,42 @@ using RustyD20.Core.Tactical;
 
 namespace RustyD20.Core.Persistence;
 
+internal static class D20PersistenceDisposal
+{
+    public static void DisposeAll(params IDisposable?[] owners)
+    {
+        List<Exception>? failures = null;
+        foreach (IDisposable? owner in owners)
+        {
+            if (owner is null) continue;
+            try { owner.Dispose(); }
+            catch (Exception error) { (failures ??= []).Add(error); }
+        }
+
+        if (failures is { Count: > 0 }) throw new AggregateException(failures);
+    }
+
+    public static Exception DisposeAfterFailure(Exception primary, params IDisposable?[] owners)
+    {
+        var failures = new List<Exception> { primary };
+        foreach (IDisposable? owner in owners)
+        {
+            if (owner is null) continue;
+            try { owner.Dispose(); }
+            catch (Exception error) { failures.Add(error); }
+        }
+
+        return failures.Count == 1 ? primary : new AggregateException(failures);
+    }
+}
+
 /// <summary>Current C#-only durable envelope. It deliberately has no migration edges or legacy decoder.</summary>
 public sealed record D20DurableState(int Schema, string ContentFingerprint, string Campaign, D20SessionSave Session, TacticalEncounterSave? Tactical, bool PendingReaction, ulong ProductRevision, IReadOnlyList<string> Log);
 public sealed record D20RestoreCandidate(D20CampaignRuntime Campaign, D20Session Session, TacticalEncounter? Tactical, IReadOnlyList<string> Log, ulong Revision) : IDisposable
 {
     public void Dispose()
     {
-        try
-        {
-            Campaign.Dispose();
-        }
-        finally
-        {
-            Session.Dispose();
-        }
+        D20PersistenceDisposal.DisposeAll(Campaign, Session);
     }
 }
 
@@ -34,13 +56,13 @@ public sealed class D20DurableStateCodec : IProductStateCodec<D20DurableState>
     public void Encode(in D20DurableState state, IBufferWriter<byte> destination)
     {
         if (state.Schema != CurrentSchema || state.PendingReaction || HasPendingReaction(state.Tactical)) throw new CampaignException("Only current non-transient D20 state can be persisted.");
-        destination.Write(JsonSerializer.SerializeToUtf8Bytes(state));
+        destination.Write(JsonSerializer.SerializeToUtf8Bytes(state, D20PersistenceJsonContext.Default.D20DurableState));
     }
     public D20DurableState Decode(ReadOnlySpan<byte> payload)
     {
         try
         {
-            D20DurableState? value = JsonSerializer.Deserialize<D20DurableState>(payload, new JsonSerializerOptions { UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow });
+            D20DurableState? value = JsonSerializer.Deserialize(payload, D20PersistenceJsonContext.Default.D20DurableState);
             if (value is null || value.Schema != CurrentSchema || value.PendingReaction || HasPendingReaction(value.Tactical) || value.Session is null || value.Log is null || string.IsNullOrWhiteSpace(value.ContentFingerprint) || string.IsNullOrWhiteSpace(value.Campaign)) throw new CampaignException("Legacy, unknown, or transient D20 save is rejected.");
             return value;
         }
@@ -49,6 +71,10 @@ public sealed class D20DurableStateCodec : IProductStateCodec<D20DurableState>
 
     private static bool HasPendingReaction(TacticalEncounterSave? tactical) => tactical is not null && (tactical.PendingDefender is not null || tactical.PendingAttacker is not null || tactical.PendingAction is not null || tactical.CommittedContinuation);
 }
+
+[System.Text.Json.Serialization.JsonSourceGenerationOptions(UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
+[System.Text.Json.Serialization.JsonSerializable(typeof(D20DurableState))]
+internal partial class D20PersistenceJsonContext : System.Text.Json.Serialization.JsonSerializerContext { }
 
 /// <summary>Engine blob/revision composition only; product supplies the scope/key and owns all save meaning.</summary>
 public sealed class D20EngineStateStore : IDisposable
@@ -103,11 +129,9 @@ public sealed class D20EngineStateStore : IDisposable
 
             return new ProductStateLoad<D20RestoreCandidate>(true, loaded.Revision, new D20RestoreCandidate(campaign, session, tactical, state.Log.ToArray(), state.ProductRevision));
         }
-        catch
+        catch (Exception error)
         {
-            campaign?.Dispose();
-            session?.Dispose();
-            throw;
+            throw D20PersistenceDisposal.DisposeAfterFailure(error, campaign, session);
         }
     }
     public void Dispose() => _store.Dispose();

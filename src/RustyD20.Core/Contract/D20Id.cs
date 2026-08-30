@@ -1,6 +1,10 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace RustyD20.Core.Contract;
 
 /// <summary>A stable product identity. It deliberately accepts only the portable D20 alphabet.</summary>
+[JsonConverter(typeof(D20IdJsonConverter))]
 public readonly record struct D20Id
 {
     public const int MaximumBytes = 64;
@@ -45,4 +49,33 @@ public readonly record struct D20Id
     }
 
     public override string ToString() => Value;
+}
+
+/// <summary>NativeAOT-safe scalar persistence for validated product identities.</summary>
+public sealed class D20IdJsonConverter : JsonConverter<D20Id>
+{
+    public override D20Id Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("D20 id must be a JSON string.");
+        }
+
+        if (!D20Id.TryParse(reader.GetString(), out D20Id value, out string error))
+        {
+            throw new JsonException($"D20 id is invalid: {error}");
+        }
+
+        return value;
+    }
+
+    public override void Write(Utf8JsonWriter writer, D20Id value, JsonSerializerOptions options)
+    {
+        if (!D20Id.TryParse(value.Value, out _, out string error))
+        {
+            throw new JsonException($"D20 id is invalid: {error}");
+        }
+
+        writer.WriteStringValue(value.Value);
+    }
 }

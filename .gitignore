@@ -10,3 +10,4 @@ test-results/
 *.tsbuildinfo
 bin/
 obj/
+src/RustyD20.NativeProduct/DevelopmentHost/generated-browser/

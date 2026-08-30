@@ -5,6 +5,7 @@ using RustyD20.Core.Contract;
 using RustyD20.Core.Rules;
 using RustyD20.Core.Session;
 using RustyD20.Core.Campaign;
+using RustyD20.Core.Persistence;
 using RustyD20.Core.Tactical;
 using Rusty.Engine.Mechanics;
 
@@ -15,6 +16,8 @@ var checks = new (string Name, Action Run)[]
     ("topology, placement, dependency, and reachability admission", TopologyPlacementAndDependency),
     ("stable composition fingerprint", StableFingerprint),
     ("named adventure compilation", NamedAdventures),
+    ("retained spatial grid identities fit Engine u32", RetainedGridIds),
+    ("persistence cleanup aggregates every owner", PersistenceCleanup),
     ("d20 session floor, static order, and choice", SessionFloorStaticAndChoice),
     ("d20 session action effects and late-failure atomicity", SessionActionAndAtomicity),
     ("d20 session stale reaction and canonical equipment", SessionStaleReactionAndEquipment),
@@ -107,6 +110,53 @@ static void NamedAdventures()
     Assert(compiled.Adventures[D20Id.Parse("wardens-gate")].Party.Count == 4, "Warden's Gate preserves its four-person party");
     Assert(compiled.Adventures[D20Id.Parse("embers-wake")].Party.Count == 1, "Ember's Wake preserves Sera's solo party");
     Assert(compiled.ContentFingerprint.Length == 64, "receipt exposes a SHA-256 content fingerprint");
+}
+
+static void RetainedGridIds()
+{
+    var content = D20ContentCatalog.Compile();
+    MethodInfo dungeonIdentity = typeof(EngineCampaignSpatialGateway).GetMethod("StableGridId", BindingFlags.NonPublic | BindingFlags.Static, [typeof(DungeonDefinition)]) ?? throw new InvalidOperationException("Dungeon grid identity helper is missing.");
+    MethodInfo tacticalIdentity = typeof(EngineCampaignSpatialGateway).GetMethod("StableGridId", BindingFlags.NonPublic | BindingFlags.Static, [typeof(TacticalBoard)]) ?? throw new InvalidOperationException("Tactical grid identity helper is missing.");
+    foreach (AdventureDefinition adventure in content.Adventures.Values)
+    {
+        uint dungeon = (uint)(dungeonIdentity.Invoke(null, [adventure.Dungeon]) ?? 0U);
+        Assert(dungeon != 0, "retained dungeon grid identity must be a nonzero Engine u32.");
+        foreach (EncounterDefinition encounter in content.Modules.SelectMany(module => module.EncountersOrEmpty))
+        {
+            uint tactical = (uint)(tacticalIdentity.Invoke(null, [encounter.Board]) ?? 0U);
+            Assert(tactical != 0, "retained tactical grid identity must be a nonzero Engine u32.");
+        }
+    }
+}
+
+static void PersistenceCleanup()
+{
+    var restoredCampaign = new RecordingOwner("restored-campaign", throws: false);
+    var restoredSession = new RecordingOwner("restored-session", throws: false);
+    try
+    {
+        throw D20PersistenceDisposal.DisposeAfterFailure(new CampaignException("injected restore failure"), restoredCampaign, restoredSession);
+    }
+    catch (CampaignException error)
+    {
+        Assert(error.Message == "injected restore failure", "successful fresh-candidate cleanup preserves the original CampaignException");
+    }
+
+    Assert(restoredCampaign.Disposed && restoredSession.Disposed, "successful fresh-candidate cleanup still attempts campaign and session");
+
+    var campaign = new RecordingOwner("campaign", throws: true);
+    var session = new RecordingOwner("session", throws: true);
+    try
+    {
+        D20PersistenceDisposal.DisposeAll(campaign, session);
+        throw new InvalidOperationException("A failing cleanup must be reported after every owner is attempted.");
+    }
+    catch (AggregateException error)
+    {
+        Assert(error.InnerExceptions.Count == 2, "both failing candidate owners are retained in the aggregate");
+    }
+
+    Assert(campaign.Disposed && session.Disposed, "persistence cleanup attempts campaign and session even after either throws");
 }
 
 static void SessionFloorStaticAndChoice()
@@ -463,6 +513,16 @@ sealed class FailingTacticalSpatial : ITacticalSpatialGateway
     public bool FailRoutes { get; set; }
     public bool HasLineOfEffect(GridPosition from, GridPosition to) => true;
     public bool HasLegalRoute(GridPosition from, GridPosition to) => !FailRoutes ? true : throw new TacticalException("injected post-resolution spatial failure");
+}
+
+sealed class RecordingOwner(string name, bool throws) : IDisposable
+{
+    public bool Disposed { get; private set; }
+    public void Dispose()
+    {
+        Disposed = true;
+        if (throws) throw new InvalidOperationException(name);
+    }
 }
 
 class RecordingSpatialService : DispatchProxy
