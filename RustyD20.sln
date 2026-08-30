@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RustyD20.Core", "src\RustyD20.Core\RustyD20.Core.csproj", "{E70A53B4-3026-4528-9440-60EEAC38AC89}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RustyD20.Core.Checks", "src\RustyD20.Core.Checks\RustyD20.Core.Checks.csproj", "{097E1E3D-B8BF-4B03-BAF1-14D56511B511}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E70A53B4-3026-4528-9440-60EEAC38AC89}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E70A53B4-3026-4528-9440-60EEAC38AC89}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E70A53B4-3026-4528-9440-60EEAC38AC89}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E70A53B4-3026-4528-9440-60EEAC38AC89}.Release|Any CPU.Build.0 = Release|Any CPU
+		{097E1E3D-B8BF-4B03-BAF1-14D56511B511}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{097E1E3D-B8BF-4B03-BAF1-14D56511B511}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{097E1E3D-B8BF-4B03-BAF1-14D56511B511}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{097E1E3D-B8BF-4B03-BAF1-14D56511B511}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
