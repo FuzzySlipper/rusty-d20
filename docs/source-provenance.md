@@ -2,10 +2,12 @@
 
 ## Current Engine boundary
 
-Rusty D20 currently consumes the adjacent Rusty Engine public C# SDK and
-generated product contract. The provider is selected by the local checkout,
-is not a runtime/save identity, and is never modified or copied by this
-repository. See [adjacent-engine-dependency.md](adjacent-engine-dependency.md).
+Rusty D20 consumes the pinned `Rusty.Engine` `0.1.0-dev.cabba0f` package from
+the ignored local SDK feed and its matched `cabba0f` runtime pack. The provider
+is not a runtime/save identity and is never copied into this repository.
+Ordinary development uses the packaged pair; an Engine contributor may choose
+the SDK's explicit `--engine-source` override without making source discovery
+part of this product.
 
 ## Authored C# content
 

@@ -1,0 +1,11 @@
+{
+  "project": "rusty-d20",
+  "serve": {
+    "command": "exec ./.runtime/runtime-pack-cabba0f/bin/rusty dev --project ./src/RustyD20.Product/RustyD20.Product.csproj --runtime ./.runtime/runtime-pack-cabba0f --bind-host {host} --port {port}",
+    "healthUrl": "/product-ui/main.js",
+    "readyText": "Rusty D20",
+    "reusePolicy": "broker_owned",
+    "startupTimeout": "120s",
+    "healthInterval": "250ms"
+  }
+}

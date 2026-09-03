@@ -44,11 +44,13 @@ public readonly record struct EffectProjectionFact(ImmutableArray<ScheduledEffec
 public readonly record struct ScheduledEffectProjection(EffectInstanceId Instance, D20Id Effect, ulong ExpiresAtTurn);
 public static class D20ComponentTypes
 {
-    public static readonly ComponentType<AbilityScoresFact> Abilities = ComponentType<AbilityScoresFact>.Create(ProductComponentKeys.Create(1));
-    public static readonly ComponentType<ActionResourcesFact> Resources = ComponentType<ActionResourcesFact>.Create(ProductComponentKeys.Create(2));
-    public static readonly ComponentType<ActivationBudgetsFact> Budgets = ComponentType<ActivationBudgetsFact>.Create(ProductComponentKeys.Create(3));
+    // EntityWorld snapshots must detach the ImmutableArray backing storage. The
+    // entries themselves contain only immutable product value facts.
+    public static readonly ComponentType<AbilityScoresFact> Abilities = ComponentType<AbilityScoresFact>.Create(ProductComponentKeys.Create(1), snapshotCodec: static (in AbilityScoresFact value) => new AbilityScoresFact(value.Values.ToArray().ToImmutableArray()));
+    public static readonly ComponentType<ActionResourcesFact> Resources = ComponentType<ActionResourcesFact>.Create(ProductComponentKeys.Create(2), snapshotCodec: static (in ActionResourcesFact value) => new ActionResourcesFact(value.Values.ToArray().ToImmutableArray()));
+    public static readonly ComponentType<ActivationBudgetsFact> Budgets = ComponentType<ActivationBudgetsFact>.Create(ProductComponentKeys.Create(3), snapshotCodec: static (in ActivationBudgetsFact value) => new ActivationBudgetsFact(value.Values.ToArray().ToImmutableArray()));
     public static readonly ComponentType<EncounterParticipationFact> Participation = ComponentType<EncounterParticipationFact>.Create(ProductComponentKeys.Create(4));
-    public static readonly ComponentType<EffectProjectionFact> Effects = ComponentType<EffectProjectionFact>.Create(ProductComponentKeys.Create(5));
+    public static readonly ComponentType<EffectProjectionFact> Effects = ComponentType<EffectProjectionFact>.Create(ProductComponentKeys.Create(5), snapshotCodec: static (in EffectProjectionFact value) => new EffectProjectionFact(value.Values.ToArray().ToImmutableArray()));
 }
 /// <summary>
 /// A session-issued action preview. Consumers can observe it for tactical

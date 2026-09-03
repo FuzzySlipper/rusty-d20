@@ -8,10 +8,11 @@ session and campaign policy, action resolution, complete-save meaning, controls,
 and observational projections. It is not a reusable RPG framework and must
 never become a dependency of another game.
 
-Rusty Engine owns reusable host-neutral mechanisms. Consume the adjacent
-`../rusty-engine` checkout exactly as it stands through its public C# SDK and
-generated product contract. Do not pull, synchronize, mutate, or copy Engine
-implementation from this repository; route reusable gaps upstream instead.
+Rusty Engine owns reusable host-neutral mechanisms. Ordinary development
+consumes the pinned immutable `Rusty.Engine` package from the ignored local
+`.runtime/sdk-feed` and uses its exactly matched `.runtime/runtime-pack-cabba0f`.
+Do not discover, synchronize, mutate, or copy an Engine checkout from this
+repository; route reusable gaps upstream instead.
 
 ## Den guidance bootstrap
 
@@ -31,8 +32,9 @@ direction, persistence, floor admission, or the turn model. Use
 historical cutover disposition.
 
 - C# is the sole authoritative gameplay runtime.
-- `RustyD20Product` is an Engine-owned `IEngineProduct`: it reacts to admitted
-  updates and never creates a second loop or handwritten interop boundary.
+- `RustyD20Product` is the one SDK-declared `IEngineProduct`: it reacts to
+  admitted updates and never creates a second loop or handwritten interop
+  boundary. The SDK generates CoreCLR and NativeAOT composition beneath `obj`.
 - Rusty D20 owns d20 policy and the meanings it stores. Rusty Engine owns
   lifecycle/input, renderer resources, spatial/navigation/collision,
   deterministic random, content, UI streams, and durable storage primitives.
@@ -45,8 +47,7 @@ historical cutover disposition.
 ## Work and verification
 
 Treat a dirty worktree as shared state. Preserve unrelated changes, especially
-`.agent-teams/`. Commit and push each reviewable milestone directly to the
-current branch and record its exact SHA in Den.
+`.agent-teams/`. Commit, push, and Den transitions require task authorization.
 
 Run focused maintained checks:
 
@@ -54,14 +55,16 @@ Run focused maintained checks:
 dotnet run --project src/RustyD20.Core.Checks/RustyD20.Core.Checks.csproj
 dotnet run --project src/RustyD20.Product.Checks/RustyD20.Product.Checks.csproj
 dotnet build RustyD20.sln -c Release
-dotnet publish src/RustyD20.NativeProduct/RustyD20.NativeProduct.csproj -c Release -r linux-x64
-bash src/scripts/exercise-native-product.sh
+./.runtime/runtime-pack-cabba0f/bin/rusty dev --project src/RustyD20.Product/RustyD20.Product.csproj --runtime ./.runtime/runtime-pack-cabba0f
+dotnet msbuild src/RustyD20.Product/RustyD20.Product.csproj -t:VerifyRustyEngineAot -p:Configuration=Release
 ```
 
-The exercise launches the actual Engine C# product runtime and proves a short
-lifecycle, input-binding, projection, and fresh-process save/load scenario.
-Do not restore Cargo/Rust, Node/pnpm/Nx/Angular, generated-protocol, old-host,
-or broad browser/E2E workflows. Add a focused C# proof only for new C# behavior.
+`rusty dev` is the normal CoreCLR edit-run path and stages the loose product
+atomically. NativeAOT is an explicit fidelity/release check, not an edit-run
+loop. An Engine contributor may add `--engine-source /absolute/rusty-engine`
+to that command; it is the only source-use override. Do not restore Cargo/Rust,
+Node/pnpm/Nx/Angular, generated-protocol, old-host, or broad browser/E2E
+workflows. Add a focused C# proof only for new C# behavior.
 
 Update [docs/source-provenance.md](docs/source-provenance.md) when Engine or
 content source selection changes, and

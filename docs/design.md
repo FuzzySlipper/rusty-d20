@@ -5,16 +5,18 @@
 Rusty D20 is one concrete C# d20 product. `RustyD20.Core` owns d20 meaning:
 definitions, semantic admission, sessions, campaign/exploration/tactical
 policy, strict saves, receipts, and bounded projections. `RustyD20.Product`
-adapts those facts to the generated Engine `IEngineProduct` contract.
-`RustyD20.NativeProduct` contains only the Engine product selection used for
-NativeAOT publication.
+adapts those facts to the SDK-generated Engine `IEngineProduct` contract. It
+is the sole product root; the SDK generates both CoreCLR and NativeAOT
+composition below ignored `obj` paths.
 
 Rusty Engine owns reusable mechanisms: product lifecycle and admitted input,
 spatial/navigation/collision, retained scene resources and camera scheduling,
 deterministic random, UI streams, and storage primitives. Rusty D20 uses only
 the public adjacent C# SDK. It creates no second update loop, P/Invoke layer,
 unsafe ABI declaration, copied Engine implementation, generic RPG framework,
-or browser-side rules evaluator.
+or browser-side rules evaluator. Ordinary development consumes the pinned
+immutable package/runtime pair; Engine source is an explicit contributor
+override, never adjacent-checkout discovery.
 
 ```text
 C# authored content modules

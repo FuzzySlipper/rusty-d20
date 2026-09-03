@@ -134,6 +134,13 @@ public sealed class RustyD20Product : IEngineProduct
         Publish();
     }
 
+    public void Attach()
+    {
+        ThrowIfDisposed();
+        Note("lifecycle:attached");
+        Publish();
+    }
+
     public ProductUpdateResult Update(ProductUpdate update)
     {
         ThrowIfDisposed();

@@ -5,10 +5,45 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
-    <EngineRoot Condition="'$(EngineRoot)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../rusty-engine'))</EngineRoot>
+    <!-- The immutable SDK generates CoreCLR staging and NativeAOT composition
+         beneath obj; this ordinary project remains the single product root. -->
+    <RustyEngineProductEntryType>RustyD20.Product.RustyD20Product</RustyEngineProductEntryType>
+    <RustyEngineProductId>rusty-d20</RustyEngineProductId>
+    <RustyEngineProductTitle>Rusty D20</RustyEngineProductTitle>
+    <RustyEngineProductUiRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../ui'))</RustyEngineProductUiRoot>
+    <RustyEngineProductContentRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../content'))</RustyEngineProductContentRoot>
+    <RustyEngineProductUiEntry>main.js</RustyEngineProductUiEntry>
+    <RustyEngineProductUiProjectionStream>rusty-d20</RustyEngineProductUiProjectionStream>
+    <RustyEngineProductUiProjectionContract>rusty-d20.workbench.v1</RustyEngineProductUiProjectionContract>
+    <RustyEngineProductLifecycleMode>demand</RustyEngineProductLifecycleMode>
+    <RustyEngineWatchPaths>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)'));$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../ui'));$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../content'))</RustyEngineWatchPaths>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../RustyD20.Core/RustyD20.Core.csproj" />
-    <ProjectReference Include="$(EngineRoot)/csharp/Rusty.Engine/Rusty.Engine.csproj" />
+    <PackageReference Include="Rusty.Engine" Version="0.1.0-dev.cabba0f">
+      <ExcludeAssets Condition="'$(RustyEngineUseSourceDevelopment)' == 'true'">compile;runtime</ExcludeAssets>
+    </PackageReference>
+    <RustyEngineProductInputIntent Include="d20.select.warden" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.select.ember" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.begin" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.forward" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.back" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.left" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.right" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.interact" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.party.next" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.action.next" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.target.next" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.action.commit" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.tactical.move.north" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.tactical.move.south" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.tactical.move.west" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.tactical.move.east" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.reaction.choose" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.reaction.decline" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.outcome.continue" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.save" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.load" Value="digital" />
+    <RustyEngineProductInputIntent Include="d20.reset" Value="digital" />
   </ItemGroup>
 </Project>
