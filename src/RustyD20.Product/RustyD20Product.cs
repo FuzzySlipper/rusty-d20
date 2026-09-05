@@ -472,7 +472,7 @@ internal sealed class D20Surface : IDisposable
         D20Disposal.DisposeAll(new IDisposable?[] { _camera, _presentation }.Concat(_materials.Values).Append(_spatial).ToArray());
     }
 
-    private static Material CreateMaterial(IEngineContext engine, Color color, float roughness) => engine.Appearance.CreateMaterial(new MaterialRequest(color, new RenderResourceHandle(0), roughness, new Color(1, 1, 1, 1), Vector3.Zero, 0, false));
+    private static Material CreateMaterial(IEngineContext engine, Color color, float roughness) => engine.Graphics.CreateMaterial(new MaterialRequest(color, new RenderResourceHandle(0), roughness, new Color(1, 1, 1, 1), Vector3.Zero, 0, false));
     private static VoxelSceneMaterialBinding[] Bindings(IReadOnlyDictionary<uint, Material> materials, IReadOnlyDictionary<VoxelAddress, uint> occupied) => occupied.Values.Distinct().OrderBy(slot => slot).Select(slot => new VoxelSceneMaterialBinding(slot, materials[slot])).ToArray();
     private void SetCamera(CameraDescriptor camera) { _engine.CameraView.UpdateCamera(new CameraUpdateRequest(_camera, camera)); _engine.CameraView.SetActiveCamera(_camera); }
     private static CameraDescriptor ExplorationCamera(D20PresentationTuning tuning, GridPosition position, DungeonFacing facing)

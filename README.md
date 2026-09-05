@@ -18,12 +18,12 @@ The ignored `.runtime/` directory is provisioned with these matching immutable
 artifacts:
 
 ```text
-.runtime/sdk-feed/Rusty.Engine.0.1.0-dev.cabba0f.nupkg
-.runtime/runtime-pack-cabba0f/
+.runtime/sdk-feed/Rusty.Engine.0.1.0-dev.cbf35130d06c.nupkg
+.runtime/runtime-pack-cbf35130d06c/
 ```
 
 `NuGet.Config` restores only from that local feed (plus nuget.org) and the
-project pins `Rusty.Engine` to `0.1.0-dev.cabba0f`. The package and runtime
+project pins `Rusty.Engine` to `0.1.0-dev.cbf35130d06c`. The package and runtime
 pack must come from the same Engine release. They are development dependencies,
 not tracked product inputs. An Engine contributor may use the explicit
 `rusty dev --engine-source /absolute/rusty-engine` override; ordinary product
@@ -35,7 +35,7 @@ development never discovers an adjacent checkout.
 dotnet run --project src/RustyD20.Core.Checks/RustyD20.Core.Checks.csproj
 dotnet run --project src/RustyD20.Product.Checks/RustyD20.Product.Checks.csproj
 dotnet build RustyD20.sln -c Release
-./.runtime/runtime-pack-cabba0f/bin/rusty dev --project src/RustyD20.Product/RustyD20.Product.csproj --runtime ./.runtime/runtime-pack-cabba0f
+./.runtime/runtime-pack-cbf35130d06c/bin/rusty dev --project src/RustyD20.Product/RustyD20.Product.csproj --runtime ./.runtime/runtime-pack-cbf35130d06c
 dotnet msbuild src/RustyD20.Product/RustyD20.Product.csproj -t:VerifyRustyEngineAot -p:Configuration=Release
 ```
 

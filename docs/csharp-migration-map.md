@@ -28,13 +28,13 @@ they are not active inputs or compatibility routes.
 The normal product contract is intentionally small and exact:
 
 ```text
-Rusty.Engine 0.1.0-dev.cabba0f from .runtime/sdk-feed
-  + runtime-pack-cabba0f from .runtime/runtime-pack-cabba0f
+Rusty.Engine 0.1.0-dev.cbf35130d06c from .runtime/sdk-feed
+  + runtime-pack-cbf35130d06c from .runtime/runtime-pack-cbf35130d06c
   -> rusty dev CoreCLR build, atomic staging, and packaged host
   -> optional VerifyRustyEngineAot fidelity/release module
 ```
 
-The package and runtime pack share the `cabba0f` Engine release identity.
+The package and runtime pack share the `cbf35130d06c` Engine release identity.
 They are ignored local provisioning artifacts; `NuGet.Config` selects the SDK
 feed and the product project pins the package version. The runtime pack stays
 explicit on every `rusty dev` invocation, so ordinary builds never discover a
@@ -75,7 +75,7 @@ the host migration.
 dotnet run --project src/RustyD20.Core.Checks/RustyD20.Core.Checks.csproj
 dotnet run --project src/RustyD20.Product.Checks/RustyD20.Product.Checks.csproj
 dotnet build RustyD20.sln -c Release
-./.runtime/runtime-pack-cabba0f/bin/rusty dev --project src/RustyD20.Product/RustyD20.Product.csproj --runtime ./.runtime/runtime-pack-cabba0f
+./.runtime/runtime-pack-cbf35130d06c/bin/rusty dev --project src/RustyD20.Product/RustyD20.Product.csproj --runtime ./.runtime/runtime-pack-cbf35130d06c
 dotnet msbuild src/RustyD20.Product/RustyD20.Product.csproj -t:VerifyRustyEngineAot -p:Configuration=Release
 ```
 

@@ -10,7 +10,7 @@ never become a dependency of another game.
 
 Rusty Engine owns reusable host-neutral mechanisms. Ordinary development
 consumes the pinned immutable `Rusty.Engine` package from the ignored local
-`.runtime/sdk-feed` and uses its exactly matched `.runtime/runtime-pack-cabba0f`.
+`.runtime/sdk-feed` and uses its exactly matched `.runtime/runtime-pack-cbf35130d06c`.
 Do not discover, synchronize, mutate, or copy an Engine checkout from this
 repository; route reusable gaps upstream instead.
 
@@ -55,7 +55,7 @@ Run focused maintained checks:
 dotnet run --project src/RustyD20.Core.Checks/RustyD20.Core.Checks.csproj
 dotnet run --project src/RustyD20.Product.Checks/RustyD20.Product.Checks.csproj
 dotnet build RustyD20.sln -c Release
-./.runtime/runtime-pack-cabba0f/bin/rusty dev --project src/RustyD20.Product/RustyD20.Product.csproj --runtime ./.runtime/runtime-pack-cabba0f
+./.runtime/runtime-pack-cbf35130d06c/bin/rusty dev --project src/RustyD20.Product/RustyD20.Product.csproj --runtime ./.runtime/runtime-pack-cbf35130d06c
 dotnet msbuild src/RustyD20.Product/RustyD20.Product.csproj -t:VerifyRustyEngineAot -p:Configuration=Release
 ```
 
