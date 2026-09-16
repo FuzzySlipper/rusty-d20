@@ -356,10 +356,18 @@ static void SessionEngineStateAdmissionFences()
     Assert(session.Inventory.Revision == inventoryRevision, "occupied slot leaves canonical inventory unchanged");
 
     using var repeated = NewSession([new(20, [4]), new(20, [4])], out var repeatedActor, out var repeatedTarget);
+    EffectState attached = repeated.Entities.Get<EffectState>(repeatedTarget);
+    Assert(repeated.Entities.Has<EffectState>(repeatedTarget) && attached.Owner == repeatedTarget && ReferenceEquals(attached, repeated.Entities.Get<EffectState>(repeatedTarget)), "participants attach and return their live Engine EffectState instance");
     var first = repeated.ApplyAction(repeated.PreviewAction(repeatedActor, repeatedTarget, Id("disrupt"), OperationId.Parse("check-refresh-one")));
+    EffectState applied = repeated.Entities.Get<EffectState>(repeatedTarget);
+    Assert(!ReferenceEquals(attached, applied) && applied.Effects.Count == 1, "effect application replaces the attached EffectState with its mutated candidate");
     repeated.SetActivationBudget(repeatedActor, Id("bonus-action"), 1);
     var second = repeated.ApplyAction(repeated.PreviewAction(repeatedActor, repeatedTarget, Id("disrupt"), OperationId.Parse("check-refresh-two")));
-    Assert(first.Effect == Id("unsettled") && second.Effect == Id("unsettled") && repeated.Entities.Get(repeatedTarget, D20ComponentTypes.Effects).Values.Length == 1, "repeated D20 effect refreshes one Engine EffectState instance");
+    EffectState refreshed = repeated.Entities.Get<EffectState>(repeatedTarget);
+    Assert(first.Effect == Id("unsettled") && second.Effect == Id("unsettled") && !ReferenceEquals(applied, refreshed) && refreshed.Effects.Count == 1 && repeated.Entities.Get(repeatedTarget, D20ComponentTypes.Effects).Values.Length == 1, "repeated D20 effects replace the attached EffectState while preserving one active instance");
+    repeated.AdvanceTurn();
+    EffectState expired = repeated.Entities.Get<EffectState>(repeatedTarget);
+    Assert(!ReferenceEquals(refreshed, expired) && expired.Effects.Count == 0, "turn expiry publishes the replacement EffectState whose mutation removes expired effects");
 
     using var overflow = NewSession([new(20, [4])], out var overflowActor, out var overflowTarget, ulong.MaxValue);
     var overflowPreview = overflow.PreviewAction(overflowActor, overflowTarget, Id("disrupt"), OperationId.Parse("check-roll-overflow"));
