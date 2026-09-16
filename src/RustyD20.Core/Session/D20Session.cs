@@ -402,7 +402,7 @@ public sealed class D20Session : IDisposable
                 batch.Set(entity, D20ComponentTypes.Participation, participation with { Living = living });
             }
         }
-        EntityWorldBatchCandidate prepared = Entities.PrepareBatch(batch, Entities.Revision);
+        EntityEdit prepared = Entities.PrepareBatch(batch, Entities.Revision);
         prepared.Publish();
         foreach ((EntityId entity, ExactStatTrackState candidate) in candidates) _vitalityTracks[entity] = candidate;
         Revision = nextRevision;
@@ -531,7 +531,7 @@ public sealed class D20Session : IDisposable
             .Set(preview.Target, D20ComponentTypes.Resources, new ActionResourcesFact(ReplaceResource(resources.Values, definition.Resource, before - definition.Cost)))
             .Set(preview.Target, D20ComponentTypes.Budgets, new ActivationBudgetsFact(SpendCosts(budgets.Values, definition.Costs)))
             .Set(preview.Target, D20ComponentTypes.Effects, afterProjection);
-        EntityWorldBatchCandidate prepared = Entities.PrepareBatch(batch, Entities.Revision); prepared.Publish(); Entities.Replace(preview.Target, candidateEffects); Revision++; return new(reaction, preview.Target, definition.Resource, before, before - definition.Cost, definition.Effect, expires, Revision);
+        EntityEdit prepared = Entities.PrepareBatch(batch, Entities.Revision); prepared.Publish(); Entities.Replace(preview.Target, candidateEffects); Revision++; return new(reaction, preview.Target, definition.Resource, before, before - definition.Cost, definition.Effect, expires, Revision);
     }
 
     /// <summary>
@@ -623,7 +623,7 @@ public sealed class D20Session : IDisposable
             batch.Set(freshPreview.Target, D20ComponentTypes.Participation, targetParticipation with { Living = false });
         }
 
-        EntityWorldBatchCandidate prepared = Entities.PrepareBatch(batch, Entities.Revision);
+        EntityEdit prepared = Entities.PrepareBatch(batch, Entities.Revision);
         prepared.Publish();
         Entities.Replace(freshPreview.Target, candidateEffects);
         if (candidateTrack is not null) _vitalityTracks[freshPreview.Target] = candidateTrack;
@@ -652,7 +652,7 @@ public sealed class D20Session : IDisposable
             EncounterParticipationFact targetParticipation = Entities.Get(preview.Target, D20ComponentTypes.Participation);
             batch.Set(preview.Target, D20ComponentTypes.Participation, targetParticipation with { Living = false });
         }
-        EntityWorldBatchCandidate prepared = Entities.PrepareBatch(batch, Entities.Revision); prepared.Publish(); if (candidateEffects is not null) Entities.Replace(preview.Target, candidateEffects); if (candidateTrack is not null) _vitalityTracks[preview.Target] = candidateTrack; RollSource = RollSource with { Position = nextPosition }; Revision++;
+        EntityEdit prepared = Entities.PrepareBatch(batch, Entities.Revision); prepared.Publish(); if (candidateEffects is not null) Entities.Replace(preview.Target, candidateEffects); if (candidateTrack is not null) _vitalityTracks[preview.Target] = candidateTrack; RollSource = RollSource with { Position = nextPosition }; Revision++;
         var receipt = new ActionReceipt(preview.Operation, preview.Actor, preview.Target, preview.Action, preview.RollPosition, roll.D20, total, action.Defense, hit, damage, effect, hit ? action.Definition.ForcedMovement : 0, Turn, Revision); _receipts.Add(receipt); if (_receipts.Count > Tuning.MaximumReceiptCount) _receipts.RemoveAt(0); return receipt;
     }
     public void AdvanceTurn()
@@ -669,7 +669,7 @@ public sealed class D20Session : IDisposable
             if (!after.Equals(component.Value)) mutations.Set(component.Entity, D20ComponentTypes.Effects, after);
             candidates[component.Entity] = candidate;
         }
-        EntityWorldBatchCandidate prepared = Entities.PrepareBatch(mutations, Entities.Revision); prepared.Publish(); foreach ((EntityId entity, EffectState candidate) in candidates) Entities.Replace(entity, candidate); Turn = nextTurn; Revision++;
+        EntityEdit prepared = Entities.PrepareBatch(mutations, Entities.Revision); prepared.Publish(); foreach ((EntityId entity, EffectState candidate) in candidates) Entities.Replace(entity, candidate); Turn = nextTurn; Revision++;
     }
     /// <summary>Closed product save facts; Engine state is reconstructed through normal managed APIs on restore.</summary>
     public D20SessionSave CaptureSave()
