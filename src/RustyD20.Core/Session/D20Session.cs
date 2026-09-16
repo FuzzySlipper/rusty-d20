@@ -44,7 +44,7 @@ public readonly record struct EffectProjectionFact(ImmutableArray<ScheduledEffec
 public readonly record struct ScheduledEffectProjection(EffectInstanceId Instance, D20Id Effect, ulong ExpiresAtTurn);
 public static class D20ComponentTypes
 {
-    // EntityWorld snapshots must detach the ImmutableArray backing storage. The
+    // EntityStore snapshots must detach the ImmutableArray backing storage. The
     // entries themselves contain only immutable product value facts.
     public static readonly ComponentType<AbilityScoresFact> Abilities = ComponentType<AbilityScoresFact>.Create(ProductComponentKeys.Create(1), snapshotCodec: static (in AbilityScoresFact value) => new AbilityScoresFact(value.Values.ToArray().ToImmutableArray()));
     public static readonly ComponentType<ActionResourcesFact> Resources = ComponentType<ActionResourcesFact>.Create(ProductComponentKeys.Create(2), snapshotCodec: static (in ActionResourcesFact value) => new ActionResourcesFact(value.Values.ToArray().ToImmutableArray()));
@@ -156,10 +156,10 @@ public sealed class D20Session : IDisposable
         if (rollSource.StaticRolls.Length > Tuning.MaximumStaticRolls) throw new D20SessionException("The static action roll tape exceeds the named bound.");
         if (rollSource.Kind == RollSourceKind.Seeded && seededRolls is null) throw new ArgumentNullException(nameof(seededRolls), "Seeded sessions require the Engine random adapter.");
         RollSource = rollSource; _seededRolls = seededRolls;
-        Entities = new EntityWorld([D20ComponentTypes.Abilities, D20ComponentTypes.Resources, D20ComponentTypes.Budgets, D20ComponentTypes.Participation, D20ComponentTypes.Effects]); Inventory = new InventoryWorld();
+        Entities = new EntityStore([D20ComponentTypes.Abilities, D20ComponentTypes.Resources, D20ComponentTypes.Budgets, D20ComponentTypes.Participation, D20ComponentTypes.Effects]); Inventory = new InventoryStore();
     }
-    public EntityWorld Entities { get; }
-    public InventoryWorld Inventory { get; }
+    public EntityStore Entities { get; }
+    public InventoryStore Inventory { get; }
     public SessionTuning Tuning { get; }
     public RollSourceState RollSource { get; private set; }
     public ulong Turn { get; private set; }
@@ -167,7 +167,7 @@ public sealed class D20Session : IDisposable
     public IReadOnlyList<ActionReceipt> Receipts => _receipts.AsReadOnly();
     public static int AbilityModifier(int score, SessionTuning? tuning = null) { var policy = tuning ?? new SessionTuning(); return Math.DivRem(score - policy.AbilityBaseline, policy.AbilityModifierDivisor, out int remainder) is int quotient && remainder < 0 ? quotient - 1 : quotient; }
 
-    /// <summary>Participant admission mutates only a prepared EntityWorld batch; inventory ownership is an explicit later operation.</summary>
+    /// <summary>Participant admission mutates only a prepared EntityStore batch; inventory ownership is an explicit later operation.</summary>
     public EntityId AddParticipant(CharacterDefinition character, EncounterFaction faction, int? vitality = null)
     {
         ThrowIfDisposed(); ArgumentNullException.ThrowIfNull(character); int maximum = vitality ?? character.Vitality;
@@ -212,7 +212,7 @@ public sealed class D20Session : IDisposable
 
     /// <summary>
     /// Admits one authored adventure's complete owner/item closure through one detached
-    /// InventoryWorld candidate. Character and storage identities are stable D20 mappings;
+    /// InventoryStore candidate. Character and storage identities are stable D20 mappings;
     /// Engine owns containment and equipment relationships.
     /// </summary>
     public AdventureLoadoutAdmission AdmitAdventureLoadout(AdventureDefinition adventure)
@@ -306,7 +306,7 @@ public sealed class D20Session : IDisposable
             }
         }
 
-        InventoryWorldCandidate candidate = Inventory.Prepare();
+        InventoryEdit candidate = Inventory.Prepare();
         foreach (D20Id itemId in adventure.Items.OrderBy(value => value.Value, StringComparer.Ordinal))
         {
             RustyD20.Core.Rules.ItemDefinition authored = _authoredItems[itemId];
@@ -348,12 +348,12 @@ public sealed class D20Session : IDisposable
         if (!_ownerIds.TryGetValue(source, out D20Id fromOwner)) throw new D20SessionException("Adventure item source owner is outside the admitted owner mapping.");
         if (!Inventory.TryGetEquipment(source, out EquipmentState? sourceEquipment) || sourceEquipment is null) throw new D20SessionException("Adventure item source lacks canonical Engine equipment state.");
 
-        InventoryWorldCandidate candidate = Inventory.Prepare();
+        InventoryEdit candidate = Inventory.Prepare();
         if (sourceEquipment.ContainsItem(itemEntity)) candidate.Unequip(source, itemEntity);
         ItemTransferReceipt transfer = candidate.TransferUnique(itemEntity, source, destination);
         candidate.Publish();
         Revision++;
-        var receipt = new D20InventoryTransferReceipt(item, fromOwner, toOwner, transfer.WorldRevisionBefore, transfer.WorldRevisionAfter, Revision);
+        var receipt = new D20InventoryTransferReceipt(item, fromOwner, toOwner, transfer.InventoryRevisionBefore, transfer.InventoryRevisionAfter, Revision);
         _inventoryTransfers.Add(receipt);
         if (_inventoryTransfers.Count > Tuning.MaximumReceiptCount) _inventoryTransfers.RemoveAt(0);
         return receipt;
@@ -488,7 +488,7 @@ public sealed class D20Session : IDisposable
             new ItemEquipmentPolicy(1));
     }
 
-    /// <summary>Items are inventory-only Engine identities, so one prepared InventoryWorld candidate is the complete mutation.</summary>
+    /// <summary>Items are inventory-only Engine identities, so one prepared InventoryStore candidate is the complete mutation.</summary>
     public EntityId EquipImplement(EntityId owner, ImplementDefinition implement)
     {
         ThrowIfDisposed(); RequireParticipant(owner); ArgumentNullException.ThrowIfNull(implement);
@@ -496,14 +496,14 @@ public sealed class D20Session : IDisposable
         EquipmentSlotId slot = EquipmentSlotId.Parse(implement.Slot.Value); if (equipment.Assignments.Any(assignment => assignment.Slot == slot)) throw new D20SessionException("The canonical Engine equipment slot is occupied.");
         if (_nextInventoryOnlyEntity == ulong.MaxValue) throw new D20SessionException("Inventory-only entity identity is exhausted."); EntityId item = new(_nextInventoryOnlyEntity);
         var definition = new Rusty.Engine.Mechanics.ItemDefinition(ItemDefinitionId.Parse(implement.Id.Value), ItemKind.Unique, 1, equipment: new ItemEquipmentPolicy(1));
-        InventoryWorldCandidate candidate = Inventory.Prepare(); candidate.MaterializeUnique(new ItemState(item, definition), owner); candidate.Equip(owner, item, [new EquipmentSlotDefinition(slot)]); candidate.Publish(); _itemEquipment[item] = (EquipmentKind.Implement, implement.Id); _nextInventoryOnlyEntity++; Revision++; return item;
+        InventoryEdit candidate = Inventory.Prepare(); candidate.MaterializeUnique(new ItemState(item, definition), owner); candidate.Equip(owner, item, [new EquipmentSlotDefinition(slot)]); candidate.Publish(); _itemEquipment[item] = (EquipmentKind.Implement, implement.Id); _nextInventoryOnlyEntity++; Revision++; return item;
     }
     public void TransferImplementLoadout(EntityId item, EntityId fromOwner, EntityId toOwner, ImplementDefinition implement)
     {
         ThrowIfDisposed(); RequireParticipant(fromOwner); RequireParticipant(toOwner); ArgumentNullException.ThrowIfNull(implement);
         if (!Inventory.TryGetItem(item, out ItemState? currentItem) || currentItem is null || currentItem.Definition.Id != ItemDefinitionId.Parse(implement.Id.Value)) throw new D20SessionException("Transferred Engine item does not match the authored implement definition.");
         if (!Inventory.TryGetEquipment(toOwner, out EquipmentState? target) || target is null || target.Assignments.Any(assignment => assignment.Slot == EquipmentSlotId.Parse(implement.Slot.Value))) throw new D20SessionException("Target canonical Engine equipment slot is occupied.");
-        InventoryWorldCandidate candidate = Inventory.Prepare(); candidate.Unequip(fromOwner, item); candidate.TransferUnique(item, fromOwner, toOwner); candidate.Equip(toOwner, item, [new EquipmentSlotDefinition(EquipmentSlotId.Parse(implement.Slot.Value))]); candidate.Publish(); Revision++;
+        InventoryEdit candidate = Inventory.Prepare(); candidate.Unequip(fromOwner, item); candidate.TransferUnique(item, fromOwner, toOwner); candidate.Equip(toOwner, item, [new EquipmentSlotDefinition(EquipmentSlotId.Parse(implement.Slot.Value))]); candidate.Publish(); Revision++;
     }
     public int ChoiceIndex(int choiceIndex, int choiceCount) { ThrowIfDisposed(); if (choiceCount <= 0 || choiceIndex < 0 || choiceIndex >= choiceCount) throw new D20SessionException("Choice index is outside the authored target set."); return choiceIndex; }
 

@@ -340,7 +340,7 @@ static void SessionEngineStateAdmissionFences()
     using var session = new D20Session(content, RollSourceState.Static([]));
     var entityCount = session.Entities.CaptureEntities().Count;
     ExpectSession(() => session.AddParticipant(character, EncounterFaction.Party, 0), "vitality");
-    Assert(session.Entities.CaptureEntities().Count == entityCount, "invalid vitality leaves EntityWorld unchanged");
+    Assert(session.Entities.CaptureEntities().Count == entityCount, "invalid vitality leaves EntityStore unchanged");
     var actor = session.AddParticipant(character, EncounterFaction.Party);
     var immutableFact = session.Entities.Get(actor, D20ComponentTypes.Abilities);
     session.SetActionResource(actor, Id("guard"), 1);
