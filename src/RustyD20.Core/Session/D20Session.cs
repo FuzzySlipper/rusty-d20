@@ -39,7 +39,7 @@ public readonly record struct AbilityScoresFact(ImmutableArray<AbilityScoreEntry
 public readonly record struct ActionResourcesFact(ImmutableArray<ResourceEntry> Values);
 public readonly record struct ActivationBudgetsFact(ImmutableArray<BudgetEntry> Values);
 public readonly record struct EncounterParticipationFact(EncounterFaction Faction, bool Living);
-/// <summary>Duration/condition projection only; the attached EffectState is the canonical active-effect collection.</summary>
+/// <summary>Duration/condition projection only; the attached EffectsComponent is the canonical active-effect collection.</summary>
 public readonly record struct EffectProjectionFact(ImmutableArray<ScheduledEffectProjection> Values);
 public readonly record struct ScheduledEffectProjection(EffectInstanceId Instance, D20Id Effect, ulong ExpiresAtTurn);
 public static class D20ComponentTypes
@@ -186,7 +186,7 @@ public sealed class D20Session : IDisposable
             .Set(entity, D20ComponentTypes.Participation, new EncounterParticipationFact(faction, true))
             .Set(entity, D20ComponentTypes.Effects, new EffectProjectionFact([]));
         Entities.PrepareBatch(batch, Entities.Revision).Publish();
-        Entities.Add(entity, new EffectState(entity));
+        Entities.Add(entity, new EffectsComponent(entity));
         var stats = new StatsComponent();
         stats.AddStat(MaximumVitalityStat, track.Maximum);
         stats.AddTrack(VitalityTrack, track);
@@ -198,7 +198,7 @@ public sealed class D20Session : IDisposable
         ThrowIfDisposed(); RequireParticipant(owner); D20Id ownerId = _ownerIds[owner]; RegisterLoadoutOwner(ownerId, Tuning.ParticipantInventoryCapacity);
     }
     public VitalityProjection ReadVitality(EntityId entity) { Track value = RequireTrack(entity); return new(entity, value.ValueInt, checked((int)value.Minimum), value.Maximum.ValueInt); }
-    public bool IsParticipant(EntityId entity) => Entities.Has<EffectState>(entity) && HasVitality(entity);
+    public bool IsParticipant(EntityId entity) => Entities.Has<EffectsComponent>(entity) && HasVitality(entity);
     public EncounterFaction FactionOf(EntityId entity) => Entities.Get(entity, D20ComponentTypes.Participation).Faction;
     public bool IsLiving(EntityId entity) => Entities.Get(entity, D20ComponentTypes.Participation).Living && ReadVitality(entity).Current > 0;
     public bool IsVoluntaryMovementForbidden(EntityId entity)
@@ -358,9 +358,10 @@ public sealed class D20Session : IDisposable
         if (!Inventory.TryGetContainer(itemEntity, out EntityId source)) throw new D20SessionException($"Adventure item {item} has no Engine inventory owner.");
         if (source == destination) throw new D20SessionException($"Adventure item {item} is already owned by {toOwner}.");
         if (!_ownerIds.TryGetValue(source, out D20Id fromOwner)) throw new D20SessionException("Adventure item source owner is outside the admitted owner mapping.");
-        if (!Inventory.TryGetEquipment(source, out EquipmentState? sourceEquipment) || sourceEquipment is null) throw new D20SessionException("Adventure item source lacks canonical Engine equipment state.");
+        EquipmentComponent sourceEquipment = EquipmentFor(source);
 
-        InventoryEdit candidate = Inventory.Prepare();
+        InventoryComponent sourceInventory = InventoryFor(source);
+        InventoryEdit candidate = sourceInventory.Store.Prepare();
         if (sourceEquipment.ContainsItem(itemEntity)) candidate.Unequip(source, itemEntity);
         ItemTransferReceipt transfer = candidate.TransferUnique(itemEntity, source, destination);
         candidate.Publish();
@@ -375,7 +376,7 @@ public sealed class D20Session : IDisposable
     {
         EntityId itemEntity = ItemEntity(item);
         EntityId ownerEntity = OwnerEntity(owner);
-        if (!Inventory.TryGetContainer(itemEntity, out EntityId actual) || actual != ownerEntity) throw new D20SessionException($"Adventure item {item} is not contained by {owner}.");
+        if (!InventoryFor(ownerEntity).Contains(itemEntity)) throw new D20SessionException($"Adventure item {item} is not contained by {owner}.");
     }
 
     /// <summary>Plans grouped defeat recovery with detached tracks before adopting the session changes.</summary>
@@ -433,6 +434,11 @@ public sealed class D20Session : IDisposable
         CapacityMetricId metric = CapacityMetricId.Parse("d20.carried-items");
         Inventory.RegisterInventory(new InventoryState(owner, [new InventoryCapacityLimit(metric, checked((ulong)capacity))]));
         Inventory.RegisterEquipment(new EquipmentState(owner));
+        if (Entities.IsAlive(owner))
+        {
+            Entities.Add(owner, new InventoryComponent(Inventory, owner));
+            Entities.Add(owner, new EquipmentComponent(Inventory, owner));
+        }
         _ownerCapacities[ownerId] = capacity;
         Revision++;
     }
@@ -504,17 +510,17 @@ public sealed class D20Session : IDisposable
     public EntityId EquipImplement(EntityId owner, ImplementDefinition implement)
     {
         ThrowIfDisposed(); RequireParticipant(owner); ArgumentNullException.ThrowIfNull(implement);
-        if (!Inventory.TryGetInventory(owner, out _) || !Inventory.TryGetEquipment(owner, out EquipmentState? equipment) || equipment is null) throw new D20SessionException("Participant must register a loadout owner before equipping.");
+        if (!Entities.TryGet<InventoryComponent>(owner, out var inventory) || !Entities.TryGet<EquipmentComponent>(owner, out var equipment)) throw new D20SessionException("Participant must register a loadout owner before equipping.");
         EquipmentSlotId slot = EquipmentSlotId.Parse(implement.Slot.Value); if (equipment.Assignments.Any(assignment => assignment.Slot == slot)) throw new D20SessionException("The canonical Engine equipment slot is occupied.");
         if (_nextInventoryOnlyEntity == ulong.MaxValue) throw new D20SessionException("Inventory-only entity identity is exhausted."); EntityId item = new(_nextInventoryOnlyEntity);
         var definition = new Rusty.Engine.Mechanics.ItemDefinition(ItemDefinitionId.Parse(implement.Id.Value), ItemKind.Unique, 1, equipment: new ItemEquipmentPolicy(1));
-        InventoryEdit candidate = Inventory.Prepare(); candidate.MaterializeUnique(new ItemState(item, definition), owner); candidate.Equip(owner, item, [new EquipmentSlotDefinition(slot)]); candidate.Publish(); _itemEquipment[item] = (EquipmentKind.Implement, implement.Id); _nextInventoryOnlyEntity++; Revision++; return item;
+        InventoryEdit candidate = inventory.Store.Prepare(); candidate.MaterializeUnique(new ItemState(item, definition), inventory.Owner); candidate.Equip(owner, item, [new EquipmentSlotDefinition(slot)]); candidate.Publish(); _itemEquipment[item] = (EquipmentKind.Implement, implement.Id); _nextInventoryOnlyEntity++; Revision++; return item;
     }
     public void TransferImplementLoadout(EntityId item, EntityId fromOwner, EntityId toOwner, ImplementDefinition implement)
     {
         ThrowIfDisposed(); RequireParticipant(fromOwner); RequireParticipant(toOwner); ArgumentNullException.ThrowIfNull(implement);
         if (!Inventory.TryGetItem(item, out ItemState? currentItem) || currentItem is null || currentItem.Definition.Id != ItemDefinitionId.Parse(implement.Id.Value)) throw new D20SessionException("Transferred Engine item does not match the authored implement definition.");
-        if (!Inventory.TryGetEquipment(toOwner, out EquipmentState? target) || target is null || target.Assignments.Any(assignment => assignment.Slot == EquipmentSlotId.Parse(implement.Slot.Value))) throw new D20SessionException("Target canonical Engine equipment slot is occupied.");
+        if (!Entities.TryGet<EquipmentComponent>(toOwner, out var target) || target.Assignments.Any(assignment => assignment.Slot == EquipmentSlotId.Parse(implement.Slot.Value))) throw new D20SessionException("Target canonical Engine equipment slot is occupied.");
         InventoryEdit candidate = Inventory.Prepare(); candidate.Unequip(fromOwner, item); candidate.TransferUnique(item, fromOwner, toOwner); candidate.Equip(toOwner, item, [new EquipmentSlotDefinition(EquipmentSlotId.Parse(implement.Slot.Value))]); candidate.Publish(); Revision++;
     }
     public int ChoiceIndex(int choiceIndex, int choiceCount) { ThrowIfDisposed(); if (choiceCount <= 0 || choiceIndex < 0 || choiceIndex >= choiceCount) throw new D20SessionException("Choice index is outside the authored target set."); return choiceIndex; }
@@ -533,7 +539,7 @@ public sealed class D20Session : IDisposable
         EnsureFresh(preview); ResolvedAction action = RebindAction(preview); ReactionDefinition definition = RequireReaction(reaction, action.DefendedBy);
         ActionResourcesFact resources = Entities.Get(preview.Target, D20ComponentTypes.Resources); if (!TryValue(resources.Values, definition.Resource, out int before) || before < definition.Cost) throw new D20SessionException("Reaction resource is unavailable.");
         ActivationBudgetsFact budgets = Entities.Get(preview.Target, D20ComponentTypes.Budgets); EnsureCosts(budgets.Values, definition.Costs); ulong expires = checked(Turn + (ulong)_effects[definition.Effect].DurationTurns);
-        EffectState candidateEffects = CloneEffectState(preview.Target); ApplyOrRefreshEffect(candidateEffects, preview.Target, definition.Effect, preview.Operation); EffectProjectionFact afterProjection = Projection(Entities.Get(preview.Target, D20ComponentTypes.Effects), preview.Target, expires, definition.Effect);
+        EffectsComponent candidateEffects = CopyEffects(preview.Target); ApplyOrRefreshEffect(candidateEffects, preview.Target, definition.Effect, preview.Operation); EffectProjectionFact afterProjection = Projection(Entities.Get(preview.Target, D20ComponentTypes.Effects), preview.Target, expires, definition.Effect);
         EntityBatch batch = new EntityBatch()
             .Set(preview.Target, D20ComponentTypes.Resources, new ActionResourcesFact(ReplaceResource(resources.Values, definition.Resource, before - definition.Cost)))
             .Set(preview.Target, D20ComponentTypes.Budgets, new ActivationBudgetsFact(SpendCosts(budgets.Values, definition.Costs)))
@@ -567,7 +573,7 @@ public sealed class D20Session : IDisposable
         ActivationBudgetsFact liveTargetBudgets = Entities.Get(preview.Target, D20ComponentTypes.Budgets);
         EnsureCosts(liveTargetBudgets.Values, reactionDefinition.Costs);
         ulong expiresAtTurn = checked(Turn + (ulong)_effects[reactionDefinition.Effect].DurationTurns);
-        EffectState candidateEffects = CloneEffectState(preview.Target);
+        EffectsComponent candidateEffects = CopyEffects(preview.Target);
         ApplyOrRefreshEffect(candidateEffects, preview.Target, reactionDefinition.Effect, preview.Operation);
         EffectProjectionFact candidateProjection = Projection(
             Entities.Get(preview.Target, D20ComponentTypes.Effects),
@@ -647,7 +653,7 @@ public sealed class D20Session : IDisposable
         EnsureFresh(preview); ResolvedAction action = RebindAction(preview); if (RollSource.Position == ulong.MaxValue) throw new D20SessionException("Roll-source position is exhausted."); ulong nextPosition = RollSource.Position + 1; StaticActionRoll roll = ReadActionRoll(action.Damage);
         int total = roll.D20 + action.AbilityModifier; bool hit = total >= action.Defense; int damage = hit ? Math.Max(0, checked(roll.Damage.Sum(value => (int)value) + action.Damage.Bonus)) : 0;
         ActivationBudgetsFact afterBudgets = new(SpendCosts(Entities.Get(preview.Actor, D20ComponentTypes.Budgets).Values, action.Definition.Costs)); D20Id? effect = hit ? action.Definition.Effect : null;
-        EffectState? candidateEffects = null; EffectProjectionFact effectsAfter = Entities.Get(preview.Target, D20ComponentTypes.Effects); if (effect is D20Id effectId) { candidateEffects = CloneEffectState(preview.Target); ApplyOrRefreshEffect(candidateEffects, preview.Target, effectId, preview.Operation); effectsAfter = Projection(effectsAfter, preview.Target, checked(Turn + (ulong)_effects[effectId].DurationTurns), effectId); }
+        EffectsComponent? candidateEffects = null; EffectProjectionFact effectsAfter = Entities.Get(preview.Target, D20ComponentTypes.Effects); if (effect is D20Id effectId) { candidateEffects = CopyEffects(preview.Target); ApplyOrRefreshEffect(candidateEffects, preview.Target, effectId, preview.Operation); effectsAfter = Projection(effectsAfter, preview.Target, checked(Turn + (ulong)_effects[effectId].DurationTurns), effectId); }
         Track? candidateTrack = null; if (hit && damage != 0) { candidateTrack = CloneTrack(preview.Target); candidateTrack.Spend(damage); }
         bool targetDies = hit && candidateTrack is not null && candidateTrack.Current == 0;
         EntityBatch batch = new EntityBatch()
@@ -663,10 +669,10 @@ public sealed class D20Session : IDisposable
     }
     public void AdvanceTurn()
     {
-        ThrowIfDisposed(); ulong nextTurn = checked(Turn + 1); var mutations = new EntityBatch(); var candidates = new Dictionary<EntityId, EffectState>();
+        ThrowIfDisposed(); ulong nextTurn = checked(Turn + 1); var mutations = new EntityBatch(); var candidates = new Dictionary<EntityId, EffectsComponent>();
         foreach (EntityComponent<EffectProjectionFact> component in Entities.Query(D20ComponentTypes.Effects))
         {
-            EffectState candidate = CloneEffectState(component.Entity);
+            EffectsComponent candidate = CopyEffects(component.Entity);
             foreach (ScheduledEffectProjection value in component.Value.Values.Where(value => value.ExpiresAtTurn <= nextTurn))
             {
                 if (candidate.Effects.Any(effect => effect.Instance == value.Instance)) candidate.Expire(value.Instance);
@@ -675,7 +681,7 @@ public sealed class D20Session : IDisposable
             if (!after.Equals(component.Value)) mutations.Set(component.Entity, D20ComponentTypes.Effects, after);
             candidates[component.Entity] = candidate;
         }
-        EntityEdit prepared = Entities.PrepareBatch(mutations, Entities.Revision); prepared.Publish(); foreach ((EntityId entity, EffectState candidate) in candidates) Entities.Replace(entity, candidate); Turn = nextTurn; Revision++;
+        EntityEdit prepared = Entities.PrepareBatch(mutations, Entities.Revision); prepared.Publish(); foreach ((EntityId entity, EffectsComponent candidate) in candidates) Entities.Replace(entity, candidate); Turn = nextTurn; Revision++;
     }
     /// <summary>Closed product save facts; Engine state is reconstructed through normal managed APIs on restore.</summary>
     public D20SessionSave CaptureSave()
@@ -759,13 +765,13 @@ public sealed class D20Session : IDisposable
                 if (!candidate._authoredItems.TryGetValue(authoredId, out RustyD20.Core.Rules.ItemDefinition? authored) || savedItem.Kind != authored.EquipmentKind || savedItem.Equipment is not D20Id savedEquipment || savedEquipment != authored.Equipment || savedItem.Implement != authored.Equipment) throw new D20SessionException("Saved authored item mapping is invalid.");
                 kind = authored.EquipmentKind; equipmentId = authored.Equipment; engineDefinition = candidate.ToEngineItemDefinition(authoredId, authored, equipmentId); candidate._itemEntities.Add(authoredId, entity); candidate._itemIds.Add(entity, authoredId);
                 candidate._itemEquipment.Add(entity, (kind, equipmentId));
-                candidate.Inventory.MaterializeUnique(new ItemState(entity, engineDefinition), owner);
+                candidate.InventoryFor(owner).MaterializeUnique(new ItemState(entity, engineDefinition));
                 if (savedItem.EquippedSlots.Count == 1)
                 {
                     D20Id expectedSlot = kind == EquipmentKind.Armor ? candidate._armors[equipmentId].Slot : candidate._implements[equipmentId].Slot;
                     string savedSlot = savedItem.EquippedSlots[0];
                     if (savedSlot != expectedSlot.Value && savedSlot != $"d20.initial.{authoredId.Value}") throw new D20SessionException("Saved item equipment slot does not match its authored equipment.");
-                    EquipmentService.Equip(candidate.Inventory, owner, entity, [new EquipmentSlotDefinition(EquipmentSlotId.Parse(savedItem.EquippedSlots[0]))]);
+                    candidate.EquipmentFor(owner).Equip(entity, [new EquipmentSlotDefinition(EquipmentSlotId.Parse(savedItem.EquippedSlots[0]))]);
                 }
                 candidate._nextInventoryOnlyEntity = Math.Max(candidate._nextInventoryOnlyEntity, checked(savedItem.Entity + 1));
             }
@@ -843,34 +849,24 @@ public sealed class D20Session : IDisposable
         var values = current.Values.Where(value => value.Instance != instance).Append(new ScheduledEffectProjection(instance, justApplied, expires)).OrderBy(value => value.Instance.Value, StringComparer.Ordinal).ToImmutableArray();
         return new EffectProjectionFact(values);
     }
-    private EffectState CloneEffectState(EntityId entity)
-    {
-        var clone = new EffectState(entity);
-        foreach (ActiveEffect effect in Entities.Get<EffectState>(entity).Effects.OrderBy(value => value.Instance.Value, StringComparer.Ordinal))
-        {
-            if (effect.Definition.Stacking == EffectStackingPolicy.Refresh && clone.Effects.Any(value => value.Definition.StackingGroup == effect.Definition.StackingGroup)) clone.Refresh(effect.Instance, effect.Provenance, effect.Stacks);
-            else if (effect.Definition.Stacking == EffectStackingPolicy.Replace && clone.Effects.Any(value => value.Definition.StackingGroup == effect.Definition.StackingGroup)) clone.Replace(effect.Definition, effect.Instance, effect.Provenance, effect.Stacks);
-            else clone.Apply(effect.Definition, effect.Instance, effect.Provenance, effect.Stacks);
-        }
-        return clone;
-    }
+    private EffectsComponent CopyEffects(EntityId entity) => Entities.Get<EffectsComponent>(entity).Copy();
     private Track CloneTrack(EntityId entity)
     {
         Track source = RequireTrack(entity);
         return new Track(source.Maximum.Copy(), source.Current, source.Minimum,
             source.MaximumChangePolicy, source.Quantum, source.Rounding, source.IntegerRounding);
     }
-    private void ApplyOrRefreshEffect(EntityId entity, D20Id effect, OperationId operation) => ApplyOrRefreshEffect(Entities.Get<EffectState>(entity), entity, effect, operation);
-    private void ApplyOrRefreshEffect(EffectState state, EntityId entity, D20Id effect, OperationId operation) { EffectInstanceId instance = EffectInstance(entity, effect); var definition = _engineEffects[effect]; var provenance = new RequestSourceIdentity(operation, SourceInstanceId.Parse($"d20.effect.{effect.Value}")); if (state.Effects.Any(value => value.Instance == instance)) state.Refresh(instance, provenance, 1); else state.Apply(definition, instance, provenance, 1); }
+    private void ApplyOrRefreshEffect(EntityId entity, D20Id effect, OperationId operation) => ApplyOrRefreshEffect(Entities.Get<EffectsComponent>(entity), entity, effect, operation);
+    private void ApplyOrRefreshEffect(EffectsComponent state, EntityId entity, D20Id effect, OperationId operation) { EffectInstanceId instance = EffectInstance(entity, effect); var definition = _engineEffects[effect]; var provenance = new RequestSourceIdentity(operation, SourceInstanceId.Parse($"d20.effect.{effect.Value}")); if (state.Effects.Any(value => value.Instance == instance)) state.Refresh(instance, provenance, 1); else state.Apply(definition, instance, provenance, 1); }
     private IReadOnlyList<ScheduledEffectProjection> ActiveEffects(EntityId entity) => ActiveEffects(entity, null, null);
-    private IReadOnlyList<ScheduledEffectProjection> ActiveEffects(EntityId entity, EffectState? effectOverride, EffectProjectionFact? projectionOverride)
+    private IReadOnlyList<ScheduledEffectProjection> ActiveEffects(EntityId entity, EffectsComponent? effectOverride, EffectProjectionFact? projectionOverride)
     {
-        EffectState effects = effectOverride ?? Entities.Get<EffectState>(entity);
+        EffectsComponent effects = effectOverride ?? Entities.Get<EffectsComponent>(entity);
         EffectProjectionFact projection = projectionOverride ?? Entities.Get(entity, D20ComponentTypes.Effects);
         var active = effects.Effects.Select(value => value.Instance).ToHashSet();
         return projection.Values.Where(value => active.Contains(value.Instance) && value.ExpiresAtTurn > Turn).ToArray();
     }
-    private ActionPreview PreviewAfterReaction(ActionPreview source, ActivationBudgetsFact actorBudgets, ActivationBudgetsFact targetBudgets, EffectState targetEffects, EffectProjectionFact targetProjection)
+    private ActionPreview PreviewAfterReaction(ActionPreview source, ActivationBudgetsFact actorBudgets, ActivationBudgetsFact targetBudgets, EffectsComponent targetEffects, EffectProjectionFact targetProjection)
     {
         ActionDefinition definition = RequireAction(source.Action);
         EncounterParticipationFact actorParticipation = Entities.Get(source.Actor, D20ComponentTypes.Participation);
@@ -881,7 +877,7 @@ public sealed class D20Session : IDisposable
         ResolvedAttack resolved = ResolveAttack(source.Actor, definition);
         AbilityScoresFact abilities = Entities.Get(source.Actor, D20ComponentTypes.Abilities);
         if (!TryValue(abilities.Values, resolved.Ability, out int score)) throw new D20SessionException("The actor lacks the authored ability.");
-        EffectState? actorEffects = source.Actor == source.Target ? targetEffects : null;
+        EffectsComponent? actorEffects = source.Actor == source.Target ? targetEffects : null;
         EffectProjectionFact? actorProjection = source.Actor == source.Target ? targetProjection : null;
         IReadOnlyList<ScheduledEffectProjection> active = ActiveEffects(source.Actor, actorEffects, actorProjection);
         int penalty = active.Select(effect => _effects[effect.Effect]).SelectMany(effect => effect.Conditions).Where(clause => clause.Kind == ConditionKind.AttackPenalty).Sum(clause => clause.Amount);
@@ -908,9 +904,9 @@ public sealed class D20Session : IDisposable
         };
     }
     private static EffectInstanceId EffectInstance(EntityId entity, D20Id effect) => EffectInstanceId.Parse($"d20.effect.{entity.Value}.{effect.Value}");
-    private ResolvedAttack ResolveAttack(EntityId actor, ActionDefinition action) { if (action.Attack.Ability is D20Id ability && action.Attack.Defense is D20Id defense && action.Attack.Damage is DamageDefinition damage) return new(ability, defense, damage, action.Attack.Range); D20Id implementId = action.Attack.Implement ?? throw new D20SessionException("Action lacks a resolved attack."); ImplementDefinition implement = _implements[implementId]; if (!Inventory.TryGetEquipment(actor, out EquipmentState? equipment) || equipment is null || !equipment.Assignments.Any(assignment => _itemEquipment.TryGetValue(assignment.Item, out (EquipmentKind Kind, D20Id Equipment) value) && value.Kind == EquipmentKind.Implement && value.Equipment == implementId)) throw new D20SessionException("The required canonical Engine implement is not equipped."); return new(implement.Ability, implement.Defense, implement.Damage, implement.Range); }
+    private ResolvedAttack ResolveAttack(EntityId actor, ActionDefinition action) { if (action.Attack.Ability is D20Id ability && action.Attack.Defense is D20Id defense && action.Attack.Damage is DamageDefinition damage) return new(ability, defense, damage, action.Attack.Range); D20Id implementId = action.Attack.Implement ?? throw new D20SessionException("Action lacks a resolved attack."); ImplementDefinition implement = _implements[implementId]; if (!Entities.TryGet<EquipmentComponent>(actor, out var equipment) || !equipment.Assignments.Any(assignment => _itemEquipment.TryGetValue(assignment.Item, out (EquipmentKind Kind, D20Id Equipment) value) && value.Kind == EquipmentKind.Implement && value.Equipment == implementId)) throw new D20SessionException("The required canonical Engine implement is not equipped."); return new(implement.Ability, implement.Defense, implement.Damage, implement.Range); }
     private int Defense(EntityId target, D20Id defense) => Defense(target, defense, null, null);
-    private int Defense(EntityId target, D20Id defense, EffectState? effectOverride, EffectProjectionFact? projectionOverride) { DefenseDefinition definition = _defenses[defense]; AbilityScoresFact abilities = Entities.Get(target, D20ComponentTypes.Abilities); int effects = ActiveEffects(target, effectOverride, projectionOverride).Select(value => _effects[value.Effect]).Where(value => value.Defense == defense).Sum(value => value.DefenseBonus); int armor = 0; if (Inventory.TryGetEquipment(target, out EquipmentState? equipment) && equipment is not null) { armor = equipment.Assignments.Where(assignment => _itemEquipment.TryGetValue(assignment.Item, out (EquipmentKind Kind, D20Id Equipment) value) && value.Kind == EquipmentKind.Armor && _armors.TryGetValue(value.Equipment, out ArmorDefinition? authored) && authored.Defense == defense).Select(assignment => _itemEquipment[assignment.Item].Equipment).Select(id => _armors[id].Bonus).Sum(); } return definition.Base + definition.Abilities.Select(ability => TryValue(abilities.Values, ability, out int score) ? AbilityModifier(score, Tuning) : int.MinValue).Max() + armor + effects; }
+    private int Defense(EntityId target, D20Id defense, EffectsComponent? effectOverride, EffectProjectionFact? projectionOverride) { DefenseDefinition definition = _defenses[defense]; AbilityScoresFact abilities = Entities.Get(target, D20ComponentTypes.Abilities); int effects = ActiveEffects(target, effectOverride, projectionOverride).Select(value => _effects[value.Effect]).Where(value => value.Defense == defense).Sum(value => value.DefenseBonus); int armor = 0; if (Entities.TryGet<EquipmentComponent>(target, out var equipment)) { armor = equipment.Assignments.Where(assignment => _itemEquipment.TryGetValue(assignment.Item, out (EquipmentKind Kind, D20Id Equipment) value) && value.Kind == EquipmentKind.Armor && _armors.TryGetValue(value.Equipment, out ArmorDefinition? authored) && authored.Defense == defense).Select(assignment => _itemEquipment[assignment.Item].Equipment).Select(id => _armors[id].Bonus).Sum(); } return definition.Base + definition.Abilities.Select(ability => TryValue(abilities.Values, ability, out int score) ? AbilityModifier(score, Tuning) : int.MinValue).Max() + armor + effects; }
     private static void EnsureTarget(EntityId actor, EntityId target, EncounterParticipationFact actorParticipation, EncounterParticipationFact targetParticipation, ActionTarget authored) { if (authored.Kind != TargetKind.Participant || authored.MaximumTargets != 1) throw new D20SessionException("This session action API admits exactly one participant target."); bool allowed = authored.Team switch { TargetTeam.Hostile => actorParticipation.Faction != targetParticipation.Faction, TargetTeam.Ally => actorParticipation.Faction == targetParticipation.Faction && actor != target, TargetTeam.SelfOnly => actor == target, TargetTeam.Any => true, _ => false, }; if (!allowed) throw new D20SessionException("Target does not satisfy the authored target team policy."); }
     private static Track CreateVitalityTrack(int value) => new(
         new Stat(value, minimum: 0, quantum: 1, integerRounding: MidpointRounding.ToZero),
@@ -918,7 +914,7 @@ public sealed class D20Session : IDisposable
     private ActionDefinition RequireAction(D20Id action) => _actions.TryGetValue(action, out ActionDefinition? value) ? value : throw new D20SessionException("Unknown action.");
     private bool HasVitality(EntityId entity) => Entities.TryGet<StatsComponent>(entity, out var stats) && stats.Tracks.ContainsKey(VitalityTrack);
     private Track RequireTrack(EntityId entity) => Entities.TryGet<StatsComponent>(entity, out var stats) && stats.TryGetTrack(VitalityTrack, out var track) ? track : throw new D20SessionException("Participant has no vitality track.");
-    private void RequireParticipant(EntityId entity) { if (!Entities.IsAlive(entity) || !Entities.Has<EffectState>(entity) || !HasVitality(entity)) throw new D20SessionException("Unknown participant."); }
+    private void RequireParticipant(EntityId entity) { if (!Entities.IsAlive(entity) || !Entities.Has<EffectsComponent>(entity) || !HasVitality(entity)) throw new D20SessionException("Unknown participant."); }
     private static bool TryValue(ImmutableArray<AbilityScoreEntry> values, D20Id id, out int value) { foreach (AbilityScoreEntry entry in values) if (entry.Id == id) { value = entry.Value; return true; } value = 0; return false; }
     private static bool TryValue(ImmutableArray<ResourceEntry> values, D20Id id, out int value) { foreach (ResourceEntry entry in values) if (entry.Id == id) { value = entry.Value; return true; } value = 0; return false; }
     private static bool TryValue(ImmutableArray<BudgetEntry> values, D20Id id, out int value) { foreach (BudgetEntry entry in values) if (entry.Id == id) { value = entry.Value; return true; } value = 0; return false; }
@@ -944,7 +940,11 @@ public sealed class D20Session : IDisposable
     }
     private AbilityDefinition AbilityDefinition(D20Id id) => _abilities.TryGetValue(id, out AbilityDefinition? definition) ? definition : throw new D20SessionException($"Unknown ability {id}.");
     private ulong ComponentRevision<T>(EntityId entity, ComponentType<T> component) where T : struct => Entities.GetComponentRevision(entity, component).Revision;
-    private ulong EquipmentRevision(EntityId entity) => Inventory.TryGetEquipment(entity, out EquipmentState? state) && state is not null ? state.Revision : 0;
+    private InventoryComponent InventoryFor(EntityId owner) => Entities.IsAlive(owner)
+        ? Entities.Get<InventoryComponent>(owner) : new InventoryComponent(Inventory, owner);
+    private EquipmentComponent EquipmentFor(EntityId owner) => Entities.IsAlive(owner)
+        ? Entities.Get<EquipmentComponent>(owner) : new EquipmentComponent(Inventory, owner);
+    private ulong EquipmentRevision(EntityId entity) => Entities.TryGet<EquipmentComponent>(entity, out var equipment) ? equipment.Revision : 0;
     private void Replace<T>(EntityId entity, ComponentType<T> component, Func<T, T> mutate) where T : struct { T current = Entities.Get(entity, component); Entities.Set(entity, component, mutate(current), Entities.GetComponentRevision(entity, component)); Revision++; }
     private void ThrowIfDisposed() { if (_disposed) throw new ObjectDisposedException(nameof(D20Session)); }
     public void Dispose() { if (_disposed) return; Entities.Dispose(); _disposed = true; }

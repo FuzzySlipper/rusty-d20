@@ -325,7 +325,10 @@ static void SessionStaleReactionAndEquipment()
     session.RegisterLoadoutOwner(actor);
     var content = D20ContentCatalog.Compile();
     var blade = content.Catalog.Implements[Id("training-blade")];
-    session.EquipImplement(actor, blade);
+    var liveInventory = session.Entities.Get<InventoryComponent>(actor);
+    var liveEquipment = session.Entities.Get<EquipmentComponent>(actor);
+    var bladeEntity = session.EquipImplement(actor, blade);
+    Assert(liveInventory.Contains(bladeEntity) && liveEquipment.ContainsItem(bladeEntity), "attached facades follow a grouped loadout publication");
     session.SetActionResource(target, Id("guard"), 2);
     session.SetActivationBudget(target, Id("reaction"), 1);
     var preview = session.PreviewAction(actor, target, Id("longsword-strike"), OperationId.Parse("check-reaction"));
@@ -347,7 +350,13 @@ static void SessionStaleReactionAndEquipment()
     var transferRevision = equipment.Inventory.Revision;
     ExpectSession(() => equipment.TransferImplementLoadout(equippedBlade, equipmentActor, equipmentTarget, bow), "does not match");
     Assert(equipment.Inventory.Revision == transferRevision, "mismatched authored implement leaves canonical inventory unchanged");
+    var sourceInventory = equipment.Entities.Get<InventoryComponent>(equipmentActor);
+    var sourceEquipment = equipment.Entities.Get<EquipmentComponent>(equipmentActor);
+    var destinationInventory = equipment.Entities.Get<InventoryComponent>(equipmentTarget);
+    var destinationEquipment = equipment.Entities.Get<EquipmentComponent>(equipmentTarget);
     equipment.TransferImplementLoadout(equippedBlade, equipmentActor, equipmentTarget, blade);
+    Assert(!sourceInventory.Contains(equippedBlade) && !sourceEquipment.ContainsItem(equippedBlade)
+        && destinationInventory.Contains(equippedBlade) && destinationEquipment.ContainsItem(equippedBlade), "retained entity facades follow grouped transfer and re-equip");
     Assert(equipment.Inventory.TryGetEquipment(equipmentTarget, out var targetLoadout) && targetLoadout!.ContainsItem(equippedBlade), "loadout transfer uses canonical Engine containment and equipment state");
 }
 
@@ -374,18 +383,21 @@ static void SessionEngineStateAdmissionFences()
     Assert(session.Inventory.Revision == inventoryRevision, "occupied slot leaves canonical inventory unchanged");
 
     using var repeated = NewSession([new(20, [4]), new(20, [4])], out var repeatedActor, out var repeatedTarget);
-    EffectState attached = repeated.Entities.Get<EffectState>(repeatedTarget);
-    Assert(repeated.Entities.Has<EffectState>(repeatedTarget) && attached.Owner == repeatedTarget && ReferenceEquals(attached, repeated.Entities.Get<EffectState>(repeatedTarget)), "participants attach and return their live Engine EffectState instance");
+    EffectsComponent attached = repeated.Entities.Get<EffectsComponent>(repeatedTarget);
+    Assert(repeated.Entities.Has<EffectsComponent>(repeatedTarget) && attached.Owner == repeatedTarget && ReferenceEquals(attached, repeated.Entities.Get<EffectsComponent>(repeatedTarget)), "participants attach and return their live Engine EffectsComponent instance");
     var first = repeated.ApplyAction(repeated.PreviewAction(repeatedActor, repeatedTarget, Id("disrupt"), OperationId.Parse("check-refresh-one")));
-    EffectState applied = repeated.Entities.Get<EffectState>(repeatedTarget);
-    Assert(!ReferenceEquals(attached, applied) && applied.Effects.Count == 1, "effect application replaces the attached EffectState with its mutated candidate");
+    EffectsComponent applied = repeated.Entities.Get<EffectsComponent>(repeatedTarget);
+    var detachedEffects = applied.Copy();
+    detachedEffects.Expire(detachedEffects.Effects.Single().Instance);
+    Assert(applied.Effects.Count == 1 && detachedEffects.Effects.Count == 0, "detached D20 effect planning cannot mutate attached effects");
+    Assert(!ReferenceEquals(attached, applied) && applied.Effects.Count == 1, "effect application replaces the attached EffectsComponent with its mutated candidate");
     repeated.SetActivationBudget(repeatedActor, Id("bonus-action"), 1);
     var second = repeated.ApplyAction(repeated.PreviewAction(repeatedActor, repeatedTarget, Id("disrupt"), OperationId.Parse("check-refresh-two")));
-    EffectState refreshed = repeated.Entities.Get<EffectState>(repeatedTarget);
-    Assert(first.Effect == Id("unsettled") && second.Effect == Id("unsettled") && !ReferenceEquals(applied, refreshed) && refreshed.Effects.Count == 1 && repeated.Entities.Get(repeatedTarget, D20ComponentTypes.Effects).Values.Length == 1, "repeated D20 effects replace the attached EffectState while preserving one active instance");
+    EffectsComponent refreshed = repeated.Entities.Get<EffectsComponent>(repeatedTarget);
+    Assert(first.Effect == Id("unsettled") && second.Effect == Id("unsettled") && !ReferenceEquals(applied, refreshed) && refreshed.Effects.Count == 1 && repeated.Entities.Get(repeatedTarget, D20ComponentTypes.Effects).Values.Length == 1, "repeated D20 effects replace the attached EffectsComponent while preserving one active instance");
     repeated.AdvanceTurn();
-    EffectState expired = repeated.Entities.Get<EffectState>(repeatedTarget);
-    Assert(!ReferenceEquals(refreshed, expired) && expired.Effects.Count == 0, "turn expiry publishes the replacement EffectState whose mutation removes expired effects");
+    EffectsComponent expired = repeated.Entities.Get<EffectsComponent>(repeatedTarget);
+    Assert(!ReferenceEquals(refreshed, expired) && expired.Effects.Count == 0, "turn expiry publishes the replacement EffectsComponent whose mutation removes expired effects");
 
     using var overflow = NewSession([new(20, [4])], out var overflowActor, out var overflowTarget, ulong.MaxValue);
     var overflowPreview = overflow.PreviewAction(overflowActor, overflowTarget, Id("disrupt"), OperationId.Parse("check-roll-overflow"));

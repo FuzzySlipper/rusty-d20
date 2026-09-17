@@ -48,7 +48,11 @@ save meaning. Participant vitality is owned by the entity’s Engine `StatsCompo
 `D20Session.MaximumVitalityStat` entry is the same `Stat` referenced by its
 `D20Session.VitalityTrack`. Actions and recovery update that live track, and
 projections/save capture read it directly. Ability facts and D20 rules remain
-product-owned.
+product-owned. The attached `EffectsComponent` owns active effects; action
+planning uses its detached `Copy()` without replaying mutations. Registered
+participant loadouts attach `InventoryComponent` and `EquipmentComponent`, live
+owner-scoped access to the session's single `InventoryStore`. Grouped transfers
+remain explicit inventory edits. Storage identities need no EntityStore rows.
 
 `TacticalEncounter` applies D20 target, range, initiative,
 movement, reaction, and bounded opposition policy over Engine spatial facts.
