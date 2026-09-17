@@ -414,7 +414,7 @@ static void TacticalInitiativeAndReaction()
     Assert(encounter.CurrentActor == Id("mara-venn"), "initiative ties use stable Engine entity identity ordering");
     encounter.PartyAction(Id("mara-venn"), Id("gate-skirmisher"), Id("disrupt"), OperationId.Parse("tactical-session"));
     if (encounter.PendingReaction is not null) encounter.ResolveReaction(Id("parry"), false);
-    Assert(session.ReadVitality(opposition).Current.Raw < 24, "tactical action delegates damage to canonical D20 session tracks");
+    Assert(session.ReadVitality(opposition).Current < 24, "tactical action delegates damage to canonical D20 session tracks");
 
     using var stale = NewSession([new(20, [4])], out var staleActor, out var staleTarget);
     stale.RegisterLoadoutOwner(staleActor);
@@ -508,7 +508,7 @@ static void DefeatRecoveryTransaction()
     using var session = TerminalAdventureSession(content, adventure, Id("iron-warden"), EncounterResult.Defeat);
     var defeatedPartyMember = session.OwnerEntity(Id("mara-venn"));
     var opposition = session.OwnerEntity(Id("iron-warden"));
-    Assert(session.ReadVitality(defeatedPartyMember).Current.Raw == 0, "focused defeat setup is derived from strict saved vitality facts");
+    Assert(session.ReadVitality(defeatedPartyMember).Current == 0, "focused defeat setup is derived from strict saved vitality facts");
     ulong beforeRecoveryRevision = session.Revision;
     var service = DispatchProxy.Create<ISpatialService, RecordingSpatialService>();
     using var gateway = new EngineCampaignSpatialGateway(service, adventure.Dungeon);
@@ -518,13 +518,13 @@ static void DefeatRecoveryTransaction()
     var tactical = BuildTactical(content, session, Id("iron-warden"), gateway);
     campaign.ResolveEncounter(tactical);
     int recovery = content.Catalog.Encounters[Id("iron-warden")].Defeat.RecoveryVitality!.Value;
-    Assert(campaign.Snapshot().Outcome == EncounterResult.Defeat && session.ReadVitality(defeatedPartyMember).Current.Raw == recovery && session.Revision == beforeRecoveryRevision + 1, "authored defeat recovery restores party vitality through one detached session commit");
+    Assert(campaign.Snapshot().Outcome == EncounterResult.Defeat && session.ReadVitality(defeatedPartyMember).Current == recovery && session.Revision == beforeRecoveryRevision + 1, "authored defeat recovery restores party vitality through one detached session commit");
     ulong afterRecoveryRevision = session.Revision;
-    int afterRecoveryVitality = checked((int)session.ReadVitality(defeatedPartyMember).Current.Raw);
+    int afterRecoveryVitality = checked((int)session.ReadVitality(defeatedPartyMember).Current);
     ExpectCampaign(() => campaign.ResolveEncounter(tactical), "requires Encounter");
-    Assert(session.Revision == afterRecoveryRevision && session.ReadVitality(defeatedPartyMember).Current.Raw == afterRecoveryVitality, "defeat recovery is exactly once at the campaign outcome boundary");
+    Assert(session.Revision == afterRecoveryRevision && session.ReadVitality(defeatedPartyMember).Current == afterRecoveryVitality, "defeat recovery is exactly once at the campaign outcome boundary");
     ExpectSession(() => session.ApplyDefeatRecovery([opposition], 0), "positive");
-    Assert(session.Revision == afterRecoveryRevision && session.ReadVitality(defeatedPartyMember).Current.Raw == afterRecoveryVitality, "invalid recovery leaves the live session unchanged");
+    Assert(session.Revision == afterRecoveryRevision && session.ReadVitality(defeatedPartyMember).Current == afterRecoveryVitality, "invalid recovery leaves the live session unchanged");
 }
 
 static void TacticalReviewFindings()
