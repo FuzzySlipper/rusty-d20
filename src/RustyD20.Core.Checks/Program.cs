@@ -431,8 +431,20 @@ static void SessionFreshRestore()
     var save = session.CaptureSave();
     using var restored = D20Session.Restore(D20ContentCatalog.Compile(), save);
     Assert(restored.CaptureSave().Participants.Count == save.Participants.Count && restored.RollSource.Position == save.RollSource.Position, "session restore builds a fresh Engine-backed candidate with roll position and effects");
+    var liveStats = session.Entities.Get<StatsComponent>(target);
+    var rebuiltStats = restored.Entities.Get<StatsComponent>(target);
+    var rebuiltTrack = rebuiltStats.GetTrack(D20Session.VitalityTrack);
+    Assert(ReferenceEquals(rebuiltTrack.Maximum, rebuiltStats.GetStat(D20Session.MaximumVitalityStat)), "restore rebuilds shared maximum Stat/Track identity");
+    Assert(!ReferenceEquals(liveStats, rebuiltStats) && !ReferenceEquals(liveStats.GetTrack(D20Session.VitalityTrack), rebuiltTrack), "restored graph is detached from live gameplay");
+    var savedVitality = save.Participants.Single(participant => participant.Entity == target.Value).Vitality;
+    liveStats.GetTrack(D20Session.VitalityTrack).Restore(1);
+    Assert(save.Participants.Single(participant => participant.Entity == target.Value).Vitality == savedVitality && rebuiltTrack.ValueInt == savedVitality, "captured durable values and restored graph do not alias live classes");
+    rebuiltStats.GetStat(D20Session.MaximumVitalityStat).BaseValue += 5;
+    Assert(rebuiltTrack.MaximumValue == restored.ReadVitality(target).Maximum, "restored links remain live");
+    var liveBeforeFailure = session.ReadVitality(target);
     var malformed = save with { Participants = [save.Participants[0] with { Entity = 99 }] };
     ExpectSession(() => D20Session.Restore(D20ContentCatalog.Compile(), malformed), "identity");
+    Assert(ReferenceEquals(liveStats, session.Entities.Get<StatsComponent>(target)) && session.ReadVitality(target) == liveBeforeFailure, "failed build leaves the live graph untouched");
 }
 
 static void TacticalInitiativeAndReaction()
