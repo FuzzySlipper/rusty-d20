@@ -119,7 +119,8 @@ public sealed class D20Session : IDisposable
     private readonly IReadOnlyDictionary<D20Id, ReactionDefinition> _reactions;
     private readonly IReadOnlyDictionary<D20Id, Rusty.Engine.Mechanics.EffectDefinition> _engineEffects;
     private readonly ScopedSeededRollAdapter? _seededRolls;
-    private readonly Dictionary<EntityId, Track> _vitalityTracks = [];
+    public static readonly StatId MaximumVitalityStat = StatId.Parse("d20.maximum-vitality");
+    public static readonly TrackId VitalityTrack = TrackId.Parse("d20.vitality");
     private readonly Dictionary<EntityId, D20Id> _participantCharacters = [];
     private readonly Dictionary<D20Id, EntityId> _ownerEntities = [];
     private readonly Dictionary<EntityId, D20Id> _ownerIds = [];
@@ -186,14 +187,18 @@ public sealed class D20Session : IDisposable
             .Set(entity, D20ComponentTypes.Effects, new EffectProjectionFact([]));
         Entities.PrepareBatch(batch, Entities.Revision).Publish();
         Entities.Add(entity, new EffectState(entity));
-        _vitalityTracks.Add(entity, track); _participantCharacters.Add(entity, character.Id); _ownerEntities.Add(character.Id, entity); _ownerIds.Add(entity, character.Id); _ownerKinds[character.Id] = SessionOwnerKind.Participant; _ownerCapacities[character.Id] = Tuning.ParticipantInventoryCapacity; Revision++; return entity;
+        var stats = new StatsComponent();
+        stats.AddStat(MaximumVitalityStat, track.Maximum);
+        stats.AddTrack(VitalityTrack, track);
+        Entities.Add(entity, stats);
+        _participantCharacters.Add(entity, character.Id); _ownerEntities.Add(character.Id, entity); _ownerIds.Add(entity, character.Id); _ownerKinds[character.Id] = SessionOwnerKind.Participant; _ownerCapacities[character.Id] = Tuning.ParticipantInventoryCapacity; Revision++; return entity;
     }
     public void RegisterLoadoutOwner(EntityId owner)
     {
         ThrowIfDisposed(); RequireParticipant(owner); D20Id ownerId = _ownerIds[owner]; RegisterLoadoutOwner(ownerId, Tuning.ParticipantInventoryCapacity);
     }
     public VitalityProjection ReadVitality(EntityId entity) { Track value = RequireTrack(entity); return new(entity, value.ValueInt, checked((int)value.Minimum), value.Maximum.ValueInt); }
-    public bool IsParticipant(EntityId entity) => Entities.Has<EffectState>(entity) && _vitalityTracks.ContainsKey(entity);
+    public bool IsParticipant(EntityId entity) => Entities.Has<EffectState>(entity) && HasVitality(entity);
     public EncounterFaction FactionOf(EntityId entity) => Entities.Get(entity, D20ComponentTypes.Participation).Faction;
     public bool IsLiving(EntityId entity) => Entities.Get(entity, D20ComponentTypes.Participation).Living && ReadVitality(entity).Current > 0;
     public bool IsVoluntaryMovementForbidden(EntityId entity)
@@ -386,7 +391,7 @@ public sealed class D20Session : IDisposable
         var mutations = new Dictionary<EntityId, (int Before, int After, int Applied)>(entities.Length);
         foreach (EntityId entity in entities)
         {
-            if (!_vitalityTracks.ContainsKey(entity) || Entities.Get(entity, D20ComponentTypes.Participation).Faction != EncounterFaction.Party) throw new D20SessionException("Defeat recovery may target only admitted party participants.");
+            if (!HasVitality(entity) || Entities.Get(entity, D20ComponentTypes.Participation).Faction != EncounterFaction.Party) throw new D20SessionException("Defeat recovery may target only admitted party participants.");
             Track candidate = CloneTrack(entity);
             int before = candidate.ValueInt;
             int applied = checked((int)candidate.Restore(amount));
@@ -406,7 +411,7 @@ public sealed class D20Session : IDisposable
         }
         EntityEdit prepared = Entities.PrepareBatch(batch, Entities.Revision);
         prepared.Publish();
-        foreach ((EntityId entity, Track candidate) in candidates) _vitalityTracks[entity] = candidate;
+        foreach ((EntityId entity, Track candidate) in candidates) RequireTrack(entity).Current = candidate.Current;
         Revision = nextRevision;
         return mutations.Select(entry => new DefeatRecoveryReceipt(entry.Key, entry.Value.Before, entry.Value.After, entry.Value.Applied, Revision)).OrderBy(value => value.Entity.Value).ToArray();
     }
@@ -627,7 +632,7 @@ public sealed class D20Session : IDisposable
         EntityEdit prepared = Entities.PrepareBatch(batch, Entities.Revision);
         prepared.Publish();
         Entities.Replace(freshPreview.Target, candidateEffects);
-        if (candidateTrack is not null) _vitalityTracks[freshPreview.Target] = candidateTrack;
+        if (candidateTrack is not null) RequireTrack(freshPreview.Target).Current = candidateTrack.Current;
         RollSource = RollSource with { Position = nextPosition };
         Revision = checked(Revision + 1);
         ReactionReceipt reactionReceipt = new(reaction.Value, freshPreview.Target, reactionDefinition.Resource, beforeResource, beforeResource - reactionDefinition.Cost, reactionDefinition.Effect, expiresAtTurn, Revision);
@@ -653,7 +658,7 @@ public sealed class D20Session : IDisposable
             EncounterParticipationFact targetParticipation = Entities.Get(preview.Target, D20ComponentTypes.Participation);
             batch.Set(preview.Target, D20ComponentTypes.Participation, targetParticipation with { Living = false });
         }
-        EntityEdit prepared = Entities.PrepareBatch(batch, Entities.Revision); prepared.Publish(); if (candidateEffects is not null) Entities.Replace(preview.Target, candidateEffects); if (candidateTrack is not null) _vitalityTracks[preview.Target] = candidateTrack; RollSource = RollSource with { Position = nextPosition }; Revision++;
+        EntityEdit prepared = Entities.PrepareBatch(batch, Entities.Revision); prepared.Publish(); if (candidateEffects is not null) Entities.Replace(preview.Target, candidateEffects); if (candidateTrack is not null) RequireTrack(preview.Target).Current = candidateTrack.Current; RollSource = RollSource with { Position = nextPosition }; Revision++;
         var receipt = new ActionReceipt(preview.Operation, preview.Actor, preview.Target, preview.Action, preview.RollPosition, roll.D20, total, action.Defense, hit, damage, effect, hit ? action.Definition.ForcedMovement : 0, Turn, Revision); _receipts.Add(receipt); if (_receipts.Count > Tuning.MaximumReceiptCount) _receipts.RemoveAt(0); return receipt;
     }
     public void AdvanceTurn()
@@ -851,7 +856,7 @@ public sealed class D20Session : IDisposable
     }
     private Track CloneTrack(EntityId entity)
     {
-        Track source = _vitalityTracks[entity];
+        Track source = RequireTrack(entity);
         return new Track(source.Maximum.Copy(), source.Current, source.Minimum,
             source.MaximumChangePolicy, source.Quantum, source.Rounding, source.IntegerRounding);
     }
@@ -911,8 +916,9 @@ public sealed class D20Session : IDisposable
         new Stat(value, minimum: 0, quantum: 1, integerRounding: MidpointRounding.ToZero),
         quantum: 1, integerRounding: MidpointRounding.ToZero);
     private ActionDefinition RequireAction(D20Id action) => _actions.TryGetValue(action, out ActionDefinition? value) ? value : throw new D20SessionException("Unknown action.");
-    private Track RequireTrack(EntityId entity) => _vitalityTracks.TryGetValue(entity, out Track? track) ? track : throw new D20SessionException("Participant has no vitality track.");
-    private void RequireParticipant(EntityId entity) { if (!Entities.IsAlive(entity) || !Entities.Has<EffectState>(entity) || !_vitalityTracks.ContainsKey(entity)) throw new D20SessionException("Unknown participant."); }
+    private bool HasVitality(EntityId entity) => Entities.TryGet<StatsComponent>(entity, out var stats) && stats.Tracks.ContainsKey(VitalityTrack);
+    private Track RequireTrack(EntityId entity) => Entities.TryGet<StatsComponent>(entity, out var stats) && stats.TryGetTrack(VitalityTrack, out var track) ? track : throw new D20SessionException("Participant has no vitality track.");
+    private void RequireParticipant(EntityId entity) { if (!Entities.IsAlive(entity) || !Entities.Has<EffectState>(entity) || !HasVitality(entity)) throw new D20SessionException("Unknown participant."); }
     private static bool TryValue(ImmutableArray<AbilityScoreEntry> values, D20Id id, out int value) { foreach (AbilityScoreEntry entry in values) if (entry.Id == id) { value = entry.Value; return true; } value = 0; return false; }
     private static bool TryValue(ImmutableArray<ResourceEntry> values, D20Id id, out int value) { foreach (ResourceEntry entry in values) if (entry.Id == id) { value = entry.Value; return true; } value = 0; return false; }
     private static bool TryValue(ImmutableArray<BudgetEntry> values, D20Id id, out int value) { foreach (BudgetEntry entry in values) if (entry.Id == id) { value = entry.Value; return true; } value = 0; return false; }

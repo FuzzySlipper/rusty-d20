@@ -44,7 +44,13 @@ compatibility migration or defaulting.
 resolution, durable component facts, and receipts. `D20CampaignRuntime` owns
 camp, exploration, encounter, outcome, and completion policy, including
 ordered encounter admission, landmarks, treasures, doors, checkpoints, and
-save meaning. `TacticalEncounter` applies D20 target, range, initiative,
+save meaning. Participant vitality is owned by the entity’s Engine `StatsComponent`: the
+`D20Session.MaximumVitalityStat` entry is the same `Stat` referenced by its
+`D20Session.VitalityTrack`. Actions and recovery update that live track, and
+projections/save capture read it directly. Ability facts and D20 rules remain
+product-owned.
+
+`TacticalEncounter` applies D20 target, range, initiative,
 movement, reaction, and bounded opposition policy over Engine spatial facts.
 
 ## Product integration and observability

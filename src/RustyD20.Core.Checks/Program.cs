@@ -24,6 +24,7 @@ var checks = new (string Name, Action Run)[]
     ("retained spatial grid identities fit Engine u32", RetainedGridIds),
     ("persistence cleanup aggregates every owner", PersistenceCleanup),
     ("d20 session floor, static order, and choice", SessionFloorStaticAndChoice),
+    ("d20 live entity stats ownership", SessionStatsOwnership),
     ("d20 session action effects and late-failure atomicity", SessionActionAndAtomicity),
     ("d20 session stale reaction and canonical equipment", SessionStaleReactionAndEquipment),
     ("d20 session engine-state admission fences", SessionEngineStateAdmissionFences),
@@ -282,6 +283,23 @@ static void SessionFloorStaticAndChoice()
     var exhausted = session.PreviewAction(actor, target, Id("disrupt"), OperationId.Parse("check-static-three"));
     ExpectSession(() => session.ApplyAction(exhausted), "exhausted");
     Assert(session.RollSource.Position == 2 && session.Receipts.Count == 2, "static tape exhaustion is atomic");
+}
+
+static void SessionStatsOwnership()
+{
+    using var session = NewSession([new(20, [4])], out var actor, out var target);
+    var stats = session.Entities.Get<StatsComponent>(target);
+    var vitality = stats.GetTrack(D20Session.VitalityTrack);
+    var maximum = stats.GetStat(D20Session.MaximumVitalityStat);
+    Assert(ReferenceEquals(maximum, vitality.Maximum), "maximum is the registered canonical stat");
+    maximum.BaseValue += 10;
+    vitality.Restore(10);
+    Assert(session.ReadVitality(target).Maximum == maximum.ValueInt && session.ReadVitality(target).Current == vitality.ValueInt, "session projection reads live component values");
+    var before = vitality.Current;
+    var receipt = session.ApplyAction(session.PreviewAction(actor, target, Id("disrupt"), OperationId.Parse("component-action")));
+    Assert(receipt.Damage > 0 && vitality.Current == before - receipt.Damage, "action mutates the originally attached track");
+    Assert(ReferenceEquals(stats, session.Entities.Get<StatsComponent>(target)) && ReferenceEquals(maximum, vitality.Maximum), "action preserves component and maximum references");
+    Assert(stats.Tracks.Single().Value.ValueInt == session.ReadVitality(target).Current, "UI enumeration uses canonical state");
 }
 
 static void SessionActionAndAtomicity()
