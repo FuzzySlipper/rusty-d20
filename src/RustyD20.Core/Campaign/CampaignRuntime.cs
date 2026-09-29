@@ -95,7 +95,7 @@ public sealed class EngineCampaignSpatialGateway : ICampaignSpatialGateway, ITac
     {
         ThrowIfDisposed();
         // Door traversal remains D20 policy, while the retained Engine navigation projection owns reachability and route admission.
-        NavigationPathReadout route = _spatial.RequestNavigationPath(new NavigationPathRequest(_session, new PlanarNavCell(from.X, 0, from.Y), new PlanarNavCell(to.X, 0, to.Y), 256));
+        NavigationPathResult route = _spatial.RequestNavigationPath(new NavigationPathRequest(_session, new PlanarNavCell(from.X, 0, from.Y), new PlanarNavCell(to.X, 0, to.Y), 256));
         return route.Outcome == NavigationPathOutcome.Reached;
     }
     public bool IsOccluded(GridPosition from, GridPosition to, IReadOnlySet<D20Id> openedDoors)

@@ -134,13 +134,6 @@ public sealed class RustyD20Product : IEngineProduct
         Publish();
     }
 
-    public void Attach()
-    {
-        ThrowIfDisposed();
-        Note("lifecycle:attached");
-        Publish();
-    }
-
     public ProductUpdateResult Update(ProductUpdate update)
     {
         ThrowIfDisposed();
@@ -423,8 +416,7 @@ internal sealed class D20Surface : IDisposable
             materials.Add(posture.ActiveMaterialSlot, CreateMaterial(engine, new Color(.28f, .9f, .36f, 1), .35f));
             materials.Add(posture.SelectionMaterialSlot, CreateMaterial(engine, new Color(.95f, .78f, .18f, 1), .35f));
             var occupied = new Dictionary<VoxelAddress, uint>(); AddCamp(occupied, initial.Dungeon.Start, posture);
-            VoxelSceneReadout scene = engine.Voxel.ReadScene(new VoxelSceneReadRequest(spatial));
-            engine.Voxel.ApplyEdits(new VoxelEditTransaction(spatial, scene.SourceRevision, occupied.Select(value => new VoxelEdit(VoxelEditKind.Set, value.Key, value.Value)).ToArray()));
+            engine.Voxel.ApplyEdits(new VoxelEditTransaction(spatial, occupied.Select(value => new VoxelEdit(VoxelEditKind.Set, value.Key, value.Value)).ToArray()));
             presentation = engine.VoxelScenePresentation.ProjectScene(new ProjectVoxelSceneRequest(spatial, Bindings(materials, occupied)));
             camera = engine.CameraView.CreateCamera(ExplorationCamera(posture, initial.Dungeon.Start, initial.Dungeon.StartFacing));
             engine.CameraView.SetActiveCamera(camera);
@@ -458,8 +450,7 @@ internal sealed class D20Surface : IDisposable
         VoxelEdit[] edits = _occupied.Keys.Except(next.Keys).Select(address => new VoxelEdit(VoxelEditKind.Clear, address, 0)).Concat(next.Where(value => !_occupied.TryGetValue(value.Key, out uint material) || material != value.Value).Select(value => new VoxelEdit(VoxelEditKind.Set, value.Key, value.Value))).ToArray();
         if (edits.Length != 0)
         {
-            VoxelSceneReadout scene = _engine.Voxel.ReadScene(new VoxelSceneReadRequest(_spatial));
-            _engine.Voxel.ApplyEdits(new VoxelEditTransaction(_spatial, scene.SourceRevision, edits));
+            _engine.Voxel.ApplyEdits(new VoxelEditTransaction(_spatial, edits));
             _occupied.Clear(); foreach ((VoxelAddress address, uint material) in next) _occupied.Add(address, material);
         }
         VoxelScenePresentationReadout view = _engine.VoxelScenePresentation.UpdateScene(new UpdateVoxelScenePresentationRequest(_presentation, Bindings(_materials, next)));

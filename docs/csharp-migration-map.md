@@ -28,8 +28,8 @@ they are not active inputs or compatibility routes.
 The normal product contract is intentionally small and exact:
 
 ```text
-Rusty.Engine 0.1.0-dev.cbf35130d06c from .runtime/sdk-feed
-  + runtime-pack-cbf35130d06c from .runtime/runtime-pack-cbf35130d06c
+Rusty.Engine <pin in Directory.Build.props> from the rusty cache's pair sdk-feed
+  + that pair's runtime pack
   -> rusty dev CoreCLR build, atomic staging, and packaged host
   -> optional VerifyRustyEngineAot fidelity/release module
 ```

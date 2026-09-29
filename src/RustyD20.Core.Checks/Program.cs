@@ -776,7 +776,7 @@ class RecordingSpatialService : DispatchProxy
         if (targetMethod.Name == nameof(ISpatialService.ReplaceCollision)) CollisionReplacements++;
         if (targetMethod.Name == nameof(ISpatialService.ReplaceNavigation) && args is { Length: > 0 } && args[0] is NavigationReplaceRequest navigation) _walkable = navigation.Cells.ToArray().ToHashSet();
         if (targetMethod.Name == nameof(ISpatialService.CreateSession)) return new SpatialSession(new SpatialSessionHandle(7), () => DisposedSessions++);
-        if (targetMethod.Name == nameof(ISpatialService.RequestNavigationPath) && args is { Length: > 0 } && args[0] is NavigationPathRequest path) { bool reached = _walkable.Contains(path.Start) && _walkable.Contains(path.Goal); return new NavigationPathReadout(reached ? NavigationPathOutcome.Reached : NavigationPathOutcome.NoPath, NavigationProjectionKind.HostWalkableCells, 1, reached ? 1u : 0u, 1, 1, 1); }
+        if (targetMethod.Name == nameof(ISpatialService.RequestNavigationPath) && args is { Length: > 0 } && args[0] is NavigationPathRequest path) { bool reached = _walkable.Contains(path.Start) && _walkable.Contains(path.Goal); return new NavigationPathResult(reached ? new[] { path.Goal } : ReadOnlyMemory<PlanarNavCell>.Empty, reached ? NavigationPathOutcome.Reached : NavigationPathOutcome.NoPath, NavigationProjectionKind.HostWalkableCells, 1, 1, 1, 1); }
         return targetMethod.ReturnType.IsValueType ? Activator.CreateInstance(targetMethod.ReturnType) : null;
     }
 }

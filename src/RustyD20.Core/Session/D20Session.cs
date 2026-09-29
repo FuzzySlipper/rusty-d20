@@ -185,7 +185,7 @@ public sealed class D20Session : IDisposable
             .Set(entity, D20ComponentTypes.Budgets, budgets)
             .Set(entity, D20ComponentTypes.Participation, new EncounterParticipationFact(faction, true))
             .Set(entity, D20ComponentTypes.Effects, new EffectProjectionFact([]));
-        Entities.PrepareBatch(batch, Entities.Revision).Publish();
+        Entities.Commit(batch);
         Entities.Add(entity, new EffectsComponent(entity));
         var stats = new StatsComponent();
         stats.AddStat(MaximumVitalityStat, track.Maximum);
@@ -410,8 +410,7 @@ public sealed class D20Session : IDisposable
                 batch.Set(entity, D20ComponentTypes.Participation, participation with { Living = living });
             }
         }
-        EntityEdit prepared = Entities.PrepareBatch(batch, Entities.Revision);
-        prepared.Publish();
+        Entities.Commit(batch);
         foreach ((EntityId entity, Track candidate) in candidates) RequireTrack(entity).Current = candidate.Current;
         Revision = nextRevision;
         return mutations.Select(entry => new DefeatRecoveryReceipt(entry.Key, entry.Value.Before, entry.Value.After, entry.Value.Applied, Revision)).OrderBy(value => value.Entity.Value).ToArray();
@@ -544,7 +543,7 @@ public sealed class D20Session : IDisposable
             .Set(preview.Target, D20ComponentTypes.Resources, new ActionResourcesFact(ReplaceResource(resources.Values, definition.Resource, before - definition.Cost)))
             .Set(preview.Target, D20ComponentTypes.Budgets, new ActivationBudgetsFact(SpendCosts(budgets.Values, definition.Costs)))
             .Set(preview.Target, D20ComponentTypes.Effects, afterProjection);
-        EntityEdit prepared = Entities.PrepareBatch(batch, Entities.Revision); prepared.Publish(); Entities.Replace(preview.Target, candidateEffects); Revision++; return new(reaction, preview.Target, definition.Resource, before, before - definition.Cost, definition.Effect, expires, Revision);
+        Entities.Commit(batch); Entities.Replace(preview.Target, candidateEffects); Revision++; return new(reaction, preview.Target, definition.Resource, before, before - definition.Cost, definition.Effect, expires, Revision);
     }
 
     /// <summary>
@@ -635,8 +634,7 @@ public sealed class D20Session : IDisposable
             batch.Set(freshPreview.Target, D20ComponentTypes.Participation, targetParticipation with { Living = false });
         }
 
-        EntityEdit prepared = Entities.PrepareBatch(batch, Entities.Revision);
-        prepared.Publish();
+        Entities.Commit(batch);
         Entities.Replace(freshPreview.Target, candidateEffects);
         if (candidateTrack is not null) RequireTrack(freshPreview.Target).Current = candidateTrack.Current;
         RollSource = RollSource with { Position = nextPosition };
@@ -664,7 +662,7 @@ public sealed class D20Session : IDisposable
             EncounterParticipationFact targetParticipation = Entities.Get(preview.Target, D20ComponentTypes.Participation);
             batch.Set(preview.Target, D20ComponentTypes.Participation, targetParticipation with { Living = false });
         }
-        EntityEdit prepared = Entities.PrepareBatch(batch, Entities.Revision); prepared.Publish(); if (candidateEffects is not null) Entities.Replace(preview.Target, candidateEffects); if (candidateTrack is not null) RequireTrack(preview.Target).Current = candidateTrack.Current; RollSource = RollSource with { Position = nextPosition }; Revision++;
+        Entities.Commit(batch); if (candidateEffects is not null) Entities.Replace(preview.Target, candidateEffects); if (candidateTrack is not null) RequireTrack(preview.Target).Current = candidateTrack.Current; RollSource = RollSource with { Position = nextPosition }; Revision++;
         var receipt = new ActionReceipt(preview.Operation, preview.Actor, preview.Target, preview.Action, preview.RollPosition, roll.D20, total, action.Defense, hit, damage, effect, hit ? action.Definition.ForcedMovement : 0, Turn, Revision); _receipts.Add(receipt); if (_receipts.Count > Tuning.MaximumReceiptCount) _receipts.RemoveAt(0); return receipt;
     }
     public void AdvanceTurn()
@@ -681,7 +679,7 @@ public sealed class D20Session : IDisposable
             if (!after.Equals(component.Value)) mutations.Set(component.Entity, D20ComponentTypes.Effects, after);
             candidates[component.Entity] = candidate;
         }
-        EntityEdit prepared = Entities.PrepareBatch(mutations, Entities.Revision); prepared.Publish(); foreach ((EntityId entity, EffectsComponent candidate) in candidates) Entities.Replace(entity, candidate); Turn = nextTurn; Revision++;
+        Entities.Commit(mutations); foreach ((EntityId entity, EffectsComponent candidate) in candidates) Entities.Replace(entity, candidate); Turn = nextTurn; Revision++;
     }
     /// <summary>Closed product save facts; Engine state is reconstructed through normal managed APIs on restore.</summary>
     public D20SessionSave CaptureSave()
@@ -945,7 +943,7 @@ public sealed class D20Session : IDisposable
     private EquipmentComponent EquipmentFor(EntityId owner) => Entities.IsAlive(owner)
         ? Entities.Get<EquipmentComponent>(owner) : new EquipmentComponent(Inventory, owner);
     private ulong EquipmentRevision(EntityId entity) => Entities.TryGet<EquipmentComponent>(entity, out var equipment) ? equipment.Revision : 0;
-    private void Replace<T>(EntityId entity, ComponentType<T> component, Func<T, T> mutate) where T : struct { T current = Entities.Get(entity, component); Entities.Set(entity, component, mutate(current), Entities.GetComponentRevision(entity, component)); Revision++; }
+    private void Replace<T>(EntityId entity, ComponentType<T> component, Func<T, T> mutate) where T : struct { T current = Entities.Get(entity, component); Entities.Set(entity, component, mutate(current)); Revision++; }
     private void ThrowIfDisposed() { if (_disposed) throw new ObjectDisposedException(nameof(D20Session)); }
     public void Dispose() { if (_disposed) return; Entities.Dispose(); _disposed = true; }
     private sealed record ResolvedAttack(D20Id Ability, D20Id Defense, DamageDefinition Damage, int Range);

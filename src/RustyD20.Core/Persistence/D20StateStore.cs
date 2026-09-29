@@ -80,7 +80,7 @@ internal partial class D20PersistenceJsonContext : System.Text.Json.Serializatio
 public sealed class D20EngineStateStore : IDisposable
 {
     private readonly ProductStateStore<D20DurableState> _store;
-    public D20EngineStateStore(IEngineContext engine, string productInstanceScope) => _store = new ProductStateStore<D20DurableState>(engine, productInstanceScope, new D20DurableStateCodec(), []);
+    public D20EngineStateStore(IEngineContext engine, string productInstanceScope) => _store = new ProductStateStore<D20DurableState>(engine, productInstanceScope, new D20DurableStateCodec());
     public PersistenceSaveReceipt Save(string key, string contentFingerprint, D20CampaignRuntime campaign, D20Session session, TacticalEncounter? tactical, IReadOnlyList<string> log, ulong revision, bool pendingReaction, PersistenceRevisionGuard guard = default, ulong expectedRevision = 0)
     {
         ArgumentNullException.ThrowIfNull(campaign); ArgumentNullException.ThrowIfNull(session);
