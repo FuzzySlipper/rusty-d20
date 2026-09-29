@@ -17,6 +17,6 @@
 | `.runtime/` | Ignored exact SDK feed and matched runtime pack provisioned locally. | `rusty dev` and restore |
 | `docs/csharp-migration-map.md` | Historical cutover evidence; not an active dependency or launch path. | Review with current source |
 
-`NuGet.Config` resolves the pinned SDK from `.runtime/sdk-feed`. The runtime
-pack is selected explicitly by `rusty dev`; no Engine checkout is part of the
-ordinary source tree or build path.
+`Directory.Build.props` pins the SDK/runtime pair and the Engine `rusty` CLI
+installs and runs it; no Engine checkout is part of the ordinary source tree or
+build path.

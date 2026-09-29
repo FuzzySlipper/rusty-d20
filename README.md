@@ -12,30 +12,25 @@ encounters, choose actions/targets/reactions, continue an outcome, and
 save/load/reset. Its product-owned DOM UI presents a small accessible control
 surface and the published UI readout; it does not own gameplay.
 
-## Local runtime pair
+## Engine pair
 
-The ignored `.runtime/` directory is provisioned with these matching immutable
-artifacts:
-
-```text
-.runtime/sdk-feed/Rusty.Engine.0.1.0-dev.cbf35130d06c.nupkg
-.runtime/runtime-pack-cbf35130d06c/
-```
-
-`NuGet.Config` restores only from that local feed (plus nuget.org) and the
-project pins `Rusty.Engine` to `0.1.0-dev.cbf35130d06c`. The package and runtime
-pack must come from the same Engine release. They are development dependencies,
-not tracked product inputs. An Engine contributor may use the explicit
-`rusty dev --engine-source /absolute/rusty-engine` override; ordinary product
-development never discovers an adjacent checkout.
+`Directory.Build.props` pins the immutable Engine SDK/runtime pair. Get the
+Engine's `rusty` command once with
+`curl -fsSL https://raw.githubusercontent.com/FuzzySlipper/rusty-engine/main/scripts/install-rusty.sh | bash`,
+then `rusty install` puts the pair in the shared cache; `rusty update` moves the
+pin and lists the release notes to read. The package and runtime come from the
+same Engine release and are not tracked product inputs. An Engine contributor
+may use the explicit `rusty dev --engine-source /absolute/rusty-engine`
+override; ordinary product development never discovers an adjacent checkout.
 
 ## Verify
 
 ```bash
+export $(rusty env)
 dotnet run --project src/RustyD20.Core.Checks/RustyD20.Core.Checks.csproj
 dotnet run --project src/RustyD20.Product.Checks/RustyD20.Product.Checks.csproj
 dotnet build RustyD20.sln -c Release
-./.runtime/runtime-pack-cbf35130d06c/bin/rusty dev --project src/RustyD20.Product/RustyD20.Product.csproj --runtime ./.runtime/runtime-pack-cbf35130d06c
+rusty dev --project src/RustyD20.Product/RustyD20.Product.csproj
 dotnet msbuild src/RustyD20.Product/RustyD20.Product.csproj -t:VerifyRustyEngineAot -p:Configuration=Release
 ```
 

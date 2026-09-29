@@ -9,8 +9,9 @@ and observational projections. It is not a reusable RPG framework and must
 never become a dependency of another game.
 
 Rusty Engine owns reusable host-neutral mechanisms. Ordinary development
-consumes the pinned immutable `Rusty.Engine` package from the ignored local
-`.runtime/sdk-feed` and uses its exactly matched `.runtime/runtime-pack-bcf02594620c`.
+consumes the Engine SDK/runtime pair pinned by `RustyEnginePackageVersion` in
+`Directory.Build.props`; the Engine `rusty` CLI installs (`rusty install`), runs
+(`rusty dev`) and moves (`rusty update`) it.
 Do not discover, synchronize, mutate, or copy an Engine checkout from this
 repository; route reusable gaps upstream instead.
 
@@ -52,10 +53,11 @@ Treat a dirty worktree as shared state. Preserve unrelated changes, especially
 Run focused maintained checks:
 
 ```bash
+export $(rusty env)
 dotnet run --project src/RustyD20.Core.Checks/RustyD20.Core.Checks.csproj
 dotnet run --project src/RustyD20.Product.Checks/RustyD20.Product.Checks.csproj
 dotnet build RustyD20.sln -c Release
-./.runtime/runtime-pack-bcf02594620c/bin/rusty dev --project src/RustyD20.Product/RustyD20.Product.csproj --runtime ./.runtime/runtime-pack-bcf02594620c
+rusty dev --project src/RustyD20.Product/RustyD20.Product.csproj
 dotnet msbuild src/RustyD20.Product/RustyD20.Product.csproj -t:VerifyRustyEngineAot -p:Configuration=Release
 ```
 
