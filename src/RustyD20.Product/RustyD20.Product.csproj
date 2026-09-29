@@ -20,7 +20,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../RustyD20.Core/RustyD20.Core.csproj" />
-    <PackageReference Include="Rusty.Engine" Version="$(RustyEnginePackageVersion)">
+    <PackageReference Include="Rusty.Engine" Version="[$(RustyEnginePackageVersion)]">
       <ExcludeAssets Condition="'$(RustyEngineUseSourceDevelopment)' == 'true'">compile;runtime</ExcludeAssets>
     </PackageReference>
     <RustyEngineProductInputIntent Include="d20.select.warden" Value="digital" />

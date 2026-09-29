@@ -4,7 +4,6 @@ All maintained verification is C#-product focused. Rust, Cargo, Node/pnpm,
 Nx/Angular, generated-protocol, and browser/E2E workflows are retired.
 
 ```bash
-export $(rusty env)
 dotnet run --project src/RustyD20.Core.Checks/RustyD20.Core.Checks.csproj
 dotnet run --project src/RustyD20.Product.Checks/RustyD20.Product.Checks.csproj
 dotnet build RustyD20.sln -c Release

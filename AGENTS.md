@@ -53,7 +53,6 @@ Treat a dirty worktree as shared state. Preserve unrelated changes, especially
 Run focused maintained checks:
 
 ```bash
-export $(rusty env)
 dotnet run --project src/RustyD20.Core.Checks/RustyD20.Core.Checks.csproj
 dotnet run --project src/RustyD20.Product.Checks/RustyD20.Product.Checks.csproj
 dotnet build RustyD20.sln -c Release
